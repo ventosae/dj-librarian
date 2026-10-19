@@ -53,11 +53,11 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
-| R-101 | Ask the DJ's device (Mac / Windows) first, as chips, and branch every later step on it. | M | First reply asks device; later steps show only that OS. | Agreed | v0.1 |
+| R-101 | Ask the DJ's device (Mac / Windows) first, as chips, and branch every later step on it. | M | First reply asks device; later steps show only that OS. | Built | v0.1 |
 | R-102 | Engine install (MCP on the DJ's machine) is offered **after** the first report, when a feature needs it; numbered steps per OS, ≤ 10 min; `dj_status` as the proof. | M | Dijok completes it without Anton; `dj_status` answers. | Agreed | v0.1 |
-| R-103 | Guide the DJ to connect a `dj-library/` folder in Cowork and scaffold it (R-901). | M | Scaffold exists; `library.yaml` records device, rekordbox version, date. | Agreed | v0.1 |
+| R-103 | Guide the DJ to connect a `dj-library/` folder in Cowork and scaffold it (R-901). | M | Scaffold exists; `library.yaml` records device, rekordbox version, date. | Built | v0.1 |
 | R-104 | **First-contact input is the rekordbox XML export** (File → Export Collection in xml format), guided by a 3-step card, dropped into the connected folder. | M | Analysis + report run on the XML alone. | Agreed | v0.1 |
-| R-105 | Onboarding states time estimates and progress ("Step 2 of 6") on every turn. | M | Every onboarding reply has both. | Agreed | v0.1 |
+| R-105 | Onboarding states time estimates and progress ("Step 2 of 6") on every turn. | M | Every onboarding reply has both. | Built | v0.1 |
 | R-106 | Super short start: ≤ 3 DJ actions before the work phase; zero questions during the work phase; chat under 5 lines until the report (NFR-07). | M | Transcript of the Dijok session. | Agreed | v0.1 |
 | R-107 | Cowork Project template (`templates/project/instructions.md`) the DJ can paste into a new Project: voice, ADHD rules, safety, folder conventions. Optional; nothing essential depends on it. | M | Template exists; the flow works without it. | Agreed | v0.1 |
 

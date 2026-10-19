@@ -17,6 +17,7 @@ DOOR1_MODULES = [
     "dj.readers.xml",
     "dj.libfolder",
     "dj.treeschema",
+    "dj.onboarding",
 ]
 
 

@@ -16,16 +16,17 @@ wheels/
 !.env.example
 .cache/
 
-# User library state — lives in each user's dj-library/ folder, never in the repo
+# User library state — lives in each user's dj-library/ folder, never in the repo.
+# Anchored to the repo root: docs/prompts/plans/ and similar folders deeper down are tracked.
 # (the default dj-library/ folder inside the repo is ignored as a whole: exports hold personal paths)
 dj-library/
-backups/
-inbox/
-plans/
-reports/
-state/
-wishlist/
-tracklists/
+/backups/
+/inbox/
+/plans/
+/reports/
+/state/
+/wishlist/
+/tracklists/
 *.db
 *.db-wal
 *.db-shm
