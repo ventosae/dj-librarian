@@ -59,6 +59,30 @@ def repo_file(path: str, suffixes: tuple[str, ...]) -> str:
     return str(full)
 
 
+def library_root() -> Path:
+    """The configured dj-library folder: DJ_LIBRARY, else <repo>/dj-library.
+    W-12 replaces this with dj.libfolder.configured_root()."""
+    env = os.environ.get("DJ_LIBRARY", "").strip()
+    return Path(env).expanduser() if env else REPO_ROOT / "dj-library"
+
+
+def library_file(path: str, suffixes: tuple[str, ...]) -> str:
+    """Like repo_file, but a file inside the configured library folder is accepted too.
+    A relative path is looked up in the library folder first, then in the repo."""
+    roots = [library_root().resolve(), REPO_ROOT.resolve()]
+    candidate = Path(path)
+    options = [candidate] if candidate.is_absolute() else [root / candidate for root in roots]
+    inside = [p.resolve() for p in options if any(p.resolve().is_relative_to(r) for r in roots)]
+    if not inside:
+        raise ToolInputError(f"{path!r} is outside the dj-library folder and the dj-librarian folder.")
+    if Path(path).suffix.lower() not in suffixes:
+        raise ToolInputError(f"{path!r}: expected one of {', '.join(suffixes)}.")
+    for full in inside:
+        if full.is_file() and full.suffix.lower() in suffixes:
+            return str(full)
+    raise ToolInputError(f"{path!r} does not exist (looked in {', '.join(str(r) for r in roots)}).")
+
+
 def music_folder(path: str) -> str:
     """A folder argument must be an existing directory inside a tidy.yaml root."""
     full = Path(path).resolve()
@@ -161,6 +185,20 @@ def dj_tree_preview(file: str = "tree.yaml") -> str:
     """Dry-run of a tree file (e.g. bases.yaml): one action per node - CREATE, SKIP, HOLD,
     CONFLICT. Writes nothing. `file` is a .yaml path inside the repo."""
     return run_dj(["tree", "--file", repo_file(file, (".yaml", ".yml"))])
+
+
+@server.tool(annotations=READ)
+@guarded
+def dj_library_inspect(xml: str = "") -> str:
+    """Library summary from one model: source, counts (tracks, folders, playlists, smart,
+    orphans, entries; complete), a sample of the top of the playlist tree (at most 30 nodes and
+    10 child names each; `tree_more` / `more_children` count the rest), which fields the source
+    lacks, and notes. `xml` = a rekordbox collection XML inside the dj-library folder or the repo
+    (e.g. exports/2026-10-20-collection.xml); empty = a read-only snapshot of master.db
+    (`snapshot_path` = the copy that was read). Writes nothing."""
+    if xml:
+        return run_dj(["library", "inspect"], (library_file(xml, (".xml",)),))
+    return run_dj(["library", "inspect"])
 
 
 @server.tool(annotations=SPOTIFY_READ)

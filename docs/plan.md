@@ -15,8 +15,8 @@ Goal: one experienced DJ (Mac or Windows, Cowork) exports an XML, gets the HTML 
 | W-03 | requirements.md, breadboard.md, decisions.md | — | Done 20 Oct (v0.4) |
 | W-04 | Step 2: architecture + repo layout + dev workflow (`docs/architecture.md`) | R-12xx | Agreed 20 Oct |
 | W-05 | Step 3: setup kit (CLAUDE.md, .gitignore, docs/, CHANGELOG) + W-10 prompt | R-1201–1207 | Delivered 20 Oct |
-| W-10 | PR: new repo `dj-librarian_01` scaffolded from the source code — allowlist copy, generalise, LICENSE, CONTRIBUTING, README, examples/, CI, `plugin/` manifest + marketplace | R-1201–1207, C-05 | Prompt issued (`docs/prompts/W-10.md`) |
-| W-11 | PR: XML reader → the shared track/tree model | R-104, R-204, R-322 | Pending — first after W-10 (D-10) |
+| W-10 | PR: new repo `dj-librarian_01` scaffolded from the source code — allowlist copy, generalise, LICENSE, CONTRIBUTING, README, examples/, CI, `plugin/` manifest + marketplace | R-1201–1207, C-05 | Built 20 Oct |
+| W-11 | PR: XML reader → the shared track/tree model | R-104, R-204, R-322 | Built 20 Oct |
 | W-12 | PR: `dj-library/` scaffold + `library.yaml` schema + shared tree schema | R-901–905 | Pending |
 | W-13 | PR: `dj-start` skill (device chips, export card, folder step, scaffold, M1 card) | R-101–107 | Pending |
 | W-14 | PR: `dj-profile` (scripts + SKILL.md) | R-301, 302, 311, 312, 341 | Pending — parallel with W-15/16 |
@@ -46,14 +46,20 @@ Goal: one experienced DJ (Mac or Windows, Cowork) exports an XML, gets the HTML 
 
 | ID | Question | Owner |
 |---|---|---|
-| Q-01 | Does the rekordbox XML export carry My Tags and play history? | W-11 |
+| Q-01 | Does the rekordbox XML export carry My Tags and play history? **Answered 20 Oct (W-11): no.** Per the pyrekordbox 0.4.4 XML schema the export has `PlayCount` and `LastPlayed` per track, but no My Tags, no history playlists and no smart-playlist rules; those need master.db (the engine). Confirm on a real rekordbox 7.2 export. | W-11 (answered) |
 | Q-02 | Does pyrekordbox locate master.db and its key on macOS without manual config? | W-20 |
 | Q-03 | Do plugin hooks run in Cowork? (MCP connectors: yes, verified.) | W-21 |
 | Q-04 | Is the current `spotify.py` already on the Feb 2026 endpoints? (Oct builds worked.) | W-25 |
 | Q-05 | Which widgets render for a non-Anton Cowork user? | W-13 |
 | Q-06 | Does `pip install dj-librarian` (or the plugin's scripts) run in Cowork's sandbox at skill time? | W-11 |
-| Q-07 | Does `claude plugin validate` run headless in GitHub Actions? | W-10 |
+| Q-07 | Does `claude plugin validate` run headless in GitHub Actions? Locally it passes with an empty config dir and no tokens, so the CI job has no `continue-on-error`. Confirm on the first Actions run. | W-10 → first push |
 | Q-08 | What does `${CLAUDE_PLUGIN_ROOT}` resolve to in a Cowork session, and can `.mcp.json` start `uv run` from the repo until PyPI exists? | W-21 |
+| Q-09 | The "no anton" grep hits `plugin/.claude-plugin/plugin.json` `author.name` by design. **Answered 20 Oct:** BUILD-v0.1 allows the name in `author` only; the check excludes it. | W-10 (answered) |
+| Q-10 | Ruff 0.17's broader default rules (UP, B, SIM, BLE, S) give ~74 findings on the inherited code. A baseline set is pinned in `pyproject.toml`; widening it is a later PR. | later |
+| Q-11 | The suite was green on Windows and on WSL Ubuntu; macOS not yet run. | W-20 / first CI run |
+| Q-12 | `plugin.json` `repository` and the README clone/marketplace lines use `OWNER` as a placeholder. Fill in at first push. | W-27 |
+| Q-13 | master.db play history (`DjmdHistory`) is not read; R-204's "history where the source has them" is deferred. `play_count` covers most-played. Add history sessions when a feature needs them. | later |
+| Q-14 | rekordbox stores no member rows for smart playlists; the db reader returns smart playlists without `track_ids`, and `orphans()` ignores smart membership. Computing members from the rules (pyrekordbox `get_playlist_contents`) is open. | later |
 
 ## Later (one line each → issues after first push)
 
@@ -64,3 +70,9 @@ Goal: one experienced DJ (Mac or Windows, Cowork) exports an XML, gets the HTML 
 - L-05 Post-gig feedback loop feeding `taste/feedback.md` into Crate me.
 - L-06 Library "lint": schema violations as a reviewable plan.
 - L-07 Lexicon / MIK energy ingestion as a review queue.
+
+## Deviations from the v0.1 contract
+
+The contract is `docs/prompts/plans/v0.1-interfaces.md`. Each item lists here what it built differently.
+
+- **W-11.** `counts()["playlists"]` counts plain playlists; smart ones count under `smart`, and `entries` sums both. XML playlist ids are tree positions (`1.2.1`) because the export carries none. `tracks_in(folder)` and an ambiguous `node_at` raise `LibraryError`. `XML_FIELDS_MISSING` = `isrc, bit_depth, my_tags, has_artwork`; history and smart rules are in `XML_NOTES`. `read_db` retries the snapshot up to 3 times if master.db or its WAL changes during the copy. `dj library inspect --json` also returns `source_path`, `snapshot_path`, `rekordbox_version`, `notes`, and caps the tree sample (30 top nodes, 10 children each). R-322 (current tree as YAML) moves to W-15, after the tree schema (W-12).

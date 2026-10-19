@@ -17,6 +17,8 @@ wheels/
 .cache/
 
 # User library state — lives in each user's dj-library/ folder, never in the repo
+# (the default dj-library/ folder inside the repo is ignored as a whole: exports hold personal paths)
+dj-library/
 backups/
 inbox/
 plans/

@@ -17,6 +17,7 @@ from dj import intake, library, safety, spotify
 from dj import playlist_copy as copy_mod
 from dj import push as push_mod
 from dj import tree as tree_mod
+from dj.commands.library import library_app
 from dj.tidy import TidyError
 from dj.tidy import checks as tidy_checks
 from dj.tidy import config as tidy_config
@@ -30,6 +31,7 @@ from dj.tree import KIND_BY_ATTRIBUTE, children_of
 app = typer.Typer(
     add_completion=False, no_args_is_help=True, help=__doc__, pretty_exceptions_show_locals=False
 )
+app.add_typer(library_app, name="library")
 
 EXIT_ERROR = 1
 EXIT_REKORDBOX_RUNNING = 2

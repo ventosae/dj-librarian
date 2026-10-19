@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="rekordbox" Version="7.2.18" Company="AlphaTheta" />
+  <COLLECTION Entries="24">
+    <TRACK TrackID="1" Name="Sunday Sermon" Artist="Okoro Lane" Composer="" Album="" Grouping="" Genre="Funk" Kind="MP3 File" Size="8680000" TotalTime="217" DiscNumber="0" TrackNumber="0" Year="1978" AverageBpm="98.00" DateAdded="2019-04-12" BitRate="320" SampleRate="44100" Comments="#warmup #vocal" PlayCount="14" Rating="204" Location="file://localhost/D:/Music/Funk/Okoro%20Lane%20-%20Sunday%20Sermon.mp3" Remixer="" Tonality="Am" Label="Paper Lantern" Mix="" Colour="0xFFA500">
+      <TEMPO Inizio="0.025" Bpm="98.00" Metro="4/4" Battito="1" />
+      <POSITION_MARK Name="" Type="0" Start="0.025" Num="0" />
+      <POSITION_MARK Name="" Type="0" Start="16.025" Num="1" />
+      <POSITION_MARK Name="" Type="0" Start="32.025" Num="2" />
+    </TRACK>
+    <TRACK TrackID="2" Name="Brass Tide" Artist="The Velvet Ferrymen" Composer="" Album="Brass Tide LP" Grouping="" Genre="Funk" Kind="FLAC File" Size="29114750" TotalTime="254" DiscNumber="0" TrackNumber="0" Year="1979" AverageBpm="101.50" DateAdded="2019-04-12" BitRate="917" SampleRate="44100" Comments="#warmup" PlayCount="22" Rating="255" Location="file://localhost///nas/vinyl%20rips/Funk/The%20Velvet%20Ferrymen%20-%20Brass%20Tide.flac" Remixer="" Tonality="Dm" Label="Paper Lantern" Mix="" Colour="0xFFA500">
+      <TEMPO Inizio="0.025" Bpm="101.50" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="3" Name="Midnight Roller Rink" Artist="Cassia Drift" Composer="" Album="" Grouping="" Genre="Disco" Kind="MP3 File" Size="6984000" TotalTime="291" DiscNumber="0" TrackNumber="0" Year="1981" AverageBpm="108.00" DateAdded="2019-09-30" BitRate="192" SampleRate="44100" Comments="" PlayCount="5" Rating="153" Location="file://localhost/D:/Music/Disco/Cassia%20Drift%20-%20Midnight%20Roller%20Rink.mp3" Remixer="" Tonality="F#m" Label="Fathom Disc" Mix="" Colour="0xFF007F">
+      <TEMPO Inizio="0.025" Bpm="108.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="4" Name="Søndag på Taget" Artist="Jørn Ébène" Composer="" Album="" Grouping="" Genre="Disco" Kind="AIFF File" Size="57851000" TotalTime="328" DiscNumber="0" TrackNumber="0" Year="1983" AverageBpm="110.00" DateAdded="2020-02-02" BitRate="1411" SampleRate="44100" Comments="#vocal #closer" PlayCount="9" Rating="204" Location="file://localhost/D:/Music/Disco/J%C3%B8rn%20%C3%89b%C3%A8ne%20-%20S%C3%B8ndag%20p%C3%A5%20Taget.aiff" Remixer="" Tonality="C" Label="Fathom Disc" Mix="" Colour="0xFF007F">
+      <TEMPO Inizio="0.025" Bpm="110.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="5" Name="Pocket Change" Artist="Brother Ferro" Composer="" Album="" Grouping="" Genre="Funk" Kind="MP3 File" Size="5840000" TotalTime="365" DiscNumber="0" TrackNumber="0" Year="1986" AverageBpm="96.00" DateAdded="2020-07-19" BitRate="128" SampleRate="44100" Comments="" PlayCount="1" Rating="102" Location="file://localhost/D:/Music/Funk/Brother%20Ferro%20-%20Pocket%20Change.mp3" Remixer="" Tonality="Gm" Label="" Mix="">
+      <TEMPO Inizio="0.025" Bpm="96.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="6" Name="Glass Elevator" Artist="Lumen Sato" Composer="" Album="" Grouping="" Genre="Disco" Kind="M4A File" Size="12864000" TotalTime="402" DiscNumber="0" TrackNumber="0" Year="1989" AverageBpm="112.00" DateAdded="2021-01-08" BitRate="256" SampleRate="44100" Comments="#tbc" PlayCount="0" Rating="0" Location="file://localhost/D:/Music/Disco/Lumen%20Sato%20-%20Glass%20Elevator.m4a" Remixer="" Tonality="" Label="Fathom Disc" Mix="">
+      <TEMPO Inizio="0.025" Bpm="112.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="7" Name="Slow Burn Social" Artist="Halvard &amp; Nim" Composer="" Album="" Grouping="" Genre="Funk" Kind="WAV File" Size="77428625" TotalTime="439" DiscNumber="0" TrackNumber="0" Year="1992" AverageBpm="104.00" DateAdded="2021-05-23" BitRate="1411" SampleRate="44100" Comments="#warmup" PlayCount="7" Rating="153" Location="file://localhost/D:/Music/Funk/Halvard%20%26%20Nim%20-%20Slow%20Burn%20Social.wav" Remixer="" Tonality="Bbm" Label="Paper Lantern" Mix="" Colour="0xFFFF00">
+      <TEMPO Inizio="0.025" Bpm="104.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="8" Name="Hallway Light" Artist="Marlo Venn" Composer="" Album="" Grouping="" Genre="Deep House" Kind="MP3 File" Size="19040000" TotalTime="476" DiscNumber="0" TrackNumber="0" Year="1995" AverageBpm="118.00" DateAdded="2021-11-11" BitRate="320" SampleRate="44100" Comments="#warmup #deep" PlayCount="18" Rating="204" Location="file://localhost/D:/Music/Deep%20House/Marlo%20Venn%20-%20Hallway%20Light.mp3" Remixer="" Tonality="Am" Label="Low Ceiling Records" Mix="" Colour="0x00FF00">
+      <TEMPO Inizio="0.025" Bpm="118.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="9" Name="Open Plan" Artist="Tessa Quorum" Composer="" Album="Open Plan EP" Grouping="" Genre="House" Kind="FLAC File" Size="27264000" TotalTime="213" DiscNumber="0" TrackNumber="0" Year="1997" AverageBpm="120.00" DateAdded="2022-03-03" BitRate="1024" SampleRate="44100" Comments="#peak" PlayCount="31" Rating="255" Location="file://localhost/D:/Music/House/Tessa%20Quorum%20-%20Open%20Plan.flac" Remixer="" Tonality="Cm" Label="Low Ceiling Records" Mix="" Colour="0x00FF00">
+      <TEMPO Inizio="0.025" Bpm="120.00" Metro="4/4" Battito="1" />
+      <POSITION_MARK Name="" Type="0" Start="0.025" Num="0" />
+      <POSITION_MARK Name="" Type="0" Start="16.025" Num="1" />
+      <POSITION_MARK Name="" Type="0" Start="32.025" Num="2" />
+      <POSITION_MARK Name="" Type="0" Start="48.025" Num="3" />
+      <POSITION_MARK Name="" Type="0" Start="64.025" Num="4" />
+      <POSITION_MARK Name="" Type="0" Start="80.025" Num="5" />
+      <POSITION_MARK Name="" Type="0" Start="96.025" Num="6" />
+      <POSITION_MARK Name="" Type="0" Start="112.025" Num="7" />
+    </TRACK>
+    <TRACK TrackID="10" Name="Concrete Garden" Artist="Dub Atelier" Composer="" Album="" Grouping="" Genre="Deep House" Kind="MP3 File" Size="10000000" TotalTime="250" DiscNumber="0" TrackNumber="0" Year="1999" AverageBpm="121.00" DateAdded="2022-06-17" BitRate="320" SampleRate="44100" Comments="#deep" PlayCount="12" Rating="204" Location="file://localhost/D:/Music/Deep%20House/Dub%20Atelier%20-%20Concrete%20Garden.mp3" Remixer="" Tonality="Fm" Label="Low Ceiling Records" Mix="" Colour="0x25FDE9">
+      <TEMPO Inizio="0.025" Bpm="121.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="11" Name="Stairwell Echo" Artist="Marlo Venn" Composer="" Album="" Grouping="" Genre="House" Kind="MP3 File" Size="11480000" TotalTime="287" DiscNumber="0" TrackNumber="0" Year="2003" AverageBpm="122.00" DateAdded="2022-08-29" BitRate="320" SampleRate="44100" Comments="#peak #vocal" PlayCount="25" Rating="153" Location="file://localhost/D:/Music/House/Marlo%20Venn%20-%20Stairwell%20Echo.mp3" Remixer="" Tonality="Gm" Label="Low Ceiling Records" Mix="" Colour="0x25FDE9">
+      <TEMPO Inizio="0.025" Bpm="122.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="12" Name="Night Bus Home" Artist="Odelia Strand" Composer="" Album="" Grouping="" Genre="House" Kind="MP3 File" Size="10368000" TotalTime="324" DiscNumber="0" TrackNumber="0" Year="2006" AverageBpm="122.50" DateAdded="2023-01-15" BitRate="256" SampleRate="44100" Comments="#peak" PlayCount="19" Rating="204" Location="file://localhost/D:/Music/House/Odelia%20Strand%20-%20Night%20Bus%20Home.mp3" Remixer="" Tonality="C#m" Label="Night Shift Tapes" Mix="" Colour="0x0000FF">
+      <TEMPO Inizio="0.025" Bpm="122.50" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="13" Name="Brass Tide (Club Edit)" Artist="The Velvet Ferrymen" Composer="" Album="" Grouping="" Genre="House" Kind="MP3 File" Size="14440000" TotalTime="361" DiscNumber="0" TrackNumber="0" Year="2009" AverageBpm="123.00" DateAdded="2023-04-04" BitRate="320" SampleRate="44100" Comments="#peak #edit" PlayCount="27" Rating="255" Location="file://localhost/D:/Music/House/The%20Velvet%20Ferrymen%20-%20Brass%20Tide%20%28Dub%20Atelier%20Club%20Edit%29.mp3" Remixer="Dub Atelier" Tonality="Dm" Label="Paper Lantern" Mix="" Colour="0x0000FF">
+      <TEMPO Inizio="0.025" Bpm="123.00" Metro="4/4" Battito="1" />
+      <POSITION_MARK Name="" Type="0" Start="0.025" Num="0" />
+      <POSITION_MARK Name="" Type="0" Start="16.025" Num="1" />
+      <POSITION_MARK Name="" Type="0" Start="32.025" Num="2" />
+      <POSITION_MARK Name="" Type="0" Start="48.025" Num="3" />
+    </TRACK>
+    <TRACK TrackID="14" Name="Floor Plan" Artist="Tessa Quorum" Composer="" Album="Open Plan EP" Grouping="" Genre="House" Kind="WAV File" Size="114624000" TotalTime="398" DiscNumber="0" TrackNumber="0" Year="2012" AverageBpm="124.00" DateAdded="2023-07-21" BitRate="2304" SampleRate="48000" Comments="#peak" PlayCount="16" Rating="204" Location="file://localhost/D:/Music/House/Tessa%20Quorum%20-%20Floor%20Plan.wav" Remixer="" Tonality="Em" Label="Low Ceiling Records" Mix="" Colour="0x00FF00">
+      <TEMPO Inizio="0.025" Bpm="124.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="15" Name="Last Train Social" Artist="Odelia Strand" Composer="" Album="" Grouping="" Genre="House" Kind="MP3 File" Size="17400000" TotalTime="435" DiscNumber="0" TrackNumber="0" Year="2014" AverageBpm="124.00" DateAdded="2024-02-10" BitRate="320" SampleRate="44100" Comments="" PlayCount="8" Rating="153" Location="file://localhost/D:/Music/House/Odelia%20Strand%20-%20Last%20Train%20Social.mp3" Remixer="" Tonality="Am" Label="Night Shift Tapes" Mix="" Colour="0x660099">
+      <TEMPO Inizio="0.025" Bpm="124.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="16" Name="Ferrous" Artist="Kestrel Unit" Composer="" Album="" Grouping="" Genre="Techno" Kind="MP3 File" Size="18880000" TotalTime="472" DiscNumber="0" TrackNumber="0" Year="2016" AverageBpm="126.00" DateAdded="2024-05-05" BitRate="320" SampleRate="44100" Comments="#peak #dark" PlayCount="21" Rating="204" Location="file://localhost/D:/Music/Techno/Kestrel%20Unit%20-%20Ferrous.mp3" Remixer="" Tonality="Fm" Label="Night Shift Tapes" Mix="" Colour="0xFF0000">
+      <TEMPO Inizio="0.025" Bpm="126.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="17" Name="Pressure Vessel" Artist="Grid Saint" Composer="" Album="Vessel" Grouping="" Genre="Techno" Kind="FLAC File" Size="22990000" TotalTime="209" DiscNumber="0" TrackNumber="0" Year="2018" AverageBpm="128.00" DateAdded="2024-09-09" BitRate="880" SampleRate="44100" Comments="#peak" PlayCount="33" Rating="255" Location="file://localhost/D:/Music/Techno/Grid%20Saint%20-%20Pressure%20Vessel.flac" Remixer="" Tonality="Gm" Label="Night Shift Tapes" Mix="" Colour="0xFF0000">
+      <TEMPO Inizio="0.025" Bpm="128.00" Metro="4/4" Battito="1" />
+      <POSITION_MARK Name="" Type="0" Start="0.025" Num="0" />
+      <POSITION_MARK Name="" Type="0" Start="16.025" Num="1" />
+    </TRACK>
+    <TRACK TrackID="18" Name="Ballast" Artist="Kestrel Unit" Composer="" Album="" Grouping="" Genre="Techno" Kind="MP3 File" Size="7872000" TotalTime="246" DiscNumber="0" TrackNumber="0" Year="2019" AverageBpm="129.00" DateAdded="2025-01-20" BitRate="256" SampleRate="44100" Comments="#dark" PlayCount="6" Rating="153" Location="file://localhost/D:/Music/Techno/Kestrel%20Unit%20-%20Ballast.mp3" Remixer="" Tonality="Am" Label="Night Shift Tapes" Mix="" Colour="0xFF0000">
+      <TEMPO Inizio="0.025" Bpm="129.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="19" Name="Signal Fire" Artist="Volta Rook" Composer="" Album="" Grouping="" Genre="" Kind="MP3 File" Size="6792000" TotalTime="283" DiscNumber="0" TrackNumber="0" Year="2020" AverageBpm="130.00" DateAdded="2025-03-01" BitRate="192" SampleRate="44100" Comments="" PlayCount="4" Rating="102" Location="file://localhost/D:/Music/Unsorted/Volta%20Rook%20-%20Signal%20Fire.mp3" Remixer="" Tonality="Cm" Label="" Mix="">
+      <TEMPO Inizio="0.025" Bpm="130.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="20" Name="Cold Storage" Artist="Grid Saint" Composer="" Album="" Grouping="" Genre="Techno" Kind="AIFF File" Size="56440000" TotalTime="320" DiscNumber="0" TrackNumber="0" Year="2021" AverageBpm="132.00" DateAdded="2025-06-14" BitRate="1411" SampleRate="44100" Comments="#closer #dark" PlayCount="10" Rating="204" Location="file://localhost/D:/Music/Techno/Grid%20Saint%20-%20Cold%20Storage.aiff" Remixer="" Tonality="Dm" Label="Night Shift Tapes" Mix="" Colour="0x660099">
+      <TEMPO Inizio="0.025" Bpm="132.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="21" Name="Late Sun Drive" Artist="Mira Kalt" Composer="" Album="" Grouping="" Genre="Deep House" Kind="M4A File" Size="11424000" TotalTime="357" DiscNumber="0" TrackNumber="0" Year="2024" AverageBpm="119.00" DateAdded="2026-01-11" BitRate="256" SampleRate="44100" Comments="#tbc" PlayCount="0" Rating="0" Location="file://localhost/D:/Music/Deep%20House/Mira%20Kalt%20-%20Late%20Sun%20Drive.m4a" Remixer="" Tonality="Bbm" Label="Low Ceiling Records" Mix="">
+      <TEMPO Inizio="0.025" Bpm="119.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="22" Name="Hallway Light" Artist="Marlo Venn" Composer="" Album="" Grouping="" Genre="Deep House" Kind="FLAC File" Size="46836750" TotalTime="394" DiscNumber="0" TrackNumber="0" Year="1995" AverageBpm="118.00" DateAdded="2026-03-02" BitRate="951" SampleRate="44100" Comments="" PlayCount="0" Rating="0" Location="file://localhost/D:/Music/Lossless/Marlo%20Venn%20-%20Hallway%20Light.flac" Remixer="" Tonality="Am" Label="Low Ceiling Records" Mix="">
+      <TEMPO Inizio="0.025" Bpm="118.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="23" Name="Pressure Vessel" Artist="Grid Saint" Composer="" Album="" Grouping="" Genre="Techno" Kind="MP3 File" Size="6896000" TotalTime="431" DiscNumber="0" TrackNumber="0" Year="2018" AverageBpm="128.00" DateAdded="2026-05-30" BitRate="128" SampleRate="44100" Comments="" PlayCount="1" Rating="0" Location="file://localhost/D:/Music/Techno/Grid%20Saint%20-%20Pressure%20Vessel.mp3" Remixer="" Tonality="Gm" Label="Night Shift Tapes" Mix="">
+      <TEMPO Inizio="0.025" Bpm="128.00" Metro="4/4" Battito="1" />
+    </TRACK>
+    <TRACK TrackID="24" Name="Tape Hiss Lullaby" Artist="Saffi Wren" Composer="" Album="" Grouping="" Genre="Disco" Kind="MP3 File" Size="18720000" TotalTime="468" DiscNumber="0" TrackNumber="0" Year="0" AverageBpm="100.00" DateAdded="2026-08-08" BitRate="320" SampleRate="44100" Comments="" PlayCount="0" Rating="51" Location="file://localhost/D:/Music/Disco/Saffi%20Wren%20-%20Tape%20Hiss%20Lullaby.mp3" Remixer="" Tonality="" Label="" Mix="">
+      <TEMPO Inizio="0.025" Bpm="100.00" Metro="4/4" Battito="1" />
+    </TRACK>
+  </COLLECTION>
+  <PLAYLISTS>
+    <NODE Type="0" Name="ROOT" Count="4">
+      <NODE Type="0" Name="House" Count="3">
+        <NODE Name="1.1_warm_up" Type="1" KeyType="0" Entries="4">
+          <TRACK Key="8" />
+          <TRACK Key="21" />
+          <TRACK Key="10" />
+          <TRACK Key="11" />
+        </NODE>
+        <NODE Name="1.2_peak" Type="1" KeyType="0" Entries="6">
+          <TRACK Key="9" />
+          <TRACK Key="11" />
+          <TRACK Key="12" />
+          <TRACK Key="13" />
+          <TRACK Key="14" />
+          <TRACK Key="15" />
+        </NODE>
+        <NODE Type="0" Name="Deep" Count="2">
+          <NODE Name="deep_rollers" Type="1" KeyType="1" Entries="4">
+            <TRACK Key="file://localhost/D:/Music/Deep%20House/Dub%20Atelier%20-%20Concrete%20Garden.mp3" />
+            <TRACK Key="file://localhost/D:/Music/Deep%20House/Mira%20Kalt%20-%20Late%20Sun%20Drive.m4a" />
+            <TRACK Key="file://localhost/D:/Music/Lossless/Marlo%20Venn%20-%20Hallway%20Light.flac" />
+            <TRACK Key="file://localhost/D:/Music/House/Tessa%20Quorum%20-%20Floor%20Plan.wav" />
+          </NODE>
+          <NODE Name="empty_ideas" Type="1" KeyType="0" Entries="0" />
+        </NODE>
+      </NODE>
+      <NODE Type="0" Name="Gigs" Count="2">
+        <NODE Name="Gig 2025-03 Warehouse" Type="1" KeyType="0" Entries="8">
+          <TRACK Key="11" />
+          <TRACK Key="12" />
+          <TRACK Key="13" />
+          <TRACK Key="14" />
+          <TRACK Key="15" />
+          <TRACK Key="16" />
+          <TRACK Key="17" />
+          <TRACK Key="18" />
+        </NODE>
+        <NODE Name="Gig 2025-11 Rooftop" Type="1" KeyType="0" Entries="6">
+          <TRACK Key="1" />
+          <TRACK Key="2" />
+          <TRACK Key="4" />
+          <TRACK Key="9" />
+          <TRACK Key="13" />
+          <TRACK Key="17" />
+        </NODE>
+      </NODE>
+      <NODE Name="unsorted dump" Type="1" KeyType="0" Entries="16">
+        <TRACK Key="1" />
+        <TRACK Key="2" />
+        <TRACK Key="3" />
+        <TRACK Key="4" />
+        <TRACK Key="5" />
+        <TRACK Key="6" />
+        <TRACK Key="7" />
+        <TRACK Key="8" />
+        <TRACK Key="9" />
+        <TRACK Key="10" />
+        <TRACK Key="11" />
+        <TRACK Key="12" />
+        <TRACK Key="16" />
+        <TRACK Key="19" />
+        <TRACK Key="20" />
+        <TRACK Key="22" />
+      </NODE>
+      <NODE Name="funk &amp; disco 78-92" Type="1" KeyType="0" Entries="7">
+        <TRACK Key="1" />
+        <TRACK Key="2" />
+        <TRACK Key="3" />
+        <TRACK Key="4" />
+        <TRACK Key="5" />
+        <TRACK Key="6" />
+        <TRACK Key="7" />
+      </NODE>
+    </NODE>
+  </PLAYLISTS>
+</DJ_PLAYLISTS>

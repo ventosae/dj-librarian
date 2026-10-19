@@ -46,6 +46,18 @@ def test_columns_the_tool_reads():
         assert hasattr(tables.DjmdSongPlaylist, col)
 
 
+def test_columns_the_master_db_reader_adds():
+    # dj.readers.db reads these on top of library.TrackInfo (date added, plays, colour, My Tags)
+    for col in ("StockDate", "DJPlayCount", "ColorName", "MyTagNames", "MyTags", "ImagePath"):
+        assert hasattr(tables.DjmdContent, col)
+    assert hasattr(tables.DjmdColor, "Commnt")
+    assert hasattr(tables.DjmdSongMyTag, "MyTagName") and hasattr(tables.DjmdSongMyTag, "rb_local_deleted")
+    # a live link can point at a soft-deleted tag: the reader checks DjmdSongMyTag.MyTag too
+    assert hasattr(tables.DjmdSongMyTag, "MyTag") and hasattr(tables.DjmdMyTag, "rb_local_deleted")
+    # dj.readers.db disposes this instance attribute so the snapshot folder can be removed
+    assert "self.engine = engine" in inspect.getsource(Rekordbox6Database.__init__)
+
+
 def test_file_type_enum_values_tidy_relies_on():
     ft = tables.FileType
     assert (ft.MP3, ft.M4A, ft.FLAC, ft.WAV, ft.AIFF) == (1, 4, 5, 11, 12)

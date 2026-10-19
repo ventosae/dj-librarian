@@ -90,6 +90,7 @@ def test_tool_list_and_which_ones_are_read_only():
         "dj_copy_preview", "dj_push_preview", "dj_build_preview", "dj_tree_apply", "dj_apply_write",
         "dj_copy_apply", "dj_push_apply", "dj_build_apply",
         "dj_tidy_audit", "dj_tidy_dupes", "dj_tidy_plan", "dj_tidy_apply_preview", "dj_tidy_apply", "dj_tidy_undo",
+        "dj_library_inspect",
     }
     writers = {n for n, t in tools.items() if not t.annotations.read_only_hint}
     assert writers == {"dj_plan", "dj_tree_apply", "dj_apply_write", "dj_copy_apply", "dj_push_apply",
