@@ -18,6 +18,8 @@ DOOR1_MODULES = [
     "dj.libfolder",
     "dj.treeschema",
     "dj.onboarding",
+    "dj.analysis.common",
+    "dj.analysis.profile",
 ]
 
 

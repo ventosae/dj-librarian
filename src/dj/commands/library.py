@@ -1,4 +1,5 @@
-"""`dj library ...`: the library model (XML export or master.db snapshot). Read-only here."""
+"""`dj library ...`: the library model (XML export or master.db snapshot) and its analysis.
+Nothing here writes to rekordbox; `profile` writes text files into the library folder."""
 
 from __future__ import annotations
 
@@ -9,6 +10,9 @@ from typing import Any, Iterator
 
 import typer
 
+from dj import libfolder
+from dj.analysis import profile as profile_analysis
+from dj.analysis.common import parse_day
 from dj.model import Library, LibraryError, PlaylistNode
 from dj.readers.xml import XML_FIELDS_MISSING, XML_NOTES, read_xml
 
@@ -22,7 +26,7 @@ NAME_LIMIT = 120  # characters of a name shown; longer names end in "..."
 library_app = typer.Typer(
     add_completion=False, no_args_is_help=True, pretty_exceptions_show_locals=False,
     help="The DJ's library as one model, read from a rekordbox XML export or a master.db "
-         "snapshot. Read-only: nothing here writes to rekordbox.",
+         "snapshot, and measured. Nothing here writes to rekordbox.",
 )  # fmt: skip
 
 
@@ -140,3 +144,27 @@ def inspect(
             raise typer.Exit(EXIT_ERROR)
     data = summary(lib, reader_log.snapshot)
     typer.echo(json.dumps(data, indent=2, ensure_ascii=False) if as_json else "\n".join(_lines(data)))
+
+
+@library_app.command("profile")
+def profile_cmd(
+    library: str = typer.Option(None, "--library", help="The dj-library folder. Default: the configured one."),
+    xml: str = typer.Option(None, "--xml", help="Read this collection XML instead of the latest export."),
+    today: str = typer.Option(None, "--today", help="Date written into the files, YYYY-MM-DD. Default: today."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Measure the library: writes profile/stats.md, profile/facts.json and a log.md line.
+
+    R-311. Reads the export only: nothing goes to rekordbox, Spotify or audio files (R-341)."""
+    try:
+        root = libfolder.configured_root() if not library else library
+        result = profile_analysis.run(root, xml=xml, today=parse_day(today))
+    except (LibraryError, OSError, ValueError) as exc:
+        typer.echo(f"ERROR {exc}", err=True)
+        raise typer.Exit(EXIT_ERROR)
+    if as_json:
+        typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+    lines = [f"wrote {path}" for path in result["written"]] + [f"source: {result['source']}", ""]
+    lines += [f"{h['label']}: {h['value']} ({h['note']})" for h in result["headline"]]
+    typer.echo("\n".join(lines))
