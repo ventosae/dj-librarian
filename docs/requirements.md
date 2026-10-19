@@ -148,8 +148,8 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
-| R-1001 | `voice.md`: Chuck Fresh style guide — first-person working DJ, blunt, practical, unsentimental, war-story examples, "smart music programmer" stance — with our own do / don't examples. No book text (C-08). | M | Every skill references it; a reviewer finds no book text. | Agreed | v0.1 |
-| R-1002 | `adhd.md`: the 10 i-have-adhd rules (lead with next action; number steps; end with one < 2-min action; no tangents; restate state; concrete time estimates; make finished work visible; matter-of-fact errors; cap lists at 5; no preamble or pleasantries). | M | Pre-send checklist in each SKILL.md. | Agreed | v0.1 |
+| R-1001 | `voice.md`: Chuck Fresh style guide — first-person working DJ, blunt, practical, unsentimental, war-story examples, "smart music programmer" stance — with our own do / don't examples. No book text (C-08). | M | Every skill references it; a reviewer finds no book text. | Built | v0.1 |
+| R-1002 | `adhd.md`: the 10 i-have-adhd rules (lead with next action; number steps; end with one < 2-min action; no tangents; restate state; concrete time estimates; make finished work visible; matter-of-fact errors; cap lists at 5; no preamble or pleasantries). | M | Pre-send checklist in each SKILL.md. | Built | v0.1 |
 | R-1003 | Every report, MD file and chat reply passes both checklists. | M | Spot check on 3 outputs. | Agreed | v0.1 |
 
 ### E11 Write-safety (product feature)
