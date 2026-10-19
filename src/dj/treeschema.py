@@ -18,17 +18,25 @@ one of `playlist | folder | smart`:
           rules_raw: "My Tag is dark AND BPM > 130"   # what v1 rules cannot say
 
 Unknown keys and two names at one level that differ only in case or outer spaces are errors.
+
+`from_library(lib)` turns the DJ's real tree into a TreeDoc: `structure/current-tree.yaml`
+(R-322). rekordbox allows two siblings with the same name; a tree file does not, so
+`level_names` writes a repeat as "Name (2)".
 """
 
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
 
 import yaml
+
+if TYPE_CHECKING:  # dj.model is Door 1 too; only the type is needed here
+    from dj.model import Library, PlaylistNode
 
 KINDS = ("playlist", "folder", "smart")
 META_KEYS = ("name", "family", "principle", "source", "generated")
@@ -378,6 +386,87 @@ def to_tree_nodes(doc: TreeDoc) -> list[Any]:
         )
 
     return [convert(node, "tree") for node in _nodes_of(doc)]
+
+
+# -- the DJ's real tree (R-322) ------------------------------------------------------------
+
+UNNAMED = "(unnamed)"  # a playlist or folder whose rekordbox name is blank
+NO_RULES = "(no rules stored)"  # a smart playlist whose source holds no rule text
+
+
+def level_names(names: Sequence[str]) -> list[str]:
+    """The names of one tree level as a tree file can hold them, in the same order.
+
+    rekordbox allows two siblings with the same name; `parse` refuses names that differ only
+    in case or outer spaces. So: outer spaces are trimmed, a blank name becomes "(unnamed)",
+    and every repeat after the first gets the first free suffix " (2)", " (3)" ... A name that
+    is unique at its level keeps its text, even one that looks like a suffix ("Warm (2)"):
+    those are reserved before any repeat is numbered. Same names in, same names out.
+    """
+    bases = [str(name).strip() or UNNAMED for name in names]
+    taken: set[str] = set()
+    repeats: list[bool] = []
+    for base in bases:
+        repeats.append(norm(base) in taken)
+        taken.add(norm(base))
+    out = []
+    for base, repeat in zip(bases, repeats):
+        if not repeat:
+            out.append(base)
+            continue
+        n = 2
+        while norm(f"{base} ({n})") in taken:
+            n += 1
+        name = f"{base} ({n})"
+        taken.add(norm(name))
+        out.append(name)
+    return out
+
+
+def from_library(lib: Library, *, today: date | None = None) -> TreeDoc:
+    """The playlist tree of `lib` as a TreeDoc: the body of `structure/current-tree.yaml`.
+
+    Folders, playlists and smart playlists in tree order, names as `level_names` makes them.
+    Playlists carry no `from` and no tracks: the file is the shape, the tracks stay in
+    rekordbox. A smart playlist keeps its rules as `rules_raw` (master.db's raw SmartList
+    XML), because v1 rules cannot say everything rekordbox can; an XML export has no smart
+    playlists. meta = {"source": lib.source, "generated": ISO date}: `today` if given, else
+    the date the Library was read (`lib.read_at`), so the same Library gives the same doc.
+    Guarantee (R-322): `parse(yaml.safe_load(dumps(from_library(lib)))) == from_library(lib)`.
+    """
+    return TreeDoc(_library_level(lib.roots), {"source": lib.source, "generated": _generated(lib, today)})
+
+
+def _library_level(nodes: Sequence[PlaylistNode]) -> tuple[TreeNode, ...]:
+    out = []
+    for node, name in zip(nodes, level_names([n.name for n in nodes])):
+        if node.kind == "folder":
+            out.append(TreeNode("folder", name, children=_library_level(node.children)))
+        elif node.kind == "smart":
+            out.append(TreeNode("smart", name, rules_raw=_raw_rules(node.rules)))
+        else:
+            out.append(TreeNode("playlist", name))
+    return tuple(out)
+
+
+def _raw_rules(rules: Sequence[Any]) -> str:
+    """One text for a smart node's raw rules (readers give `({"raw": "<NODE ...>"},)`)."""
+    parts = []
+    for rule in rules or ():
+        if isinstance(rule, Mapping) and isinstance(rule.get("raw"), str):
+            parts.append(rule["raw"].strip())
+        else:
+            parts.append(json.dumps(rule, sort_keys=True, ensure_ascii=False, default=str))
+    return "\n".join(p for p in parts if p) or NO_RULES
+
+
+def _generated(lib: Library, today: date | None) -> str:
+    if today is not None:
+        return today.isoformat()
+    try:
+        return datetime.fromisoformat(str(lib.read_at)).date().isoformat()
+    except ValueError:
+        return date.today().isoformat()  # a Library built without read_at
 
 
 # -- diff ----------------------------------------------------------------------------------

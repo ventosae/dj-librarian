@@ -20,6 +20,8 @@ DOOR1_MODULES = [
     "dj.onboarding",
     "dj.analysis.common",
     "dj.analysis.profile",
+    "dj.analysis",
+    "dj.analysis.structure",
 ]
 
 

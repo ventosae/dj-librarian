@@ -12,6 +12,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - `dj-start` skill: onboarding session 1 in six steps (device, export card per OS, folder, work phase, report, next) with `scripts/start.py` (`find-xml`, `init`) (W-13).
 - `plugin/shared/voice.md` (our own do/don't pairs, no book text) and `plugin/shared/adhd.md` (the 10 reply rules, attributed); every skill ends with the pre-send checklist, enforced by `tests/test_skills.py` (W-19).
 - `dj-profile` skill: measured profile (`profile/stats.md`, `profile/facts.json`: size, formats, bitrates, eras, timeline, field use, duplicates, the 5 stats that matter); `dj library profile` (W-14).
+- `dj-structure` skill: tree depth and width, naming, sizes, overlap (Jaccard), orphans, empty playlists, dumps, smart vs plain (`structure/analysis.md`, `graph.json`, `facts.json`) and the current tree as code (`structure/current-tree.yaml`, `treeschema.from_library`); `dj library structure` (W-15).
 
 ### Changed
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.

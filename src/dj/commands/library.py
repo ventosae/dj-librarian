@@ -1,20 +1,28 @@
 """`dj library ...`: the library model (XML export or master.db snapshot) and its analysis.
-Nothing here writes to rekordbox; `profile` writes text files into the library folder."""
+
+Nothing here writes to rekordbox: `inspect` only reads; `profile` and `structure` write text
+files in the library folder (R-341).
+"""
 
 from __future__ import annotations
 
 import json
 import logging
 from contextlib import contextmanager
+from datetime import date
+from pathlib import Path
 from typing import Any, Iterator
 
 import typer
 
 from dj import libfolder
 from dj.analysis import profile as profile_analysis
+from dj.analysis import structure as structure_analysis
 from dj.analysis.common import parse_day
+from dj.libfolder import configured_root
 from dj.model import Library, LibraryError, PlaylistNode
 from dj.readers.xml import XML_FIELDS_MISSING, XML_NOTES, read_xml
+from dj.treeschema import TreeSchemaError
 
 EXIT_ERROR = 1
 # The tree part of `inspect` is bounded so the MCP result stays under the tool-result limit
@@ -26,7 +34,7 @@ NAME_LIMIT = 120  # characters of a name shown; longer names end in "..."
 library_app = typer.Typer(
     add_completion=False, no_args_is_help=True, pretty_exceptions_show_locals=False,
     help="The DJ's library as one model, read from a rekordbox XML export or a master.db "
-         "snapshot, and measured. Nothing here writes to rekordbox.",
+         "snapshot, and its analysis. Nothing here writes to rekordbox.",
 )  # fmt: skip
 
 
@@ -168,3 +176,37 @@ def profile_cmd(
     lines = [f"wrote {path}" for path in result["written"]] + [f"source: {result['source']}", ""]
     lines += [f"{h['label']}: {h['value']} ({h['note']})" for h in result["headline"]]
     typer.echo("\n".join(lines))
+
+
+def _structure_lines(result: dict[str, Any]) -> list[str]:
+    c = result["counts"]
+    lines = [
+        f"structure: read {result['source']} ({c['playlists'] + c['smart']} playlists, "
+        f"{c['folders']} folders, {c['tracks']} tracks)",
+        "wrote:",
+        *[f"  {path}" for path in result["written"]],
+    ]
+    if result["kept"]:
+        lines += ["kept your edited tree:", *[f"  {path}" for path in result["kept"]]]
+    lines += ["what it reveals:", *[f"  - {line}" for line in result["reveals"]]]
+    lines += ["", "Nothing was written to rekordbox."]
+    return lines
+
+
+@library_app.command()
+def structure(
+    library: str = typer.Option(None, "--library", help="The dj-library folder. Default: the configured one."),
+    xml: str = typer.Option(None, "--xml", help="A collection XML to read instead of the latest export."),
+    today: str = typer.Option(None, "--today", help="Date written into the files, YYYY-MM-DD. Default: today."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Measure the playlist tree: writes structure/analysis.md, graph.json, facts.json and
+    current-tree.yaml in the library folder, and one log.md line. Never writes to rekordbox."""
+    try:
+        day = date.fromisoformat(today) if today else None
+        root = Path(library) if library else configured_root()
+        result = structure_analysis.run(root, xml=xml, today=day)
+    except (LibraryError, TreeSchemaError, OSError, ValueError) as exc:
+        typer.echo(f"ERROR {exc}", err=True)
+        raise typer.Exit(EXIT_ERROR)
+    typer.echo(json.dumps(result, indent=2, ensure_ascii=False) if as_json else "\n".join(_structure_lines(result)))
