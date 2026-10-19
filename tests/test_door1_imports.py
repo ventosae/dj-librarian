@@ -15,6 +15,8 @@ DOOR1_MODULES = [
     "dj.model",
     "dj.readers.common",
     "dj.readers.xml",
+    "dj.libfolder",
+    "dj.treeschema",
 ]
 
 

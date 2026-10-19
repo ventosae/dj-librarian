@@ -210,8 +210,8 @@ def test_mcp_inspect_refuses_paths_outside_and_wrong_types(calls, folders, tmp_p
 
 def test_library_root_defaults_to_the_repo_dj_library_folder(monkeypatch, tmp_path):
     monkeypatch.delenv("DJ_LIBRARY", raising=False)
-    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
-    assert m.library_root() == tmp_path / "dj-library"
+    monkeypatch.setattr(m.libfolder, "REPO_ROOT", tmp_path)
+    assert m.library_root() == (tmp_path / "dj-library").resolve()
 
 
 def test_the_default_library_folder_is_gitignored():

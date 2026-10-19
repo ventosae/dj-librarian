@@ -17,7 +17,7 @@ Goal: one experienced DJ (Mac or Windows, Cowork) exports an XML, gets the HTML 
 | W-05 | Step 3: setup kit (CLAUDE.md, .gitignore, docs/, CHANGELOG) + W-10 prompt | R-1201–1207 | Delivered 20 Oct |
 | W-10 | PR: new repo `dj-librarian_01` scaffolded from the source code — allowlist copy, generalise, LICENSE, CONTRIBUTING, README, examples/, CI, `plugin/` manifest + marketplace | R-1201–1207, C-05 | Built 20 Oct |
 | W-11 | PR: XML reader → the shared track/tree model | R-104, R-204, R-322 | Built 20 Oct |
-| W-12 | PR: `dj-library/` scaffold + `library.yaml` schema + shared tree schema | R-901–905 | Pending |
+| W-12 | PR: `dj-library/` scaffold + `library.yaml` schema + shared tree schema | R-901–905 | Built 20 Oct |
 | W-13 | PR: `dj-start` skill (device chips, export card, folder step, scaffold, M1 card) | R-101–107 | Pending |
 | W-14 | PR: `dj-profile` (scripts + SKILL.md) | R-301, 302, 311, 312, 341 | Pending — parallel with W-15/16 |
 | W-15 | PR: `dj-structure` | R-321, 322 | Pending |
@@ -76,3 +76,4 @@ Goal: one experienced DJ (Mac or Windows, Cowork) exports an XML, gets the HTML 
 The contract is `docs/prompts/plans/v0.1-interfaces.md`. Each item lists here what it built differently.
 
 - **W-11.** `counts()["playlists"]` counts plain playlists; smart ones count under `smart`, and `entries` sums both. XML playlist ids are tree positions (`1.2.1`) because the export carries none. `tracks_in(folder)` and an ambiguous `node_at` raise `LibraryError`. `XML_FIELDS_MISSING` = `isrc, bit_depth, my_tags, has_artwork`; history and smart rules are in `XML_NOTES`. `read_db` retries the snapshot up to 3 times if master.db or its WAL changes during the copy. `dj library inspect --json` also returns `source_path`, `snapshot_path`, `rekordbox_version`, `notes`, and caps the tree sample (30 top nodes, 10 children each). R-322 (current tree as YAML) moves to W-15, after the tree schema (W-12).
+- **W-12.** The scaffolded `.gitignore` adds `/*.xml` (the export the DJ drops at the top) and `*.tmp`; on an existing `.gitignore`, scaffold appends the missing machine-path lines instead of skipping (`ScaffoldResult.gitignore_added`). `import_export` skips when identical content is already anywhere in `exports/`, refuses a truncated XML or an invalid `library.yaml`, and copies create-only (hard link or exclusive create). `exports.latest` must be `exports/<name>.xml`. `configured_root()` is always absolute and refuses a drive root or the home folder. `LibraryFolderError` subclasses `dj.model.LibraryError`. `treeschema.dumps` checks that the emitted YAML reads back identical. The breadboard's P3 "XML moved to exports/" is a copy (hard rule 1).

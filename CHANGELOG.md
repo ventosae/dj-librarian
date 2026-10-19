@@ -8,6 +8,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - Open-source scaffolding: LICENSE (Apache-2.0), CONTRIBUTING, examples, CI, plugin manifest and self-hosted marketplace (W-10).
 - `docs/`: requirements, plan, decisions, architecture, breadboard, lessons.
 - One library model (`dj.model`) fed by two readers: the rekordbox XML export (standard library only) and a read-only snapshot of master.db. `dj library inspect` and the MCP tool `dj_library_inspect` (W-11).
+- `dj-library/` folder: create-only scaffold (README, `library.yaml` schema v1, `links.yaml`, `log.md`, `.gitignore`), export import by copy, tool-written `log.md` lines, and one tree schema (`dj.treeschema`) shared by `bases.yaml`, `structure/current-tree.yaml` and `proposals/*.yaml` (W-12).
 
 ### Changed
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.

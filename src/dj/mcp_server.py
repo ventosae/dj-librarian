@@ -20,6 +20,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
 
+from dj import libfolder
 from dj.safety import REPO_ROOT
 from dj.tidy import TidyError
 from dj.tidy import config as tidy_config
@@ -60,10 +61,13 @@ def repo_file(path: str, suffixes: tuple[str, ...]) -> str:
 
 
 def library_root() -> Path:
-    """The configured dj-library folder: DJ_LIBRARY, else <repo>/dj-library.
-    W-12 replaces this with dj.libfolder.configured_root()."""
-    env = os.environ.get("DJ_LIBRARY", "").strip()
-    return Path(env).expanduser() if env else REPO_ROOT / "dj-library"
+    """The configured dj-library folder (dj.libfolder.configured_root): DJ_LIBRARY, else the
+    folder stored by remember_root, else <repo>/dj-library. A folder too wide to be a library
+    (a drive root, the home folder) is refused."""
+    try:
+        return libfolder.configured_root()
+    except libfolder.LibraryFolderError as exc:
+        raise ToolInputError(str(exc)) from exc
 
 
 def library_file(path: str, suffixes: tuple[str, ...]) -> str:
