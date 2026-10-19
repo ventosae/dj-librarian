@@ -21,7 +21,7 @@ Goal: one experienced DJ (Mac or Windows, Cowork) exports an XML, gets the HTML 
 | W-13 | PR: `dj-start` skill (device chips, export card, folder step, scaffold, M1 card) | R-101–107 | Built 20 Oct |
 | W-14 | PR: `dj-profile` (scripts + SKILL.md) | R-301, 302, 311, 312, 341 | Built 20 Oct |
 | W-15 | PR: `dj-structure` | R-321, 322 | Built 20 Oct |
-| W-16 | PR: `dj-taste` | R-331, 332 | Pending |
+| W-16 | PR: `dj-taste` | R-331, 332 | Built 20 Oct |
 | W-17 | PR: `dj-report` HTML (dataviz pass) | R-401–407 | Pending |
 | W-18 | PR: `dj-build` yaml → rekordbox XML + import card + log line | R-501–505, R-904 | Pending — plan mode |
 | W-19 | PR: `shared/voice.md` + `shared/adhd.md` + checklists in every skill | R-1001–1003 | Built 20 Oct |
@@ -82,3 +82,4 @@ The contract is `docs/prompts/plans/v0.1-interfaces.md`. Each item lists here wh
 - **W-19.** R-1003 ("spot check on 3 outputs") is not claimed: `tests/test_skills.py` holds three skipped slots for a report (W-17), an MD file (W-14) and a chat reply (W-28); the mechanical checker is `tests/reply_checks.py`. The append-only `## Log` sections of `taste/*.md` are records like `log.md` and are exempt from the five-item cap; their `## Now` summary is capped at 5 (decided at W-16 integration).
 - **W-14.** `dj.analysis.common` adds `library_folder()` (resolves `--library`, refuses a drive root or the home folder), `resolve_xml()` (a relative `--xml` is looked up in the library first) and `dup_key(artist, title, remixer)` (a remix named only in the Remixer field is not a duplicate of its original). R-312's acceptance ("Dijok says it sounds like him") is live (A-05); the skill gives Claude the habits.md template and the no-invented-numbers rule.
 - **W-15.** Dumps = more than 300 entries, or more than half the collection, or more than 25% of it and more than twice the median size of the other non-empty playlists. `overlap.contained` lists pairs where one playlist sits inside another; naming patterns ignore a leading number or date. Duplicate sibling names get a deterministic suffix (`Name (2)`) in `current-tree.yaml` and are listed as `naming.duplicates_renamed`; a proposal's `from` must use the real name. `current-tree.yaml` is regenerated each run, but if the DJ edited it, their file is first kept as `structure/current-tree.edited-<date>.yaml` (create-only).
+- **W-16.** Each `taste/*.md` has a `## Now` summary (at most 5 lines, regenerated each run) and an append-only `## Log` of dated, keyed entries (never rewritten; hand-written lines kept). A run adds at most 5 Log lines per file. `--rebuild` first keeps the old files in a dated backup folder. The CLI exits 2 (refused) when `--library` is not a library folder.

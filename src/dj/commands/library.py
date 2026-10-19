@@ -1,7 +1,7 @@
 """`dj library ...`: the library model (XML export or master.db snapshot) and its analysis.
 
-Nothing here writes to rekordbox: `inspect` only reads; `profile` and `structure` write text
-files in the library folder (R-341).
+Nothing here writes to rekordbox: `inspect` only reads; `profile`, `structure` and `taste`
+write text files in the library folder (R-341).
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import typer
 from dj import libfolder
 from dj.analysis import profile as profile_analysis
 from dj.analysis import structure as structure_analysis
+from dj.analysis import taste as taste_analysis
 from dj.analysis.common import parse_day
 from dj.libfolder import configured_root
 from dj.model import Library, LibraryError, PlaylistNode
@@ -25,6 +26,7 @@ from dj.readers.xml import XML_FIELDS_MISSING, XML_NOTES, read_xml
 from dj.treeschema import TreeSchemaError
 
 EXIT_ERROR = 1
+EXIT_REFUSED = 2
 # The tree part of `inspect` is bounded so the MCP result stays under the tool-result limit
 # (NFR-03): counts are complete, names are a sample.
 TOP_LIMIT = 30  # top-level nodes listed; the rest are counted in "tree_more"
@@ -210,3 +212,67 @@ def structure(
         typer.echo(f"ERROR {exc}", err=True)
         raise typer.Exit(EXIT_ERROR)
     typer.echo(json.dumps(result, indent=2, ensure_ascii=False) if as_json else "\n".join(_structure_lines(result)))
+
+
+SHOWN_LINES = 5  # added lines shown per file in the text output; --json carries all of them
+
+
+@library_app.command()
+def taste(
+    library: str = typer.Option("", "--library", help="The dj-library folder. Empty: the configured one."),
+    xml: str = typer.Option("", "--xml", help="Read this export instead of the latest one in exports/."),
+    today: str = typer.Option("", "--today", help="Date for new entries, YYYY-MM-DD. Empty: today."),
+    rebuild: bool = typer.Option(
+        False, "--rebuild", help="Rewrite taste/*.md from scratch. Only after the DJ said yes."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Measure the DJ's taste (lanes, labels, artists, anchors, words) and append it to taste/.
+
+    Appends, never rewrites (R-332): every run adds only new or changed lines and shows them.
+    Reads the export only; never writes to rekordbox, Spotify or audio files (R-341).
+    """
+    try:
+        day = date.fromisoformat(today) if today else None
+        folder = library or configured_root()
+        result = taste_analysis.run(folder, xml=xml or None, today=day, rebuild=rebuild)
+    except taste_analysis.NotALibraryFolder as exc:
+        typer.echo(f"REFUSED {exc}", err=True)
+        raise typer.Exit(EXIT_REFUSED)
+    except taste_analysis.TasteWriteError as exc:  # failed part way: still show what was added
+        if as_json:
+            typer.echo(json.dumps({"ok": False, "error": str(exc), "written": exc.written, "added": exc.added},
+                                  indent=2, ensure_ascii=False))  # fmt: skip
+        else:
+            typer.echo("\n".join(_added_lines(exc.added)))
+        typer.echo(f"ERROR {exc}", err=True)
+        raise typer.Exit(EXIT_ERROR)
+    except (LibraryError, OSError, ValueError) as exc:
+        typer.echo(f"ERROR {exc}", err=True)
+        raise typer.Exit(EXIT_ERROR)
+    if as_json:
+        typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+    c = result["counts"]
+    lines = [
+        f"taste: {c['lines_added']} lines added from {result['source']}"
+        + (" (rebuilt from scratch)" if result["rebuild"] else ""),
+        f"counts: {c['tracks']} tracks, {c['lanes']} lanes, {c['clusters']} clusters, "
+        f"{c['anchors']} anchors, {c['pairs']} pairs, {c['words']} words",
+    ]
+    if result["backup"]:
+        lines.append(f"old files kept in {result['backup']['folder']}")
+    lines += _added_lines(result["added"])
+    lines.append("log: " + result["log"])
+    typer.echo("\n".join(lines))
+
+
+def _added_lines(added: dict[str, list[str]]) -> list[str]:
+    """The diff per file (R-332): at most SHOWN_LINES lines each, then how many more."""
+    lines = []
+    for path, new in added.items():
+        lines.append(f"{path}: +{len(new)}")
+        lines += [f"  {line}" for line in new[:SHOWN_LINES]]
+        if len(new) > SHOWN_LINES:
+            lines.append(f"  ... {len(new) - SHOWN_LINES} more in {path}")
+    return lines
