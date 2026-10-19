@@ -1,0 +1,14 @@
+{
+  "name": "dj-librarian",
+  "owner": {
+    "name": "Anton Surov"
+  },
+  "description": "Self-hosted marketplace for dj-librarian, a rekordbox librarian you talk to through Claude.",
+  "plugins": [
+    {
+      "name": "dj-librarian",
+      "source": "./plugin",
+      "description": "A DJ librarian for rekordbox you talk to through Claude. Create and add only, dry-run first."
+    }
+  ]
+}

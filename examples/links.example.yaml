@@ -1,0 +1,5 @@
+# Copy to links.yaml. One entry per Spotify inbox playlist.
+#   spotify: playlist name, URL or ID (a playlist you own or collaborate on)
+#   crate:   path of a normal playlist that already exists in rekordbox
+- spotify: funk_109_bpm
+  crate: funk_base/funk_crate

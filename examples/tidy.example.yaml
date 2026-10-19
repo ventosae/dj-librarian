@@ -1,0 +1,53 @@
+# dj tidy configuration. Copy to tidy.yaml in the repo root and edit; every `dj tidy` run re-reads it.
+# Lines marked "verify" are values not yet confirmed against a Pioneer spec sheet:
+# the audit shows which profile each finding comes from, so a wrong value is visible.
+
+roots: ["/path/to/your/music"]    # folder targets AND file writes are limited to these
+enforce_roots_for_writes: true    # a plan item outside roots is SKIP_OUTSIDE_ROOTS
+
+id3_version: 3                    # rekordbox + CDJ + Windows Explorer all read ID3v2.3
+
+naming:
+  template: "{artist} - {title}{mix}"   # {mix} renders as " (Mix)" or nothing
+  artist_join_two: " & "
+  artist_join_many: ", "                 # A, B & C  (the last joiner is artist_join_two)
+  omit_mixes: ["Original Mix", "Original Version", "Original"]   # dropped from the FILENAME only; TIT3 keeps it
+  title_includes_mix: true               # TIT2 = "Title (Mix)", the way rekordbox and Beatport show it
+  nfc: true
+  max_path: 240                          # full Windows path length, chars (MAX_PATH is 260)
+
+art:
+  local_names: ["cover.jpg", "cover.jpeg", "folder.jpg", "{stem}.jpg"]   # next to the track
+  embed_max_px: 800                      # CDJ artwork rule: JPEG, max 800x800 (verify)
+  jpeg_quality: 90
+
+bpm_expectations:                        # expected BPM from the crate / folder name; first match wins
+  - regex: "(?i)(?<![0-9])(?P<bpm>[0-9]{2,3})_?bpm"      # funk_109_bpm -> 109
+
+duplicates:
+  duration_tolerance_s: 2
+
+default_profiles: [cdj3000_family, nxs2_family]
+
+profiles:
+  - name: cdj3000_family
+    notes: "CDJ-3000, XDJ-RX3, OPUS-QUAD (rekordbox 7 export)"
+    formats: [mp3, m4a, wav, aiff, flac]           # m4a = AAC or ALAC. verify ALAC on OPUS-QUAD
+    max_bit_depth: 24                              # verify
+    sample_rates: [44100, 48000, 88200, 96000]     # verify (88.2/96 kHz for FLAC/ALAC/WAV/AIFF)
+    mp3_min_kbps: 320                              # a quality floor, not a hardware limit (CDJs play 32-320)
+    mp3_allow_vbr: true                            # verify (VBR seek accuracy on older firmware)
+    art: {formats: [jpeg], max_px: 800, min_px: 300, max_bytes: 1048576}
+    max_path: 240
+    forbidden_chars: '<>:"/\|?*'
+
+  - name: nxs2_family
+    notes: "CDJ-2000NXS2, XDJ-1000MK2 (rekordbox 6/7 export)"
+    formats: [mp3, m4a, wav, aiff, flac]           # FLAC/ALAC need current NXS2 firmware. verify
+    max_bit_depth: 24                              # verify
+    sample_rates: [44100, 48000, 88200, 96000]     # verify
+    mp3_min_kbps: 320
+    mp3_allow_vbr: true
+    art: {formats: [jpeg], max_px: 800, min_px: 300, max_bytes: 1048576}
+    max_path: 240
+    forbidden_chars: '<>:"/\|?*'

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "dj-librarian": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/..", "--no-sync", "dj-mcp"]
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "dj-librarian",
+  "version": "0.1.0",
+  "description": "A DJ librarian for rekordbox you talk to through Claude. Syncs Spotify inboxes into crates, builds playlist trees and tidies tags. Create and add only, dry-run first, nothing written without your yes.",
+  "author": {
+    "name": "Anton Surov"
+  },
+  "license": "Apache-2.0",
+  "repository": "https://github.com/OWNER/dj-librarian",
+  "keywords": ["rekordbox", "dj", "spotify", "playlists", "music-library", "id3", "mcp"]
+}

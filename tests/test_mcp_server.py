@@ -1,0 +1,172 @@
+import asyncio
+import json
+from types import SimpleNamespace
+
+import pytest
+
+from dj import mcp_server as m
+
+
+@pytest.fixture
+def calls(monkeypatch):
+    """Capture the command line instead of running it."""
+    seen = []
+
+    def fake_run(cmd, **kwargs):
+        seen.append((cmd, kwargs))
+        return SimpleNamespace(returncode=0, stdout='{"x": 1}', stderr="")
+
+    monkeypatch.setattr(m.subprocess, "run", fake_run)
+    return seen
+
+
+def args(calls):
+    return calls[-1][0][3:]  # after: python -m dj.cli
+
+
+def test_every_call_is_an_argument_list_with_no_shell_and_no_stdin(calls):
+    m.dj_match("hypnotic_texture")
+    cmd, kwargs = calls[-1]
+    assert cmd[1:3] == ["-m", "dj.cli"] and isinstance(cmd, list)
+    assert "shell" not in kwargs and kwargs["stdin"] == m.subprocess.DEVNULL
+    assert args(calls) == ["match", "--json", "--", "hypnotic_texture"]
+
+
+def test_a_value_can_never_become_an_option(calls):
+    m.dj_copy_preview("--apply", "target")
+    assert args(calls) == ["copy", "--json", "--", "--apply", "target"]
+
+
+def test_preview_tools_never_pass_apply(calls):
+    m.dj_status()
+    m.dj_match("l")
+    m.dj_pull("l")
+    m.dj_copy_preview("a", "b")
+    m.dj_push_preview("p")
+    assert all("--apply" not in c[0][: c[0].index("--")] if "--" in c[0] else "--apply" not in c[0] for c in calls)
+
+
+def test_write_tools_pass_apply(calls):
+    m.dj_copy_apply("a", "b")
+    assert args(calls) == ["copy", "--apply", "--json", "--", "a", "b"]
+    m.dj_push_apply("p", name="n", include_ambiguous=True)
+    assert args(calls) == ["push", "--apply", "--name", "n", "--include-ambiguous", "--json", "--", "p"]
+
+
+def test_file_arguments_must_be_inside_the_repo(calls, tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+    (tmp_path / "bases.yaml").write_text("[]")
+    (tmp_path / "secret.env").write_text("x")
+    outside = tmp_path.parent / "evil.yaml"
+    outside.write_text("[]")
+
+    assert json.loads(m.dj_tree_preview("bases.yaml"))["ok"] is True
+    for bad in (str(outside), "../evil.yaml", "secret.env", "missing.yaml"):
+        answer = json.loads(m.dj_tree_apply(bad))
+        assert answer["ok"] is False and "error" in answer
+    assert len(calls) == 1  # only the good one ran
+
+
+def test_exit_code_2_tells_the_agent_to_wait_not_to_work_around(monkeypatch):
+    monkeypatch.setattr(m.subprocess, "run", lambda cmd, **k: SimpleNamespace(
+        returncode=2, stdout="", stderr="[x] WARNING - Rekordbox is running!\nSTOP rekordbox.exe is running."))
+    answer = json.loads(m.dj_copy_apply("a", "b"))
+    assert (answer["ok"], answer["exit_code"]) == (False, 2)
+    assert "close it" in answer["hint"] and answer["stderr"] == ["STOP rekordbox.exe is running."]
+
+
+def test_timeout_is_reported(monkeypatch):
+    def slow(cmd, **k):
+        raise m.subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(m.subprocess, "run", slow)
+    assert json.loads(m.dj_status())["ok"] is False
+
+
+def test_tool_list_and_which_ones_are_read_only():
+    tools = {t.name: t for t in asyncio.run(m.server.list_tools())}
+    assert set(tools) == {
+        "dj_status", "dj_tree_preview", "dj_pull", "dj_match", "dj_plan", "dj_apply_preview",
+        "dj_copy_preview", "dj_push_preview", "dj_build_preview", "dj_tree_apply", "dj_apply_write",
+        "dj_copy_apply", "dj_push_apply", "dj_build_apply",
+        "dj_tidy_audit", "dj_tidy_dupes", "dj_tidy_plan", "dj_tidy_apply_preview", "dj_tidy_apply", "dj_tidy_undo",
+    }
+    writers = {n for n, t in tools.items() if not t.annotations.read_only_hint}
+    assert writers == {"dj_plan", "dj_tree_apply", "dj_apply_write", "dj_copy_apply", "dj_push_apply",
+                       "dj_build_apply", "dj_tidy_plan", "dj_tidy_apply", "dj_tidy_undo"}
+    assert not any(t.annotations.destructive_hint for t in tools.values())
+    assert "file" in tools["dj_tree_apply"].input_schema["properties"]  # schema survives @guarded
+
+
+def test_there_is_no_generic_command_tool():
+    names = [t.name for t in asyncio.run(m.server.list_tools())]
+    assert not any(w in n for n in names for w in ("exec", "shell", "run", "command"))
+
+
+@pytest.fixture
+def roots(tmp_path, monkeypatch):
+    """tidy.yaml roots = tmp_path/music, without reading the real file."""
+    from dj.tidy import config as cfg_mod
+
+    music = tmp_path / "music"
+    music.mkdir()
+    (tmp_path / "tidy.yaml").write_text(
+        f'roots: ["{music.as_posix()}"]\nprofiles:\n  - {{name: p, formats: [mp3], max_bit_depth: 24, sample_rates: [44100]}}\n')
+    real = cfg_mod.load_config
+    monkeypatch.setattr(m.tidy_config, "load_config", lambda path=None: real(tmp_path / "tidy.yaml"))
+    return music
+
+
+def test_tidy_target_is_exactly_one(calls):
+    for bad in (dict(), dict(crate="a", all_tracks=True), dict(crate="a", folder="b")):
+        answer = json.loads(m.dj_tidy_audit(**bad))
+        assert answer["ok"] is False and "exactly one" in answer["error"]
+    assert calls == []
+
+
+def test_tidy_all_and_folder_go_before_the_double_dash_and_a_crate_after(calls, roots):
+    m.dj_tidy_audit(all_tracks=True)
+    assert args(calls) == ["tidy", "audit", "--all", "--brief", "--json"]
+    m.dj_tidy_audit(crate="--all", brief=False, profiles="cdj3000_family, nxs2_family")
+    assert args(calls) == ["tidy", "audit", "--profile", "cdj3000_family", "--profile", "nxs2_family", "--json", "--", "--all"]
+    m.dj_tidy_dupes(folder=str(roots))
+    assert args(calls) == ["tidy", "dupes", "--folder", str(roots.resolve()), "--json"]
+
+
+def test_tidy_folder_must_be_a_directory_inside_a_root(calls, roots, tmp_path):
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (roots / "a.mp3").write_bytes(b"x")
+    for bad in (str(outside), str(roots / "a.mp3"), str(roots / "missing")):
+        answer = json.loads(m.dj_tidy_plan(folder=bad))
+        assert answer["ok"] is False and "error" in answer
+    assert calls == []
+    assert json.loads(m.dj_tidy_plan(folder=str(roots), rename=True))["ok"] is True
+    assert args(calls) == ["tidy", "plan", "--folder", str(roots.resolve()), "--rename", "--art", "local", "--json"]
+
+
+def test_tidy_plan_flags_and_art_whitelist(calls):
+    m.dj_tidy_plan(crate="x/y", rename_imported=True, art="online")
+    assert args(calls) == ["tidy", "plan", "--rename-imported", "--art", "local", "--json", "--", "x/y"]
+
+
+def test_tidy_preview_and_write_tools(calls, tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "REPO_ROOT", tmp_path)
+    plan = tmp_path / "p.plan.json"
+    plan.write_text("{}")
+    m.dj_tidy_apply_preview("p.plan.json")
+    assert args(calls) == ["tidy", "apply", "--json", "--", str(plan.resolve())]
+    m.dj_tidy_apply("p.plan.json", strict=True)
+    assert args(calls) == ["tidy", "apply", "--apply", "--strict", "--json", "--", str(plan.resolve())]
+    m.dj_tidy_undo("p.plan.json")
+    assert args(calls) == ["tidy", "undo", "--apply", "--json", "--", str(plan.resolve())]
+    assert json.loads(m.dj_tidy_apply("../outside.json"))["ok"] is False
+
+
+def test_a_stripped_environment_is_filled_in(calls, monkeypatch):
+    for key in ("ProgramFiles", "PROGRAMFILES", "APPDATA", "SystemRoot", "SYSTEMROOT"):
+        monkeypatch.delenv(key, raising=False)
+    m.dj_status()
+    env = {k.upper(): v for k, v in calls[-1][1]["env"].items()}
+    assert env["PROGRAMFILES"] and env["APPDATA"].endswith("Roaming") and env["SYSTEMROOT"]
+    assert env["PYTHONUTF8"] == "1"

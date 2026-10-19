@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+.cache/
+
+# User library state — lives in each user's dj-library/ folder, never in the repo
+backups/
+inbox/
+plans/
+reports/
+state/
+wishlist/
+tracklists/
+*.db
+*.db-wal
+*.db-shm
+
+# Maintainer's own files (kept in place for daily use, never tracked)
+STATE.md
+log.md
+CRATES.md
+links.yaml
+tidy.yaml
+bases.yaml
+tree.yaml
+dj-console.ps1
+Claude outputs/
+local/
+*.local.*
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Plugin caches
+plugin/.mcpb-cache/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

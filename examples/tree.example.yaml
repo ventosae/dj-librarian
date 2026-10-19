@@ -1,0 +1,34 @@
+# The rekordbox playlist tree. Copy to tree.yaml and edit.
+# `dj tree` shows the plan, `dj tree --apply` creates what is missing.
+# Existing nodes are skipped, never changed.
+- playlist: 00 inbox
+- folder: 01 sets
+  children:
+    - playlist: example set - warm up
+    - playlist: example set - peak time
+- folder: 02 mood
+  children:
+    - smart: uplifting
+      rules: [{comment_contains: "#uplifting"}]
+    - smart: dark
+      rules: [{comment_contains: "#dark"}]
+- folder: 03 genre
+  children:
+    - smart: house
+      rules: [{genre_contains: "house"}]
+    - smart: techno
+      rules: [{genre_contains: "techno"}]
+    - smart: disco
+      rules: [{genre_contains: "disco"}]
+    - smart: funk + soul
+      rules: [{genre_contains: "funk"}]
+# The rule types below have unconfirmed encodings: `dj tree` plans them as HOLD
+# and does not create them without --allow-uncalibrated.
+- folder: 04 tempo
+  children:
+    - smart: 100-115
+      rules: [{bpm_range: [100, 115]}]
+    - smart: 115-128
+      rules: [{bpm_range: [115, 128]}]
+- smart: new - last 30 days
+  rules: [{added_last_days: 30}]

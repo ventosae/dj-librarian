@@ -1,0 +1,29 @@
+# The genre bases: one folder per genre, all the same shape. Copy to bases.yaml and edit.
+#   uv run dj tree --file bases.yaml            (dry-run)
+#   uv run dj tree --file bases.yaml --apply    (only after you said yes to the dry-run)
+# Existing nodes are skipped, never changed. If a base folder exists already, only what
+# is new is created under it. New nodes are appended at the end of their folder.
+- folder: house_base
+  children:
+    - playlist: "0_INBOX"
+    - playlist: "1_CRATES"
+    - playlist: "1.1_warm_up"
+    - playlist: "1.2_groovy"
+    - playlist: "1.3_peak"
+    - playlist: "1.4_closing"
+    - playlist: "2_SETS"
+- folder: techno_base
+  children:
+    - playlist: "0_INBOX"
+    - playlist: "1_CRATES"
+    - playlist: "1.1_hypnotic"
+    - playlist: "1.2_driving"
+    - playlist: "1.3_peak"
+    - playlist: "2_SETS"
+- folder: disco_base
+  children:
+    - playlist: "0_INBOX"
+    - playlist: "1_CRATES"
+    - playlist: "1.1_classics"
+    - playlist: "1.2_edits"
+    - playlist: "2_SETS"
