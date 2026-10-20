@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
@@ -374,6 +375,42 @@ def analyze_cmd(
         typer.echo("\n".join(lines))
     if result["failed"]:
         raise typer.Exit(EXIT_ERROR)
+
+
+# -- dj library use (R-102: the engine card's step 2) ----------------------------------------
+
+
+@library_app.command()
+def use(
+    folder: str = typer.Argument(..., help="The DJ's dj-library folder (set up by dj-start)."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Tell the engine where the dj-library folder is: stores its absolute path in
+    state/library-path.txt (gitignored) and prints it. The MCP tools then read and write there.
+    The DJ_LIBRARY environment variable, when set, still wins."""
+    path = Path(folder).expanduser()
+    if not path.is_dir():
+        _fail(f"{folder} is not a folder. Point it at the dj-library folder dj-start set up.")
+    if not (path / "library.yaml").is_file():
+        typer.echo(f"REFUSED {path} is not a dj-library folder (no library.yaml). Set it up with dj-start "
+                   "first, or point at the folder that holds library.yaml. Nothing was stored.", err=True)  # fmt: skip
+        raise typer.Exit(EXIT_REFUSED)
+    try:
+        if os.environ.get(libfolder.ENV_VAR, "").strip():
+            libfolder.configured_root()  # an unusable DJ_LIBRARY refuses before anything is stored
+        stored = libfolder.remember_root(path)
+        effective = libfolder.configured_root()
+    except libfolder.LibraryFolderError as exc:
+        typer.echo(f"REFUSED {exc} Nothing was stored.", err=True)
+        raise typer.Exit(EXIT_REFUSED)
+    data = {"library": str(stored), "stored_in": "state/library-path.txt", "in_use": str(effective)}
+    if as_json:
+        typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
+        return
+    lines = [f"Library folder: {stored}", "Stored in state/library-path.txt."]
+    if effective != stored:
+        lines.append(f"DJ_LIBRARY is set and wins for now: {effective}")
+    typer.echo("\n".join(lines))
 
 
 # -- dj library build (R-501..R-505) -------------------------------------------------------

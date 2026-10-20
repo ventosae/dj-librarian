@@ -18,6 +18,9 @@ since the preview (another digest).
 One preview id, one write: a used record is never re-armed. Previewing the same content again
 after its write gives the same id, still marked used, so `check` refuses it; a new write needs
 changed content (and so a new id). Previewing unused content again refreshes its time.
+`record(..., rearm=True)` (the dj CLI's writers, whose target can return to its earlier state)
+keeps the used record used and gives the new preview the next id of the same content instead
+(generation 1, 2, ...): the old id stays refused, the new one allows one write.
 
 The clock: `now` is a parameter everywhere (tests pass a fixed time); None = the wall clock.
 Times are stored and compared in UTC, so a clock change (daylight saving, travel) neither
@@ -38,6 +41,7 @@ from dj.libfolder import write_text
 
 MAX_AGE = timedelta(hours=24)
 CLOCK_SKEW = timedelta(minutes=5)  # a record this far in the future is refused
+MAX_GENERATIONS = 1000  # rearm: fresh ids of one content, a bound on the lookup
 ID_LENGTH = 12
 ID_PATTERN = re.compile(rf"^[0-9a-f]{{{ID_LENGTH}}}$")
 
@@ -56,17 +60,18 @@ def canonical(args: Mapping[str, Any]) -> str:
         raise GateError(f"preview arguments must be plain JSON values: {exc}") from exc
 
 
-def preview_id_for(kind: str, args: Mapping[str, Any], digest: str) -> str:
-    """The id a preview of `kind` with `args` over content `digest` gets."""
+def preview_id_for(kind: str, args: Mapping[str, Any], digest: str, generation: int = 0) -> str:
+    """The id a preview of `kind` with `args` over content `digest` gets. `generation` n > 0: the
+    id of the n-th fresh preview of the same content after the earlier ones were used (rearm)."""
     _check_kind(kind)
     _check_digest(digest)
-    text = "\n".join((kind, canonical(args), digest))
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:ID_LENGTH]
+    parts = [kind, canonical(args), digest] + ([str(generation)] if generation else [])
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:ID_LENGTH]
 
 
 def valid_id(preview_id: Any) -> bool:
     """12 lower-case hex digits: the only shape a preview id has."""
-    return isinstance(preview_id, str) and bool(ID_PATTERN.match(preview_id))
+    return isinstance(preview_id, str) and bool(ID_PATTERN.fullmatch(preview_id))  # no trailing newline
 
 
 def require_id(preview_id: Any) -> str:
@@ -109,18 +114,27 @@ class Gate:
         digest: str,
         *,
         now: datetime | None = None,
+        rearm: bool = False,
     ) -> str:
         """Record a preview and return its id.
 
         An unused record with the same id is replaced fresh. A used one is kept as it is: the
-        id stays used (one preview, one write); `load(id).used` tells the caller.
+        id stays used (one preview, one write); `load(id).used` tells the caller. With `rearm`,
+        the preview instead gets the first id of the same content whose record is not used
+        (generation 1, 2, ...), recorded fresh; the used ids stay refused.
         """
-        preview_id = preview_id_for(kind, args, digest)
-        try:
-            if self.load(preview_id).used:
+        for generation in range(MAX_GENERATIONS):
+            preview_id = preview_id_for(kind, args, digest, generation)
+            try:
+                used = self.load(preview_id).used
+            except GateError:
+                break  # no record yet, or an unreadable one: write a fresh record
+            if not used:
+                break
+            if not rearm:
                 return preview_id
-        except GateError:
-            pass  # no record yet, or an unreadable one: write a fresh record
+        else:
+            raise GateError(f"This exact {kind} write already ran {MAX_GENERATIONS} times. Nothing recorded.")
         data = {
             "id": preview_id,
             "kind": kind,

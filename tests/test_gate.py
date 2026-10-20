@@ -180,6 +180,38 @@ def test_previewing_unused_content_again_refreshes_its_time(gate):
     gate.check(pid, "build", ARGS, DIGEST, now=T0 + timedelta(hours=30))  # 10 h after the second
 
 
+def test_rearm_gives_a_used_plan_a_new_id_for_one_more_write(gate):
+    """The dj CLI's writers: the target can return to its earlier state, so the same plan must be
+    writable again after a new preview. The used id stays refused; the new one allows one write."""
+    later = T0 + timedelta(hours=1)
+    first = gate.record("push", ARGS, DIGEST, now=T0, rearm=True)
+    assert first == preview_id_for("push", ARGS, DIGEST)  # an unused plan: the plain id
+    assert gate.record("push", ARGS, DIGEST, now=T0, rearm=True) == first  # still unused: same id
+    gate.consume(first, now=T0)
+    second = gate.record("push", ARGS, DIGEST, now=later, rearm=True)
+    assert second != first and second == preview_id_for("push", ARGS, DIGEST, 1) and valid_id(second)
+    assert gate.record("push", ARGS, DIGEST, now=later, rearm=True) == second  # unused: same id again
+    assert gate.check(second, "push", ARGS, DIGEST, now=later).used is None
+    with pytest.raises(GateError, match="already used"):
+        gate.check(first, "push", ARGS, DIGEST, now=later)  # a replay of the used id
+    gate.consume(second, now=later)
+    third = gate.record("push", ARGS, DIGEST, now=later, rearm=True)
+    assert third not in (first, second) and third == preview_id_for("push", ARGS, DIGEST, 2)
+    assert gate.load(first).used and gate.load(second).used and not gate.load(third).used
+
+
+def test_without_rearm_a_used_plan_keeps_its_used_id(gate):
+    pid = gate.record("build", ARGS, DIGEST, now=T0)
+    gate.consume(pid, now=T0)
+    assert gate.record("build", ARGS, DIGEST, now=T0) == pid and gate.load(pid).used
+
+
+def test_a_trailing_newline_is_not_a_preview_id():
+    assert not valid_id("0123456789ab\n") and not valid_id("0123456789ab\r\n") and valid_id("0123456789ab")
+    with pytest.raises(GateError, match="not a preview id"):
+        require_id("0123456789ab\n")
+
+
 @pytest.mark.parametrize("content", ["{not json", "[]", '{"id": "0123456789ab"}', ""])
 def test_an_unreadable_record_is_refused(gate, content):
     gate.previews.mkdir(parents=True)

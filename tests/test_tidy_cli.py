@@ -126,6 +126,12 @@ def test_plan_writes_a_plan_file_and_refuses_overwrite(env):
     assert run("tidy", "plan", "--folder", env.root, "--config", env.yaml, "--overwrite").exit_code == 1
 
 
+def preview_id(command, plan_path, env, *extra):
+    """The preview id of a `dj tidy apply|undo` dry-run (R-1102): what --apply needs after a yes."""
+    result = run("tidy", command, plan_path, *extra, "--config", env.yaml, "--json")
+    return json.loads(result.output)["preview_id"]
+
+
 def _planned(env, decision="yes"):
     result = run("tidy", "plan", "--folder", env.root, "--config", env.yaml, "--json")
     plan_path = env.tmp / "plans" / json.loads(result.output)["plan"].replace("\\", "/").rsplit("/", 1)[-1]
@@ -161,17 +167,20 @@ def test_apply_refuses_while_rekordbox_runs(env, monkeypatch):
 def test_apply_then_undo_round_trip(env):
     a = make_audio(env.root / "Huerta - Low Five.mp3")
     plan_path = _planned(env)
-    result = run("tidy", "apply", plan_path, "--apply", "--config", env.yaml, "--json")
+    pid = preview_id("apply", plan_path, env)
+    result = run("tidy", "apply", plan_path, "--apply", "--preview-id", pid, "--config", env.yaml, "--json")
     assert result.exit_code == 0, text(result)
     payload = json.loads(result.output)
     assert payload["counts"]["applied"] == 1 and payload["undo"] and env.sessions.log == []
     assert tags.read(a)[0].artist == ("Huerta",)
-    human = run("tidy", "apply", plan_path, "--apply", "--config", env.yaml)
+    pid = preview_id("apply", plan_path, env)
+    human = run("tidy", "apply", plan_path, "--apply", "--preview-id", pid, "--config", env.yaml)
     assert "Reload Tag" in human.output and "0 written" in human.output and "1 applied earlier" in human.output
 
     dry = run("tidy", "undo", plan_path, "--config", env.yaml)
     assert dry.exit_code == 0 and "DRY-RUN" in dry.output and tags.read(a)[0].artist == ("Huerta",)
-    undone = run("tidy", "undo", plan_path, "--apply", "--config", env.yaml)
+    pid = preview_id("undo", plan_path, env)
+    undone = run("tidy", "undo", plan_path, "--apply", "--preview-id", pid, "--config", env.yaml)
     assert undone.exit_code == 0 and "UNDONE" in undone.output and tags.read(a)[0] == tags.Tags()
 
 
@@ -183,7 +192,8 @@ def test_apply_exit_code_1_when_an_item_fails(env, monkeypatch):
         raise cli.TidyError("simulated")
 
     monkeypatch.setattr(cli.tidy_plan.tags, "write", boom)
-    result = run("tidy", "apply", plan_path, "--apply", "--config", env.yaml)
+    pid = preview_id("apply", plan_path, env)
+    result = run("tidy", "apply", plan_path, "--apply", "--preview-id", pid, "--config", env.yaml)
     assert result.exit_code == 1 and "FAILED" in result.output
 
 
@@ -192,7 +202,8 @@ def test_apply_strict_blocks_everything(env):
     b = make_audio(env.root / "Octo Octa - Loops.mp3")
     plan_path = _planned(env)
     b.write_bytes(b.read_bytes() + b"\x00")
-    result = run("tidy", "apply", plan_path, "--apply", "--strict", "--config", env.yaml)
+    pid = preview_id("apply", plan_path, env, "--strict")
+    result = run("tidy", "apply", plan_path, "--apply", "--preview-id", pid, "--strict", "--config", env.yaml)
     assert result.exit_code == 1 and "STRICT" in result.output and tags.read(a)[0] == tags.Tags()
 
 

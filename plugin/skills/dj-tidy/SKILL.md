@@ -10,7 +10,7 @@ touches master.db: `dj tidy` reads it read-only and writes to file tags only aft
 
 **Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
 
-**Requirements:** R-1104, R-1303, C-01.
+**Requirements:** R-1102, R-1104, R-1303, C-01.
 
 ## How to run things
 **In Cowork / Claude Desktop: use the `dj-librarian` MCP tools.**
@@ -20,8 +20,8 @@ touches master.db: `dj tidy` reads it read-only and writes to file tags only aft
 | `dj tidy audit <crate>` / `--all` / `--folder D` | `dj_tidy_audit(crate=...)` / `(all_tracks=true)` / `(folder=...)` |
 | `dj tidy dupes ...` | `dj_tidy_dupes(...)` |
 | `dj tidy plan ... [--rename] [--rename-imported]` | `dj_tidy_plan(...)`, then edit the plan file yourself |
-| `dj tidy apply <plan>` / `--apply` | `dj_tidy_apply_preview(plan_file)` / `dj_tidy_apply(plan_file)` |
-| `dj tidy undo <plan> --apply` | `dj_tidy_undo(plan_file)` |
+| `dj tidy apply <plan>` / `--apply` | `dj_tidy_apply_preview(plan_file)` / `dj_tidy_apply(plan_file, preview_id)` |
+| `dj tidy undo <plan>` / `--apply` | `dj_tidy_undo_preview(plan_file)` / `dj_tidy_undo(plan_file, preview_id)` |
 
 A target is exactly one of: a crate path (`house_base/0_INBOX`), `all_tracks`, or a folder
 inside the `roots:` of `tidy.yaml`. `dj_tidy_audit` returns the counts
@@ -29,9 +29,14 @@ inside the `roots:` of `tidy.yaml`. `dj_tidy_audit` returns the counts
 `{ok, exit_code, result | output, stderr}`. `exit_code: 2` = rekordbox is open: ask them to
 close it, call again. Never hand them a shell command when a tool exists.
 
+The write gate (R-1102): `dj_tidy_apply_preview` and `dj_tidy_undo_preview` return a
+`preview_id`. The write tool needs that id and refuses without it, after any change since the
+preview (a file, a decision), or with an id already used: preview again. Never invent an id.
+
 CLI (Claude Code or the DJ): from the repo root, `uv run dj tidy <cmd> --json`
 (venv outside any cloud-synced folder via `UV_PROJECT_ENVIRONMENT`, see CONTRIBUTING.md).
-Exit codes 0 / 1 / 2 as above.
+Exit codes 0 / 1 / 2 as above; 1 with `REFUSED` = no valid preview id. The write is the dry-run's
+command with `--apply --preview-id <id>`.
 
 ## The loop
 1. **Audit first, always.** `dj_tidy_audit(...)`. Report in one short block: files · clean ·
@@ -47,9 +52,11 @@ Exit codes 0 / 1 / 2 as above.
    `SKIP_LOW_CONFIDENCE` items are theirs to fill by hand (Mp3tag or rekordbox).
 4. They decide: "yes to all", or exceptions. Write `decision: yes|no` into the plan file.
    Re-running the plan the same day keeps decisions for unchanged proposals.
-5. `dj_tidy_apply_preview(plan)`: show what would be written and what cannot run and why.
-6. Ask: "is rekordbox closed?" Wait for a yes. Then `dj_tidy_apply(plan)`. Exit code 2 means
-   rekordbox is open: tell them, wait, call again. Never work around it.
+5. `dj_tidy_apply_preview(plan)`: show what would be written and what cannot run and why; keep
+   its `preview_id`.
+6. Ask: "write these tags? is rekordbox closed?" Wait for a yes. Then
+   `dj_tidy_apply(plan, preview_id)`. Exit code 2 means rekordbox is open: tell them, wait, call
+   again with the same id. Never work around it.
 7. Tell them: in rekordbox select those tracks -> right-click -> **Reload Tag**. If the apply
    renamed imported files, point at the Relocate checklist in `reports/` and say each track
    shows `!` until relocated (cues and playlists survive).
@@ -57,7 +64,8 @@ Exit codes 0 / 1 / 2 as above.
    report path) and append one line to log.md.
 
 ## Undo
-`dj tidy undo <plan>` is a dry-run; `dj_tidy_undo(plan)` restores tags and names from
+`dj_tidy_undo_preview(plan)` is the dry-run: what would be restored, and a `preview_id`. After the
+DJ's yes, `dj_tidy_undo(plan, preview_id)` restores tags and names from
 `state/tidy/<plan>.undo.json`, newest first, and refuses a file that changed since. Never pass
 `--force` on your own. Then Reload Tag again.
 

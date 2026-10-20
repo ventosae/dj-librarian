@@ -109,3 +109,15 @@ def no_real_db_no_network(monkeypatch):
         refuse()
 
     monkeypatch.setattr(socket.socket, "connect", loopback_only)
+
+
+@pytest.fixture(autouse=True)
+def gate_records_in_a_temp_folder(monkeypatch, tmp_path_factory, request):
+    """The CLI's preview records (dj.write_gate, R-1102) go to a folder of this test's own, never
+    to REPO_ROOT/state. Created only when a test records a preview."""
+    import hashlib
+
+    from dj import write_gate
+
+    key = hashlib.sha256(request.node.nodeid.encode("utf-8")).hexdigest()[:16]
+    monkeypatch.setattr(write_gate, "STATE_DIR", tmp_path_factory.getbasetemp() / "gate-state" / key)

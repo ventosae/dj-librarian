@@ -24,6 +24,9 @@ def args(calls):
     return calls[-1][0][3:]  # after: python -m dj.cli
 
 
+PID = "0123456789ab"  # the shape of a preview id
+
+
 def test_every_call_is_an_argument_list_with_no_shell_and_no_stdin(calls):
     m.dj_match("hypnotic_texture")
     cmd, kwargs = calls[-1]
@@ -47,10 +50,11 @@ def test_preview_tools_never_pass_apply(calls):
 
 
 def test_write_tools_pass_apply(calls):
-    m.dj_copy_apply("a", "b")
-    assert args(calls) == ["copy", "--apply", "--json", "--", "a", "b"]
-    m.dj_push_apply("p", name="n", include_ambiguous=True)
-    assert args(calls) == ["push", "--apply", "--name", "n", "--include-ambiguous", "--json", "--", "p"]
+    m.dj_copy_apply("a", "b", preview_id=PID, power_mode=True)
+    assert args(calls) == ["copy", "--apply", "--power-mode", "--preview-id", PID, "--json", "--", "a", "b"]
+    m.dj_push_apply("p", preview_id=PID, name="n", include_ambiguous=True)
+    assert args(calls) == ["push", "--apply", "--preview-id", PID, "--name", "n", "--include-ambiguous", "--json",
+                           "--", "p"]
 
 
 def test_file_arguments_must_be_inside_the_repo(calls, tmp_path, monkeypatch):
@@ -62,7 +66,7 @@ def test_file_arguments_must_be_inside_the_repo(calls, tmp_path, monkeypatch):
 
     assert json.loads(m.dj_tree_preview("bases.yaml"))["ok"] is True
     for bad in (str(outside), "../evil.yaml", "secret.env", "missing.yaml"):
-        answer = json.loads(m.dj_tree_apply(bad))
+        answer = json.loads(m.dj_tree_apply(file=bad, preview_id=PID, power_mode=True))
         assert answer["ok"] is False and "error" in answer
     assert len(calls) == 1  # only the good one ran
 
@@ -70,7 +74,7 @@ def test_file_arguments_must_be_inside_the_repo(calls, tmp_path, monkeypatch):
 def test_exit_code_2_tells_the_agent_to_wait_not_to_work_around(monkeypatch):
     monkeypatch.setattr(m.subprocess, "run", lambda cmd, **k: SimpleNamespace(
         returncode=2, stdout="", stderr="[x] WARNING - Rekordbox is running!\nSTOP rekordbox.exe is running."))
-    answer = json.loads(m.dj_copy_apply("a", "b"))
+    answer = json.loads(m.dj_copy_apply("a", "b", preview_id=PID, power_mode=True))
     assert (answer["ok"], answer["exit_code"]) == (False, 2)
     assert "close it" in answer["hint"] and answer["stderr"] == ["STOP rekordbox.exe is running."]
 
@@ -113,7 +117,8 @@ def test_tool_list_and_which_ones_are_read_only():
         "dj_status", "dj_tree_preview", "dj_pull", "dj_match", "dj_plan", "dj_apply_preview",
         "dj_copy_preview", "dj_push_preview", "dj_build_preview", "dj_tree_apply", "dj_apply_write",
         "dj_copy_apply", "dj_push_apply", "dj_build_apply",
-        "dj_tidy_audit", "dj_tidy_dupes", "dj_tidy_plan", "dj_tidy_apply_preview", "dj_tidy_apply", "dj_tidy_undo",
+        "dj_tidy_audit", "dj_tidy_dupes", "dj_tidy_plan", "dj_tidy_apply_preview", "dj_tidy_apply",
+        "dj_tidy_undo_preview", "dj_tidy_undo",
         "dj_library_inspect", "dj_library_analyze", "dj_structure_preview", "dj_structure_write",
     }
     writers = {n for n, t in tools.items() if not t.annotations.read_only_hint}
@@ -182,11 +187,16 @@ def test_tidy_preview_and_write_tools(calls, tmp_path, monkeypatch):
     plan.write_text("{}")
     m.dj_tidy_apply_preview("p.plan.json")
     assert args(calls) == ["tidy", "apply", "--json", "--", str(plan.resolve())]
-    m.dj_tidy_apply("p.plan.json", strict=True)
-    assert args(calls) == ["tidy", "apply", "--apply", "--strict", "--json", "--", str(plan.resolve())]
-    m.dj_tidy_undo("p.plan.json")
-    assert args(calls) == ["tidy", "undo", "--apply", "--json", "--", str(plan.resolve())]
-    assert json.loads(m.dj_tidy_apply("../outside.json"))["ok"] is False
+    m.dj_tidy_apply_preview("p.plan.json", strict=True)
+    assert args(calls) == ["tidy", "apply", "--strict", "--json", "--", str(plan.resolve())]
+    m.dj_tidy_apply("p.plan.json", preview_id=PID, strict=True)
+    assert args(calls) == ["tidy", "apply", "--apply", "--preview-id", PID, "--strict", "--json", "--",
+                           str(plan.resolve())]
+    m.dj_tidy_undo_preview("p.plan.json")
+    assert args(calls) == ["tidy", "undo", "--json", "--", str(plan.resolve())]
+    m.dj_tidy_undo("p.plan.json", preview_id=PID)
+    assert args(calls) == ["tidy", "undo", "--apply", "--preview-id", PID, "--json", "--", str(plan.resolve())]
+    assert json.loads(m.dj_tidy_apply("../outside.json", preview_id=PID))["ok"] is False
 
 
 def test_a_stripped_environment_is_filled_in(calls, monkeypatch):

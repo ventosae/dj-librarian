@@ -36,9 +36,12 @@ server = MCPServer(
     "dj-librarian",
     instructions=(
         "Tools for the DJ's rekordbox library via the dj CLI. rekordbox is the truth; you only "
-        "propose. Read STATE.md and the dj-sync skill first. Always call the preview tool and "
-        "show the DJ the result before any *_apply / *_write tool, and only call those after their "
-        "explicit OK. exit_code 2 = refused: the `hint` says why. Usually rekordbox is open: ask "
+        "propose. Read STATE.md and the dj-sync skill first. Every *_apply / *_write / *_undo tool "
+        "needs the preview_id its preview tool returned: call the preview, show the DJ the result, "
+        "ask, and only after their explicit yes pass that preview_id. Direct master.db writes "
+        "(dj_tree_apply, dj_apply_write, dj_copy_apply) also need power_mode=true and run on Windows "
+        "only; the default write path is an XML the DJ imports (dj_structure_preview / "
+        "dj_structure_write). exit_code 2 = refused: the `hint` says why. Usually rekordbox is open: ask "
         "them to close it, then retry the same call; a library folder that is not set up needs "
         "dj-start first. Never ask for a way around a refusal. The dj_tidy_* tools work on the audio files "
         "(tags, names), never on master.db: after dj_tidy_apply they must Reload Tag in rekordbox."
@@ -210,6 +213,32 @@ def guarded(func: Any) -> Any:
     return wrapper
 
 
+def preview_id_arg(preview_id: Any, preview_tool: str) -> str:
+    """A write tool's preview_id: 12 lower-case hex from the preview tool (R-1102). Empty or
+    malformed -> ToolInputError, before anything runs."""
+    pid = preview_id.strip() if isinstance(preview_id, str) else ""
+    if not pid:
+        raise ToolInputError(
+            f"No preview_id. Call {preview_tool}, show the DJ the result, and call this only after "
+            "their explicit yes, with the preview_id it returned."
+        )
+    if not valid_id(pid):
+        raise ToolInputError(f"{preview_id!r} is not a preview id (12 lower-case hex digits from {preview_tool}).")
+    return pid
+
+
+POWER_MODE_REFUSAL = (
+    "master.db writes are power mode (Windows only): pass power_mode=true only when the DJ asked for a "
+    "direct write, or build an XML to import (dj_structure_preview / dj_structure_write)."
+)
+
+
+def power_mode_arg(power_mode: Any) -> None:
+    """R-205: a direct master.db write needs power_mode=true, checked before the preview id."""
+    if power_mode is not True:
+        raise ToolInputError(POWER_MODE_REFUSAL)
+
+
 # -- read-only ---------------------------------------------------------------------------
 
 
@@ -224,7 +253,8 @@ def dj_status() -> str:
 @guarded
 def dj_tree_preview(file: str = "tree.yaml") -> str:
     """Dry-run of a tree file (e.g. bases.yaml): one action per node - CREATE, SKIP, HOLD,
-    CONFLICT. Writes nothing. `file` is a .yaml path inside the repo."""
+    CONFLICT - and a preview_id (null when there is a CONFLICT). Writes nothing. `file` is a
+    .yaml path inside the repo. Show the DJ the result; dj_tree_apply needs this preview_id."""
     return run_dj(["tree", "--file", repo_file(file, (".yaml", ".yml"))])
 
 
@@ -288,29 +318,40 @@ def dj_plan(link: str) -> str:
 @server.tool(annotations=READ)
 @guarded
 def dj_apply_preview(plan_file: str) -> str:
-    """Dry-run of a plan: which `decision: yes` tracks would be added to the crate."""
+    """Dry-run of a plan: which `decision: yes` tracks would be added to the crate, and a
+    preview_id. Writes nothing. Show the DJ the result; dj_apply_write needs this preview_id."""
     return run_dj(["apply"], (repo_file(plan_file, (".json",)),))
 
 
 @server.tool(annotations=READ)
 def dj_copy_preview(source: str, target: str) -> str:
-    """Dry-run: which tracks of rekordbox playlist `source` would be appended to `target`."""
+    """Dry-run: which tracks of rekordbox playlist `source` would be appended to `target`, and a
+    preview_id. Writes nothing. Show the DJ the result; dj_copy_apply needs this preview_id."""
     return run_dj(["copy"], (source, target))
 
 
 @server.tool(annotations=SPOTIFY_READ)
 @guarded
-def dj_build_preview(file: str, name: str = "") -> str:
+def dj_build_preview(file: str, name: str = "", include_ambiguous: bool = False) -> str:
     """Dry-run: match every 'Artist - Title' line of a tracklist file (tracklists/<name>.txt
-    in the repo) on Spotify: MATCH, AMBIGUOUS, MISSING. rekordbox untouched, writes nothing."""
+    in the repo) on Spotify: MATCH, AMBIGUOUS, MISSING, and a preview_id. rekordbox untouched,
+    writes nothing. Pass the same `name` and `include_ambiguous` you will pass to
+    dj_build_apply: its preview_id is for exactly these arguments."""
     options = ["build"] + (["--name", name] if name else [])
+    if include_ambiguous:
+        options.append("--include-ambiguous")
     return run_dj(options, (repo_file(file, (".txt", ".md")),))
 
 
 @server.tool(annotations=SPOTIFY_READ)
-def dj_push_preview(playlist: str) -> str:
-    """Dry-run: match a rekordbox playlist on Spotify (MATCH, AMBIGUOUS, MISSING)."""
-    return run_dj(["push"], (playlist,))
+def dj_push_preview(playlist: str, name: str = "", include_ambiguous: bool = False) -> str:
+    """Dry-run: match a rekordbox playlist on Spotify (MATCH, AMBIGUOUS, MISSING), and a
+    preview_id. Writes nothing. Pass the same `name` and `include_ambiguous` you will pass to
+    dj_push_apply: its preview_id is for exactly these arguments."""
+    options = ["push"] + (["--name", name] if name else [])
+    if include_ambiguous:
+        options.append("--include-ambiguous")
+    return run_dj(options, (playlist,))
 
 
 # -- writes: only after the DJ's explicit OK ----------------------------------------------
@@ -318,45 +359,71 @@ def dj_push_preview(playlist: str) -> str:
 
 @server.tool(annotations=WRITE)
 @guarded
-def dj_tree_apply(file: str = "tree.yaml") -> str:
-    """WRITES to rekordbox: create the missing folders/playlists of a tree file. Backup
-    first, one commit, refuses while rekordbox is open (exit_code 2). Never changes or
-    deletes what exists. Call dj_tree_preview first and get the DJ's OK."""
-    return run_dj(["tree", "--file", repo_file(file, (".yaml", ".yml")), "--apply"], as_json=False)
+def dj_tree_apply(preview_id: str, file: str = "tree.yaml", power_mode: bool = False) -> str:
+    """WRITES to rekordbox master.db: create the missing folders/playlists of a tree file.
+    Backup first, one commit, refuses while rekordbox is open (exit_code 2). Never changes or
+    deletes what exists. Windows power mode (R-205): needs power_mode=true, else refused; the
+    default write path is an XML the DJ imports (dj_structure_preview / dj_structure_write).
+    Call dj_tree_preview, show the DJ the result, ask, and only after their explicit yes pass its
+    preview_id (same `file`). Refused without it, after any change since the preview, or with a
+    used id."""
+    power_mode_arg(power_mode)
+    pid = preview_id_arg(preview_id, "dj_tree_preview")
+    options = ["tree", "--file", repo_file(file, (".yaml", ".yml")), "--apply", "--power-mode", "--preview-id", pid]
+    return run_dj(options, as_json=False)
 
 
 @server.tool(annotations=WRITE)
 @guarded
-def dj_apply_write(plan_file: str) -> str:
-    """WRITES to rekordbox: append the `decision: yes` tracks of a plan to its crate.
+def dj_apply_write(plan_file: str, preview_id: str, power_mode: bool = False) -> str:
+    """WRITES to rekordbox master.db: append the `decision: yes` tracks of a plan to its crate.
     Backup first, one commit, exit_code 2 while rekordbox is open. Then updates
-    state/match_cache.json, state/declined.json and writes a report."""
-    return run_dj(["apply", "--apply"], (repo_file(plan_file, (".json",)),))
+    state/match_cache.json, state/declined.json and writes a report. Windows power mode (R-205):
+    needs power_mode=true, else refused; the default write path is an XML the DJ imports
+    (dj_structure_preview / dj_structure_write). Call dj_apply_preview, show the DJ the result,
+    ask, and only after their explicit yes pass its preview_id."""
+    power_mode_arg(power_mode)
+    pid = preview_id_arg(preview_id, "dj_apply_preview")
+    return run_dj(["apply", "--apply", "--power-mode", "--preview-id", pid], (repo_file(plan_file, (".json",)),))
 
 
 @server.tool(annotations=WRITE)
-def dj_copy_apply(source: str, target: str) -> str:
-    """WRITES to rekordbox: append the tracks of playlist `source` to `target` (skips
-    tracks already there). Backup first, one commit, exit_code 2 while rekordbox is open."""
-    return run_dj(["copy", "--apply"], (source, target))
+@guarded
+def dj_copy_apply(source: str, target: str, preview_id: str, power_mode: bool = False) -> str:
+    """WRITES to rekordbox master.db: append the tracks of playlist `source` to `target` (skips
+    tracks already there). Backup first, one commit, exit_code 2 while rekordbox is open.
+    Windows power mode (R-205): needs power_mode=true, else refused; the default write path is an
+    XML the DJ imports (dj_structure_preview / dj_structure_write). Call dj_copy_preview, show
+    the DJ the result, ask, and only after their explicit yes pass its preview_id (same source
+    and target)."""
+    power_mode_arg(power_mode)
+    pid = preview_id_arg(preview_id, "dj_copy_preview")
+    return run_dj(["copy", "--apply", "--power-mode", "--preview-id", pid], (source, target))
 
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
 @guarded
-def dj_build_apply(file: str, name: str = "", include_ambiguous: bool = False) -> str:
+def dj_build_apply(file: str, preview_id: str, name: str = "", include_ambiguous: bool = False) -> str:
     """WRITES to Spotify: create (once) a private playlist from a tracklist file and add the
-    MATCH tracks. Only ever adds. Call dj_build_preview first and get the DJ's OK."""
-    options = ["build", "--apply"] + (["--name", name] if name else [])
+    MATCH tracks. Only ever adds. Call dj_build_preview with the same file, name and
+    include_ambiguous, show the DJ the result, ask, and only after their explicit yes pass its
+    preview_id."""
+    pid = preview_id_arg(preview_id, "dj_build_preview")
+    options = ["build", "--apply", "--preview-id", pid] + (["--name", name] if name else [])
     if include_ambiguous:
         options.append("--include-ambiguous")
     return run_dj(options, (repo_file(file, (".txt", ".md")),))
 
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
-def dj_push_apply(playlist: str, name: str = "", include_ambiguous: bool = False) -> str:
+@guarded
+def dj_push_apply(playlist: str, preview_id: str, name: str = "", include_ambiguous: bool = False) -> str:
     """WRITES to Spotify: create (once) a private playlist for a rekordbox playlist and add
-    the MATCH tracks. Only ever adds. `include_ambiguous` only if the DJ checked the links."""
-    options = ["push", "--apply"]
+    the MATCH tracks. Only ever adds. `include_ambiguous` only if the DJ checked the links.
+    Call dj_push_preview with the same playlist, name and include_ambiguous, show the DJ the
+    result, ask, and only after their explicit yes pass its preview_id."""
+    pid = preview_id_arg(preview_id, "dj_push_preview")
+    options = ["push", "--apply", "--preview-id", pid]
     if name:
         options += ["--name", name]
     if include_ambiguous:
@@ -397,14 +464,7 @@ def dj_structure_write(proposal: str, preview_id: str) -> str:
     without one, after any change since the preview, or when the id was already used (one
     preview, one write). Never overwrites a file: a taken name becomes <slug>-2.xml. `warnings`
     in the result: the XML is written; tell the DJ each one."""
-    pid = (preview_id or "").strip() if isinstance(preview_id, str) else ""
-    if not pid:
-        raise ToolInputError(
-            "No preview_id. Call dj_structure_preview, show the DJ the result, and call this only "
-            "after their explicit yes."
-        )
-    if not valid_id(pid):
-        raise ToolInputError(f"{preview_id!r} is not a preview id (12 hex digits from dj_structure_preview).")
+    pid = preview_id_arg(preview_id, "dj_structure_preview")
     root = str(library_root())
     options = ["library", "build", "--library", root, "--apply", "--preview-id", pid]
     return run_dj(options, (_proposal(proposal),))
@@ -459,28 +519,43 @@ def dj_tidy_plan(crate: str = "", folder: str = "", all_tracks: bool = False, re
 
 @server.tool(annotations=READ)
 @guarded
-def dj_tidy_apply_preview(plan_file: str) -> str:
-    """Dry-run of a tidy plan: which `decision: yes` items would be written, which cannot run and why."""
-    return run_dj(["tidy", "apply"], (repo_file(plan_file, (".json",)),))
-
-
-@server.tool(annotations=WRITE)
-@guarded
-def dj_tidy_apply(plan_file: str, strict: bool = False) -> str:
-    """WRITES AUDIO FILES: the `decision: yes` tag changes (and planned renames) of a tidy plan.
-    Undo record first, temp + atomic replace per file, exit_code 2 while rekordbox is open.
-    master.db untouched: afterwards the DJ selects the tracks in rekordbox -> Reload Tag.
-    Call dj_tidy_apply_preview first and get their OK."""
-    options = ["tidy", "apply", "--apply"] + (["--strict"] if strict else [])
+def dj_tidy_apply_preview(plan_file: str, strict: bool = False) -> str:
+    """Dry-run of a tidy plan: which `decision: yes` items would be written, which cannot run and
+    why, and a preview_id. Writes nothing. Pass the same `strict` you will pass to dj_tidy_apply."""
+    options = ["tidy", "apply"] + (["--strict"] if strict else [])
     return run_dj(options, (repo_file(plan_file, (".json",)),))
 
 
 @server.tool(annotations=WRITE)
 @guarded
-def dj_tidy_undo(plan_file: str) -> str:
+def dj_tidy_apply(plan_file: str, preview_id: str, strict: bool = False) -> str:
+    """WRITES AUDIO FILES: the `decision: yes` tag changes (and planned renames) of a tidy plan.
+    Undo record first, temp + atomic replace per file, exit_code 2 while rekordbox is open.
+    master.db untouched: afterwards the DJ selects the tracks in rekordbox -> Reload Tag.
+    Call dj_tidy_apply_preview, show the DJ the result, ask, and only after their explicit yes
+    pass its preview_id."""
+    pid = preview_id_arg(preview_id, "dj_tidy_apply_preview")
+    options = ["tidy", "apply", "--apply", "--preview-id", pid] + (["--strict"] if strict else [])
+    return run_dj(options, (repo_file(plan_file, (".json",)),))
+
+
+@server.tool(annotations=READ)
+@guarded
+def dj_tidy_undo_preview(plan_file: str) -> str:
+    """Dry-run of undoing a tidy plan's apply: which files would get their tags and names back,
+    which are skipped and why, and a preview_id. Writes nothing. dj_tidy_undo needs this preview_id."""
+    return run_dj(["tidy", "undo"], (repo_file(plan_file, (".json",)),))
+
+
+@server.tool(annotations=WRITE)
+@guarded
+def dj_tidy_undo(plan_file: str, preview_id: str) -> str:
     """WRITES AUDIO FILES: restores the tags and names a tidy plan's apply changed, from
-    state/tidy/<plan>.undo.json, newest first. exit_code 2 while rekordbox is open. Then Reload Tag."""
-    return run_dj(["tidy", "undo", "--apply"], (repo_file(plan_file, (".json",)),))
+    state/tidy/<plan>.undo.json, newest first. exit_code 2 while rekordbox is open. Then Reload Tag.
+    Call dj_tidy_undo_preview, show the DJ the result, ask, and only after their explicit yes
+    pass its preview_id."""
+    pid = preview_id_arg(preview_id, "dj_tidy_undo_preview")
+    return run_dj(["tidy", "undo", "--apply", "--preview-id", pid], (repo_file(plan_file, (".json",)),))
 
 
 def main() -> None:

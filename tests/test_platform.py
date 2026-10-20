@@ -397,28 +397,53 @@ def db_write_cli(monkeypatch, tmp_path):
     return state
 
 
-@pytest.mark.parametrize("platform", ["darwin", "linux"])
-def test_db_write_commands_refuse_off_windows_in_one_line(monkeypatch, db_write_cli, db, tmp_path, platform):
-    """R-205 / R-203: `dj tree|apply|copy --apply` on a Mac end in one ERROR line (exit 1), not
-    a traceback, and nothing is written."""
+def db_write_jobs(tmp_path, db):
+    """(fake db, dry-run arguments) for `dj tree`, `dj apply` and `dj copy`."""
     tree_file = tmp_path / "tree.yaml"
     tree_file.write_text("- playlist: inbox\n", encoding="utf-8")
     plan = tmp_path / "x.plan.json"
     plan.write_text(json.dumps(plan_with(("yes", "1"))), encoding="utf-8")
     crate, copy_db = CrateDB(), CopyDB([song("1", 1)])
+    return [
+        (db, ["tree", "--file", str(tree_file)]),
+        (crate, ["apply", str(plan)]),
+        (copy_db, ["copy", "jazzy", "jazz_base/2.1_jazzy"]),
+    ]
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_db_write_commands_refuse_off_windows_in_one_line(monkeypatch, db_write_cli, db, tmp_path, platform):
+    """R-205 / R-203: `dj tree|apply|copy --apply --power-mode` on a Mac end in one REFUSED line
+    (exit 1), not a traceback, before any read, preview check or backup; nothing is written."""
+    jobs = db_write_jobs(tmp_path, db)
     on(monkeypatch, platform)
-    for fake, args in [
-        (db, ["tree", "--file", str(tree_file), "--apply"]),
-        (crate, ["apply", str(plan), "--apply"]),
-        (copy_db, ["copy", "jazzy", "jazz_base/2.1_jazzy", "--apply"]),
-    ]:
+    for fake, args in jobs:
         db_write_cli.db, db_write_cli.sessions = fake, []
-        result = runner.invoke(cli.app, args)
+        result = runner.invoke(cli.app, [*args, "--apply", "--power-mode", "--preview-id", "0" * 12])
         assert result.exit_code == cli.EXIT_ERROR, tidy_text(result)
         assert isinstance(result.exception, SystemExit), repr(result.exception)  # a clean exit, no traceback
+        assert f"REFUSED master.db writes are power mode, Windows only; this is {platform}" in tidy_text(result)
+        assert db_write_cli.sessions == [], args
+    assert db.calls == [] and all(fake.added == [] for fake, _ in jobs[1:])
+    assert not (tmp_path / "state").exists() and not (tmp_path / "reports").exists()
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_open_db_refusal_off_windows_is_one_line_too(monkeypatch, db_write_cli, db, tmp_path, platform):
+    """The second wall: were the up-front check gone, safety.open_db(write=True) still refuses off
+    Windows (DB_WRITE_PLATFORMS), and the command prints that as one ERROR line, not a traceback."""
+    jobs = db_write_jobs(tmp_path, db)
+    on(monkeypatch, platform)
+    monkeypatch.setattr(cli.write_gate, "require_power_mode", lambda power_mode: None)
+    for fake, args in jobs:
+        db_write_cli.db, db_write_cli.sessions = fake, []
+        pid = json.loads(runner.invoke(cli.app, [*args, "--json"]).output)["preview_id"]
+        result = runner.invoke(cli.app, [*args, "--apply", "--power-mode", "--preview-id", pid])
+        assert result.exit_code == cli.EXIT_ERROR, tidy_text(result)
+        assert isinstance(result.exception, SystemExit), repr(result.exception)
         assert f"ERROR Direct master.db writes are Windows-only power mode; this is {platform}" in tidy_text(result)
-        assert db_write_cli.sessions == [False, True], args
-    assert db.calls == [] and crate.added == [] and copy_db.added == []
+        assert db_write_cli.sessions == [False, False, True], args  # dry-run, read pass, write refused
+    assert db.calls == [] and all(fake.added == [] for fake, _ in jobs[1:])
     assert not (tmp_path / "state").exists() and not (tmp_path / "reports").exists()
 
 
@@ -591,7 +616,8 @@ def test_tidy_on_windows_asks_tasklist_through_safety(env, monkeypatch, fake_run
     assert stopped.exit_code == cli.EXIT_REKORDBOX_RUNNING, tidy_text(stopped)
     assert "STOP rekordbox.exe is running" in tidy_text(stopped) and a.read_bytes() == before
     run.stdout = NOT_RUNNING_CSV
-    done = tidy("apply", plan_path, env, "--apply")
+    pid = json.loads(tidy("apply", plan_path, env, "--json").output)["preview_id"]  # the dry-run (R-1102)
+    done = tidy("apply", plan_path, env, "--apply", "--preview-id", pid)
     assert done.exit_code == 0 and "APPLIED" in done.output, tidy_text(done)
     assert tags.read(a)[0].artist == ("Huerta",) and list(env.tmp.rglob("*.undo.json"))
     assert len(run.calls) == 2 and all(cmd[0].lower().endswith("tasklist.exe") for cmd, _ in run.calls)

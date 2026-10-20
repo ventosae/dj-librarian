@@ -234,8 +234,8 @@ Step 6 of 6 · under 2 minutes. Say run the report again and I retry it.
 ```
 
 A step 4 item failed: add one line before the last line, `Skipped: <item>, <error>.`
-The DJ says set me up: follow `engine.md` in this folder (W-21). The DJ picks a structure: the
-build skill takes over. Not yet: the report stays in `reports/`.
+The DJ says set me up: follow [engine.md](engine.md) in this folder, the engine card (M1). The DJ
+picks a structure: the build skill takes over. Not yet: the report stays in `reports/`.
 
 ## Rules
 

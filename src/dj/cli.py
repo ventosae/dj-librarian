@@ -13,11 +13,12 @@ import typer
 
 from dj import analyze as analyze_mod
 from dj import build as build_mod
-from dj import intake, library, safety, spotify
+from dj import intake, library, safety, spotify, write_gate
 from dj import playlist_copy as copy_mod
 from dj import push as push_mod
 from dj import tree as tree_mod
 from dj.commands.library import library_app
+from dj.gate import GateError
 from dj.readers import db as db_reader
 from dj.tidy import TidyError
 from dj.tidy import checks as tidy_checks
@@ -36,6 +37,63 @@ app.add_typer(library_app, name="library")
 
 EXIT_ERROR = 1
 EXIT_REKORDBOX_RUNNING = 2
+
+# The write gate (R-1102, R-205): a write needs the id of the dry-run the DJ said yes to; a
+# master.db write also needs --power-mode, on Windows.
+_PREVIEW_ID_OPT = typer.Option(
+    None, "--preview-id", help="With --apply: the id the dry-run printed, after the DJ said yes to it."
+)
+_POWER_MODE_OPT = typer.Option(
+    False, "--power-mode",
+    help="With --apply: write master.db directly (Windows only). The default write path is an XML "
+         "you import (dj library build).",
+)  # fmt: skip
+
+
+def _refused(reason: object) -> None:
+    """One line, exit 1: the write was refused before anything was read for it or written."""
+    typer.echo(f"REFUSED {reason}", err=True)
+    raise typer.Exit(EXIT_ERROR)
+
+
+def _gate_id(preview_id: str | None) -> None:
+    """Before a write reads anything: an id with the shape of a preview id (R-1102)."""
+    try:
+        write_gate.require_id(preview_id)
+    except GateError as exc:
+        _refused(exc)
+
+
+def _gate_db_write(power_mode: bool, preview_id: str | None) -> None:
+    """Before a master.db write reads anything: --power-mode and Windows first (R-205), then an
+    id with the shape of a preview id (R-1102). Its content is checked once the plan is known."""
+    try:
+        write_gate.require_power_mode(power_mode)
+        write_gate.require_id(preview_id)
+    except GateError as exc:
+        _refused(exc)
+
+
+def _preview_keys(recorded: write_gate.Recorded | None) -> dict[str, Any]:
+    """The dry-run's --json key for the gate (additive)."""
+    return {"preview_id": recorded.preview_id if recorded else None}
+
+
+def _to_write(preview_id: str, power_mode: bool = False) -> str:
+    """The dry-run's last line: how the write is called, after the DJ's yes."""
+    flags = "--apply --power-mode" if power_mode else "--apply"
+    return f"DRY-RUN. Nothing written. To write, after the DJ's yes: {flags} --preview-id {preview_id}"
+
+
+def _used(preview_id: str, written: str) -> None:
+    """Mark the preview used after the write; a failure there is a warning, the write is done."""
+    warning = write_gate.consume(preview_id, written=written)
+    if warning:
+        typer.echo(f"WARNING {warning}", err=True)
+
+
+def _changed_since_preview() -> GateError:
+    return GateError("The plan changed since the preview. Nothing written; preview again and show the DJ.")
 
 
 @app.callback()
@@ -156,6 +214,11 @@ def status(
                    f"last apply {link.get('last_apply') or 'never'}")
 
 
+def _tree_changes(actions: list[tree_mod.Action]) -> list[dict[str, Any]]:
+    """What `dj tree --apply` would do: the CREATE actions, in order."""
+    return [{"kind": a.kind, "path": list(a.path), "rules": a.rules} for a in actions if a.op == tree_mod.CREATE]
+
+
 def _print_plan(actions: list[tree_mod.Action]) -> dict[str, int]:
     for action in actions:
         typer.echo(action.line())
@@ -175,13 +238,23 @@ def tree(
         help="Also create smart playlists whose rule encoding is unconfirmed (default: HOLD).",
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    preview_id: str = _PREVIEW_ID_OPT,
+    power_mode: bool = _POWER_MODE_OPT,
 ) -> None:
-    """Create what is missing from tree.yaml. Never changes what exists."""
+    """Create what is missing from tree.yaml. Never changes what exists.
+
+    The dry-run prints a preview id; --apply needs --power-mode and that id (R-205, R-1102)."""
+    if apply and as_json:
+        typer.echo("ERROR --json is for the dry-run; apply without it.", err=True)
+        raise typer.Exit(EXIT_ERROR)
+    if apply:
+        _gate_db_write(power_mode, preview_id)
     try:
         nodes = tree_mod.load_tree(file)
     except (tree_mod.TreeError, OSError) as exc:
         typer.echo(f"ERROR {exc}", err=True)
         raise typer.Exit(EXIT_ERROR)
+    gate_args = {"file": write_gate.path_arg(file), "allow_uncalibrated": allow_uncalibrated}
 
     # Pass 1, read-only: the plan.
     def plan(db: Any) -> list[tree_mod.Action]:
@@ -190,13 +263,19 @@ def tree(
 
     with safety.open_db(write=False) as db:
         actions = plan(db)
+    changes = _tree_changes(actions)
+    blocked = any(a.op == tree_mod.CONFLICT for a in actions)  # a CONFLICT plan gets no preview id
     if as_json:
-        if apply:
-            typer.echo("ERROR --json is for the dry-run; apply without it.", err=True)
-            raise typer.Exit(EXIT_ERROR)
+        recorded = None if blocked else write_gate.record("tree", gate_args, changes)
         rows = [{"op": a.op, "kind": a.kind, "path": list(a.path), "note": a.note} for a in actions]
-        typer.echo(json.dumps({"counts": tree_mod.counts(actions), "actions": rows}, indent=2))
+        data = {"counts": tree_mod.counts(actions), "actions": rows} | _preview_keys(recorded)
+        typer.echo(json.dumps(data, indent=2))
         return
+    if apply and not blocked:  # a refused write is one REFUSED line, without the plan before it
+        try:
+            write_gate.check(preview_id, "tree", gate_args, changes)
+        except GateError as exc:
+            _refused(exc)
     totals = _print_plan(actions)
     if totals[tree_mod.HOLD]:
         typer.echo("HOLD = not created until its encoding is confirmed (see README).")
@@ -205,21 +284,30 @@ def tree(
         typer.echo("CONFLICT found. Nothing written.", err=True)
         raise typer.Exit(EXIT_ERROR)
     if not apply:
-        typer.echo("DRY-RUN. Nothing written. Re-run with --apply.")
+        recorded = write_gate.record("tree", gate_args, changes)
+        for line in recorded.lines():
+            typer.echo(line)
+        typer.echo(_to_write(recorded.preview_id, power_mode=True))
         return
     if not totals[tree_mod.CREATE]:
         typer.echo("Nothing to create. Nothing written.")
         return
 
-    # Pass 2, the write: re-plan inside the write session, create, one commit.
+    # Pass 2, the write: re-plan inside the write session; it must still be the previewed plan.
     try:
         with safety.open_db(write=True) as db:
-            created = tree_mod.apply(plan(db), db)
+            now = plan(db)
+            if write_gate.digest(_tree_changes(now)) != write_gate.digest(changes):
+                raise _changed_since_preview()
+            created = tree_mod.apply(now, db)
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
+    except GateError as exc:
+        _refused(exc)
     except safety.SafetyError as exc:  # e.g. not Windows (DB_WRITE_PLATFORMS): one line, nothing written
         _fail(exc)
+    _used(preview_id, f"{created} node(s) in master.db")
     typer.echo(f"APPLIED. Created {created} node(s) in one commit. Backup in backups/.")
 
     typer.echo("")
@@ -237,30 +325,51 @@ def push(
         False, "--include-ambiguous", help="Also add the best pick of AMBIGUOUS tracks."
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    preview_id: str = _PREVIEW_ID_OPT,
 ) -> None:
-    """Copy a rekordbox playlist to a private Spotify playlist. Adds only, never removes."""
+    """Copy a rekordbox playlist to a private Spotify playlist. Adds only, never removes.
+
+    The dry-run prints a preview id; --apply needs it (R-1102). An unknown, used, expired or other
+    preview id is refused before any token request; matching uses read scopes only; the write
+    scope is asked for after the plan matched the preview."""
+    if apply:
+        _gate_id(preview_id)
     try:
         with safety.open_db(write=False) as db:
             row = push_mod.find_playlist(db, playlist)
             rb_id, rb_name = str(row.ID), row.Name
             tracks = push_mod.local_tracks(row)
-        scopes = spotify.WRITE_SCOPES if apply else spotify.READ_SCOPES
-        api = spotify.Spotify(spotify.get_token(scopes))
+        spotify_name = name or rb_name
+        gate_args = {"playlist": playlist, "name": spotify_name, "include_ambiguous": include_ambiguous}
+        if apply:
+            write_gate.precheck(preview_id, "push", gate_args)  # before any token or Spotify call
+        api = spotify.Spotify(spotify.get_token(spotify.READ_SCOPES))
         results = [push_mod.match_track(api, t) for t in tracks]
         uris = push_mod.selected_uris(results, include_ambiguous)
         totals = {s: sum(r.status == s for r in results) for s in ("MATCH", "AMBIGUOUS", "MISSING")}
+        changes = {"rekordbox_playlist_id": rb_id, "name": spotify_name, "uris": uris}
         payload: dict[str, Any] = {
             "rekordbox_playlist": playlist,
-            "spotify_name": name or rb_name,
+            "spotify_name": spotify_name,
             "applied": False,
             "counts": totals,
             "selected": len(uris),
             "items": [push_mod.result_dict(r) for r in results],
         }
-        if apply and uris:
-            payload["result"] = push_mod.apply(api, rb_id, name or rb_name, uris)
-            payload["applied"] = True
-            payload["report"] = str(push_mod.write_report(name or rb_name, payload))
+        recorded = None
+        if not apply:
+            recorded = write_gate.record("push", gate_args, changes)
+            payload |= _preview_keys(recorded)
+        else:
+            write_gate.check(preview_id, "push", gate_args, changes)  # before the write token
+            if uris:
+                writer = spotify.Spotify(spotify.get_token(spotify.WRITE_SCOPES))
+                payload["result"] = push_mod.apply(writer, rb_id, spotify_name, uris)
+                payload["applied"] = True
+                _used(preview_id, f"Spotify playlist {spotify_name}")
+                payload["report"] = str(push_mod.write_report(spotify_name, payload))
+    except GateError as exc:
+        _refused(exc)
     except (push_mod.PushError, spotify.SpotifyError) as exc:
         typer.echo(f"ERROR {exc}", err=True)
         raise typer.Exit(EXIT_ERROR)
@@ -282,7 +391,10 @@ def push(
     elif apply:
         typer.echo("Nothing to add. Nothing written.")
     else:
-        typer.echo(f"DRY-RUN. Would put {len(uris)} track(s) on Spotify. Re-run with --apply.")
+        for line in recorded.lines():
+            typer.echo(line)
+        typer.echo(f"DRY-RUN. Would put {len(uris)} track(s) on Spotify. Nothing written. To write, "
+                   f"after the DJ's yes: --apply --preview-id {recorded.preview_id}")
 
 
 @app.command()
@@ -294,16 +406,27 @@ def build(
         False, "--include-ambiguous", help="Also add the best pick of AMBIGUOUS tracks."
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    preview_id: str = _PREVIEW_ID_OPT,
 ) -> None:
-    """A text tracklist -> a private Spotify playlist. rekordbox untouched. Adds only."""
+    """A text tracklist -> a private Spotify playlist. rekordbox untouched. Adds only.
+
+    The dry-run prints a preview id; --apply needs it (R-1102). An unknown, used, expired or other
+    preview id is refused before any token request; matching uses read scopes only; the write
+    scope is asked for after the plan matched the preview."""
+    if apply:
+        _gate_id(preview_id)
     try:
         tracks, skipped = build_mod.load_tracklist(tracklist)
         name = name or build_mod.default_name(tracklist)
-        scopes = spotify.WRITE_SCOPES if apply else spotify.READ_SCOPES
-        api = spotify.Spotify(spotify.get_token(scopes))
+        gate_args = {"tracklist": write_gate.path_arg(tracklist), "name": name,
+                     "include_ambiguous": include_ambiguous}  # fmt: skip
+        if apply:
+            write_gate.precheck(preview_id, "build", gate_args)  # before any token or Spotify call
+        api = spotify.Spotify(spotify.get_token(spotify.READ_SCOPES))
         results = build_mod.match_all(api, tracks)
         uris = push_mod.selected_uris(results, include_ambiguous)
         totals = {s: sum(r.status == s for r in results) for s in ("MATCH", "AMBIGUOUS", "MISSING")}
+        changes = {"name": name, "uris": uris}
         payload: dict[str, Any] = {
             "tracklist": str(tracklist),
             "spotify_name": name,
@@ -313,10 +436,20 @@ def build(
             "skipped_lines": skipped,
             "items": [push_mod.result_dict(r) for r in results],
         }
-        if apply and uris:
-            payload["result"] = build_mod.apply(api, name, uris)
-            payload["applied"] = True
-            payload["report"] = str(push_mod.write_report(name, payload, kind="build"))
+        recorded = None
+        if not apply:
+            recorded = write_gate.record("build", gate_args, changes)
+            payload |= _preview_keys(recorded)
+        else:
+            write_gate.check(preview_id, "build", gate_args, changes)  # before the write token
+            if uris:
+                writer = spotify.Spotify(spotify.get_token(spotify.WRITE_SCOPES))
+                payload["result"] = build_mod.apply(writer, name, uris)
+                payload["applied"] = True
+                _used(preview_id, f"Spotify playlist {name}")
+                payload["report"] = str(push_mod.write_report(name, payload, kind="build"))
+    except GateError as exc:
+        _refused(exc)
     except (build_mod.BuildError, push_mod.PushError, spotify.SpotifyError) as exc:
         typer.echo(f"ERROR {exc}", err=True)
         raise typer.Exit(EXIT_ERROR)
@@ -340,7 +473,10 @@ def build(
     elif apply:
         typer.echo("Nothing to add. Nothing written.")
     else:
-        typer.echo(f"DRY-RUN. Would put {len(uris)} track(s) on Spotify. Re-run with --apply.")
+        for line in recorded.lines():
+            typer.echo(line)
+        typer.echo(f"DRY-RUN. Would put {len(uris)} track(s) on Spotify. Nothing written. To write, "
+                   f"after the DJ's yes: --apply --preview-id {recorded.preview_id}")
 
 
 # -- Phase 2: Spotify inbox -> rekordbox crate -------------------------------------------
@@ -444,8 +580,14 @@ def apply_plan(
     plan_file: Path = typer.Argument(..., help="A plan file from `dj plan`."),
     apply: bool = typer.Option(False, "--apply", help="Really write. Default is a dry-run."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    preview_id: str = _PREVIEW_ID_OPT,
+    power_mode: bool = _POWER_MODE_OPT,
 ) -> None:
-    """Add the `decision: yes` tracks of a plan to its crate. Appends only."""
+    """Add the `decision: yes` tracks of a plan to its crate. Appends only.
+
+    The dry-run prints a preview id; --apply needs --power-mode and that id (R-205, R-1102)."""
+    if apply:
+        _gate_db_write(power_mode, preview_id)
     paths = intake.Paths()
     try:
         plan_data = intake.load_plan(plan_file)
@@ -453,6 +595,8 @@ def apply_plan(
         with safety.open_db(write=False) as db:
             crate = library.find_playlist(db, plan_data["crate"])
             adds = intake.to_add(plan_data, library.crate_content_ids(crate))
+        gate_args = {"plan": write_gate.path_arg(plan_file)}
+        changes = _apply_changes(plan_data, adds)
         payload: dict[str, Any] = {
             "crate": plan_data["crate"], "applied": False, "would_add": len(adds),
             "yes": len(by["yes"]), "no": len(by["no"]), "pending": len(by["pending"]),
@@ -462,12 +606,20 @@ def apply_plan(
         lines.append(f"{len(adds)} to add, {len(by['yes']) - len(adds)} yes already in crate, "
                      f"{len(by['no'])} no, {len(by['pending'])} pending")
         if not apply:
-            lines.append("DRY-RUN. Nothing written. Re-run with --apply.")
+            recorded = write_gate.record("apply", gate_args, changes)
+            payload |= _preview_keys(recorded)
+            lines += recorded.lines() + [_to_write(recorded.preview_id, power_mode=True)]
         else:
+            write_gate.check(preview_id, "apply", gate_args, changes)  # before any backup
             added: list[dict[str, Any]] = []
             if adds:  # no backup, no write session when there is nothing to add
                 with safety.open_db(write=True) as db:
+                    crate_now = library.find_playlist(db, plan_data["crate"])
+                    now = intake.to_add(plan_data, library.crate_content_ids(crate_now))
+                    if write_gate.digest(_apply_changes(plan_data, now)) != write_gate.digest(changes):
+                        raise _changed_since_preview()
                     added = intake.add_to_crate(db, plan_data)
+                _used(preview_id, f"{len(added)} track(s) to {plan_data['crate']}")
             report = intake.record(plan_data, plan_file, added, paths)
             payload |= {"applied": True, "added": len(added), "report": str(report)}
             lines.append(f"APPLIED. Added {len(added)} track(s) to '{plan_data['crate']}'.")
@@ -475,9 +627,23 @@ def apply_plan(
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
+    except GateError as exc:
+        _refused(exc)
     except (*INTAKE_ERRORS, safety.SafetyError) as exc:
         _fail(exc)
     _out(as_json, payload, lines)
+
+
+def _apply_changes(plan_data: dict[str, Any], adds: list[dict[str, Any]]) -> dict[str, Any]:
+    """What `dj apply --apply` would do: the adds to the crate, and the decisions it records
+    (yes picks into the match cache, no into declined)."""
+    by = intake.decisions(plan_data)
+    return {
+        "crate": plan_data["crate"],
+        "add": [[i.get("spotify_uri"), str(i["pick"])] for i in adds],
+        "yes": [[i.get("spotify_uri"), str(i.get("pick"))] for i in by["yes"]],
+        "no": [i.get("spotify_uri") for i in by["no"]],
+    }
 
 
 # -- rekordbox playlist -> rekordbox playlist --------------------------------------------
@@ -489,11 +655,19 @@ def copy_playlist(
     target: str = typer.Argument(..., help="Playlist to append to, e.g. 'jazz_base/2.1_jazzy_relevations'."),
     apply: bool = typer.Option(False, "--apply", help="Really write. Default is a dry-run."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    preview_id: str = _PREVIEW_ID_OPT,
+    power_mode: bool = _POWER_MODE_OPT,
 ) -> None:
-    """Append the tracks of one rekordbox playlist to another. Adds only, never removes."""
+    """Append the tracks of one rekordbox playlist to another. Adds only, never removes.
+
+    The dry-run prints a preview id; --apply needs --power-mode and that id (R-205, R-1102)."""
+    if apply:
+        _gate_db_write(power_mode, preview_id)
     try:
         with safety.open_db(write=False) as db:
             planned = copy_mod.plan(db, source, target, allow_missing_target=not apply)
+        gate_args = {"source": source, "target": target}
+        changes = _copy_changes(planned)
         payload: dict[str, Any] = planned.as_dict() | {"applied": False}
         totals = planned.counts()
         lines = [r.line() for r in planned.rows]
@@ -502,24 +676,39 @@ def copy_playlist(
         if not planned.target_exists:
             lines.append(f"Target '{target}' does not exist yet. Create it first (dj tree).")
         if not apply:
-            lines.append("DRY-RUN. Nothing written. Re-run with --apply.")
-        elif not planned.adds:  # no backup, no write session when there is nothing to add
-            lines.append("Nothing to add. Nothing written.")
+            recorded = write_gate.record("copy", gate_args, changes)
+            payload |= _preview_keys(recorded)
+            lines += recorded.lines() + [_to_write(recorded.preview_id, power_mode=True)]
         else:
-            with safety.open_db(write=True) as db:
-                done = copy_mod.apply(db, source, target)
-            report = copy_mod.write_report(done)
-            payload = done.as_dict() | {"applied": True, "added": len(done.adds),
-                                        "report": str(report)}
-            lines.append(f"APPLIED. Added {len(done.adds)} track(s) to '{target}'. "
-                         "Backup in backups/.")
-            lines.append(f"report: {report}")
+            write_gate.check(preview_id, "copy", gate_args, changes)  # before any backup
+            if not planned.adds:  # no backup, no write session when there is nothing to add
+                lines.append("Nothing to add. Nothing written.")
+            else:
+                with safety.open_db(write=True) as db:
+                    now = _copy_changes(copy_mod.plan(db, source, target))
+                    if write_gate.digest(now) != write_gate.digest(changes):
+                        raise _changed_since_preview()
+                    done = copy_mod.apply(db, source, target)
+                _used(preview_id, f"{len(done.adds)} track(s) to {target}")
+                report = copy_mod.write_report(done)
+                payload = done.as_dict() | {"applied": True, "added": len(done.adds),
+                                            "report": str(report)}
+                lines.append(f"APPLIED. Added {len(done.adds)} track(s) to '{target}'. "
+                             "Backup in backups/.")
+                lines.append(f"report: {report}")
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
+    except GateError as exc:
+        _refused(exc)
     except (copy_mod.CopyError, library.LibraryError, safety.SafetyError) as exc:
         _fail(exc)
     _out(as_json, payload, lines)
+
+
+def _copy_changes(planned: copy_mod.Plan) -> dict[str, Any]:
+    """What `dj copy --apply` would do: the tracks it appends to the target, in order."""
+    return {"source": planned.source, "target": planned.target, "add": [r.content_id for r in planned.adds]}
 
 
 # -- Spotify library census ---------------------------------------------------------------
@@ -713,7 +902,7 @@ def tidy_plan_cmd(
         if item["skip_reason"]:
             skipped[item["skip_reason"]] = skipped.get(item["skip_reason"], 0) + 1
     lines += [""] + [f"  {n:4}  {reason}" for reason, n in sorted(skipped.items())]
-    lines += [f"plan: {path}", "Set decision yes/no per item, then: dj tidy apply <plan> (dry-run), --apply to write."]
+    lines += [f"plan: {path}", "Set decision yes/no per item, then: dj tidy apply <plan> (dry-run, prints a preview id); after a yes: --apply --preview-id <id>."]
     _out(as_json, {"plan": str(path), "counts": c, "target": target.as_dict(),
                    "items": [i for i in plan["items"] if i["changes"] or i["rename"]], "skipped": skipped}, lines)
 
@@ -739,18 +928,35 @@ def tidy_apply(
     strict: bool = typer.Option(False, "--strict", help="Any item that cannot run aborts the whole apply before the first write."),
     config: str = _CONFIG_OPT,
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    preview_id: str = _PREVIEW_ID_OPT,
 ) -> None:
     """Write the `decision: yes` tag changes into the files (undo record first, temp + atomic replace).
-    master.db is never touched: afterwards select the tracks in rekordbox and Reload Tag."""
+    master.db is never touched: afterwards select the tracks in rekordbox and Reload Tag.
+
+    The dry-run prints a preview id; --apply needs it (R-1102)."""
+    recorded = None
     try:
         cfg = tidy_config.load_config(config)
         plan = tidy_plan.load_plan(plan_file)
         if apply:
             _refuse_if_rekordbox_runs()
-        result = tidy_plan.apply_plan(plan, Path(plan_file), cfg, intake.Paths(), strict=strict, dry_run=not apply)
+            write_gate.require_id(preview_id)
+        gate_args = {"plan": write_gate.path_arg(plan_file), "strict": strict, "config": write_gate.path_arg(config)}
+        # The dry-run reads the files and writes nothing; --apply recomputes it before the first write.
+        result = tidy_plan.apply_plan(plan, Path(plan_file), cfg, intake.Paths(), strict=strict, dry_run=True)
+        changes = _tidy_apply_changes(result.applied)
+        if not apply:
+            recorded = write_gate.record("tidy-apply", gate_args, changes)
+        else:
+            write_gate.check(preview_id, "tidy-apply", gate_args, changes)
+            result = tidy_plan.apply_plan(plan, Path(plan_file), cfg, intake.Paths(), strict=strict, dry_run=False)
+            if result.applied:  # only a write uses the id up: a run where every item failed can be retried
+                _used(preview_id, str(result.undo_path))
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
+    except GateError as exc:
+        _refused(exc)
     except (*TIDY_ERRORS, safety.SafetyError) as exc:
         _fail(exc)
     verb = "WROTE   " if apply else "WOULD   "
@@ -763,17 +969,32 @@ def tidy_apply(
     if strict and result.skipped:
         lines.append("STRICT: nothing written because some items cannot run.")
     if not apply:
-        lines.append("DRY-RUN. Nothing written. Re-run with --apply.")
+        lines += recorded.lines() + [_to_write(recorded.preview_id)]
     else:
-        lines.append(f"APPLIED. Undo: dj tidy undo {plan_file} --apply  (records in {result.undo_path})")
+        lines.append(f"APPLIED. Undo: dj tidy undo {plan_file} (a dry-run with its preview id), then --apply "
+                     f"--preview-id <id>  (records in {result.undo_path})")
         lines.append("In rekordbox: select these tracks -> right-click -> Reload Tag.")
         if result.relocate_path:
             lines.append(f"Renamed files rekordbox knows: Relocate each one, checklist {result.relocate_path}")
         if result.report_path:
             lines.append(f"report: {result.report_path}")
-    _out(as_json, result.as_dict(), lines)
+    payload = result.as_dict() | (_preview_keys(recorded) if not apply else {})
+    _out(as_json, payload, lines)
     if result.failed or (strict and result.skipped):
         raise typer.Exit(EXIT_ERROR)
+
+
+def _tidy_apply_changes(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What `dj tidy apply --apply` would write: per ready item its file, the hash the plan saw,
+    the tag changes and the rename."""
+    return [{"file": i.get("file"), "sha256": i.get("sha256"), "changes": i.get("changes"),
+             "rename": i.get("rename")} for i in items]  # fmt: skip
+
+
+def _tidy_undo_changes(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What `dj tidy undo --apply` would restore: per undo record its files and hash."""
+    return [{"seq": r.get("seq"), "file_before": r.get("file_before"), "file_after": r.get("file_after"),
+             "sha256_after": r.get("sha256_after")} for r in records]  # fmt: skip
 
 
 @tidy_app.command(name="undo")
@@ -783,17 +1004,34 @@ def tidy_undo(
     force: bool = typer.Option(False, "--force", help="Restore even if the file changed after the apply."),
     config: str = _CONFIG_OPT,
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    preview_id: str = _PREVIEW_ID_OPT,
 ) -> None:
-    """Put the tags (and names) back from state/tidy/<plan>.undo.json, newest change first."""
+    """Put the tags (and names) back from state/tidy/<plan>.undo.json, newest change first.
+
+    The dry-run prints a preview id; --apply needs it (R-1102)."""
+    recorded = None
     try:
         cfg = tidy_config.load_config(config)
         plan = tidy_plan.load_plan(plan_file)
         if apply:
             _refuse_if_rekordbox_runs()
-        result = tidy_plan.undo_plan(plan, Path(plan_file), cfg, intake.Paths(), dry_run=not apply, force=force)
+            write_gate.require_id(preview_id)
+        gate_args = {"plan": write_gate.path_arg(plan_file), "force": force, "config": write_gate.path_arg(config)}
+        # The dry-run reads the files and writes nothing; --apply recomputes it before the first write.
+        result = tidy_plan.undo_plan(plan, Path(plan_file), cfg, intake.Paths(), dry_run=True, force=force)
+        changes = _tidy_undo_changes(result.restored)
+        if not apply:
+            recorded = write_gate.record("tidy-undo", gate_args, changes)
+        else:
+            write_gate.check(preview_id, "tidy-undo", gate_args, changes)
+            result = tidy_plan.undo_plan(plan, Path(plan_file), cfg, intake.Paths(), dry_run=False, force=force)
+            if result.restored:  # only a write uses the id up: a run where every item failed can be retried
+                _used(preview_id, str(result.undo_path))
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
+    except GateError as exc:
+        _refused(exc)
     except (*TIDY_ERRORS, safety.SafetyError) as exc:
         _fail(exc)
     verb = "RESTORED" if apply else "WOULD   "
@@ -802,9 +1040,11 @@ def tidy_undo(
     lines += [f"FAILED   {_tail(r['file_before'])}  [{why}]" for r, why in result.failed]
     c = result.as_dict()["counts"]
     lines += ["", f"{c['restored']} {'restored' if apply else 'to restore'}, {c['skipped']} skipped, {c['failed']} failed"]
-    lines.append("DRY-RUN. Nothing written. Re-run with --apply." if not apply
-                 else "UNDONE. In rekordbox: select these tracks -> Reload Tag.")
-    _out(as_json, result.as_dict(), lines)
+    if not apply:
+        lines += recorded.lines() + [_to_write(recorded.preview_id)]
+    else:
+        lines.append("UNDONE. In rekordbox: select these tracks -> Reload Tag.")
+    _out(as_json, result.as_dict() | (_preview_keys(recorded) if not apply else {}), lines)
     if result.failed:
         raise typer.Exit(EXIT_ERROR)
 

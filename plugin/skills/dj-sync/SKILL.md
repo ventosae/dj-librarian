@@ -9,7 +9,7 @@ rekordbox is the truth. Spotify playlists are candidates. You only propose.
 
 **Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
 
-**Requirements:** R-802, R-803, R-1101, C-02.
+**Requirements:** R-802, R-803, R-1101, R-1102, R-205, C-02.
 
 ## How to run things
 **In Cowork / Claude Desktop (you cannot run local programs): use the `dj-librarian` MCP tools.**
@@ -17,18 +17,26 @@ rekordbox is the truth. Spotify playlists are candidates. You only propose.
 | Instead of the CLI command | Call this tool |
 |---|---|
 | `dj status --json` | `dj_status` |
-| `dj tree --file X` / `--apply` | `dj_tree_preview(file)` / `dj_tree_apply(file)` |
+| `dj tree --file X` / `--apply` | `dj_tree_preview(file)` / `dj_tree_apply(preview_id, file, power_mode=true)` |
 | `dj pull <link>` | `dj_pull(link)` or `dj_pull(all_links=true)` |
 | `dj match <link>` | `dj_match(link)` |
 | `dj plan <link>` | `dj_plan(link)`, then edit the plan file yourself |
-| `dj apply <plan>` / `--apply` | `dj_apply_preview(plan_file)` / `dj_apply_write(plan_file)` |
-| `dj copy A B` / `--apply` | `dj_copy_preview(source, target)` / `dj_copy_apply(source, target)` |
-| `dj push P` / `--apply` | `dj_push_preview(playlist)` / `dj_push_apply(playlist)` |
+| `dj apply <plan>` / `--apply` | `dj_apply_preview(plan_file)` / `dj_apply_write(plan_file, preview_id, power_mode=true)` |
+| `dj copy A B` / `--apply` | `dj_copy_preview(source, target)` / `dj_copy_apply(source, target, preview_id, power_mode=true)` |
+| `dj push P` / `--apply` | `dj_push_preview(playlist)` / `dj_push_apply(playlist, preview_id)` |
 
 Every tool returns `{ok, exit_code, result | output, stderr}`. File arguments are paths
-inside the repo (`bases.yaml`, `plans/....plan.json`). The write tools (`*_apply`,
-`*_write`) need the DJ's explicit OK in the conversation first - always show them the
-preview, then ask. `exit_code: 2` = rekordbox is open: ask them to close it, call again.
+inside the repo (`bases.yaml`, `plans/....plan.json`).
+
+The write gate (R-1102): every preview returns a `preview_id`. Show the DJ the preview, ask,
+and only after their explicit yes call the write tool with that `preview_id` and the same
+arguments (`dj_push_preview` and `dj_push_apply` take the same `name` and `include_ambiguous`).
+The write refuses without the id, with another command's id, after anything changed since the
+preview, or with an id already used: preview again and show the new result. Never invent an id.
+Writes into master.db (`dj_tree_apply`, `dj_apply_write`, `dj_copy_apply`) are Windows power mode
+(R-205): they also need `power_mode=true` and refuse on a Mac. Pass it only on Windows, after the
+DJ said yes to a direct write; otherwise the XML they import is the way (dj-build).
+`exit_code: 2` = rekordbox is open: ask them to close it, call again with the same `preview_id`.
 Never hand them a shell command when a tool exists.
 
 ## How to run the CLI (Claude Code, or the DJ in a terminal)
@@ -39,7 +47,9 @@ Always from the repo root:
 If the repo sits in a cloud-synced folder, the venv must live outside it: set
 `UV_PROJECT_ENVIRONMENT` (see CONTRIBUTING.md).
 Every command takes `--json`. Read that, not the human text.
-Exit codes: 0 ok · 1 error · 2 rekordbox is running (writes refused).
+Exit codes: 0 ok · 1 error or `REFUSED` (no valid preview id, no `--power-mode`) · 2 rekordbox is
+running (writes refused). A dry-run prints `Preview id: <id>` (`preview_id` in `--json`); the write
+is the same command with `--apply --preview-id <id>`, plus `--power-mode` for master.db.
 
 ## Before anything
 1. Read STATE.md, then README.md. CLAUDE.md holds the hard rules.
@@ -47,7 +57,8 @@ Exit codes: 0 ok · 1 error · 2 rekordbox is running (writes refused).
    A `<link>` is the `spotify` or the `crate` value of an entry in links.yaml.
    No entry yet: ask the DJ for the Spotify playlist and the crate, add it to links.yaml.
    The crate must already exist in rekordbox as a normal playlist. If it does not,
-   the DJ creates it in rekordbox (or adds it to tree.yaml and asks for `dj tree --apply`).
+   the DJ creates it in rekordbox (or adds it to tree.yaml and asks for `dj tree`: the preview,
+   then, on Windows after their yes, `--apply --power-mode --preview-id <id>`).
 
 ## The loop
 1. `uv run dj pull <link> --json`
@@ -61,8 +72,10 @@ Exit codes: 0 ok · 1 error · 2 rekordbox is running (writes refused).
    - AMBIGUOUS + yes also needs `pick`: a `rb_content_id` from that item's `candidates`.
    They say "yes to all" or name exceptions. Re-running `dj plan` the same day keeps the
    decisions already written.
-6. `uv run dj apply <plan> --json` is a DRY-RUN. Show `would_add` and the `adds` list.
-7. Ask: "is rekordbox closed?" Wait for a yes. Then `uv run dj apply <plan> --apply --json`.
+6. `uv run dj apply <plan> --json` is a DRY-RUN. Show `would_add` and the `adds` list; keep
+   its `preview_id`.
+7. Ask: "add these to the crate? is rekordbox closed?" Wait for a yes. Then
+   `uv run dj apply <plan> --apply --power-mode --preview-id <preview_id> --json` (Windows only).
    The CLI checks rekordbox itself and backs up master.db first. Exit code 2 means
    rekordbox is open: tell them, wait, run the same command again. Never work around it.
 8. Read the report named in the output. `yes` picks are now in state/match_cache.json,
@@ -70,11 +83,12 @@ Exit codes: 0 ok · 1 error · 2 rekordbox is running (writes refused).
 9. Update STATE.md: counts, last sync date, next action. Append one line to log.md.
 
 ## Copying a rekordbox playlist to Spotify
-`uv run dj push "<rekordbox playlist path>" --json` is a dry-run: MATCH · AMBIGUOUS · MISSING.
-Show the counts and any AMBIGUOUS links, get their OK, then add `--apply`.
-`--include-ambiguous` only if they checked those links. It creates one private playlist per
+`uv run dj push "<rekordbox playlist path>" --json` is a dry-run: MATCH · AMBIGUOUS · MISSING,
+and a `preview_id`. Show the counts and any AMBIGUOUS links, get their OK, then run the same
+command with `--apply --preview-id <preview_id>`.
+`--include-ambiguous` only if they checked those links (in the dry-run too: the id covers it). It creates one private playlist per
 rekordbox playlist (state/push.json) and only ever adds to it. If they deleted that playlist
-on Spotify, the next `--apply` makes a new one.
+on Spotify, a new dry-run gives a new `preview_id`, and its `--apply` makes a new one.
 
 ## Asking about state
 `uv run dj status --json`: track count, the playlist tree, and per link the counts by

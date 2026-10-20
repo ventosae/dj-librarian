@@ -69,7 +69,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-202 | Read from a snapshot copy of master.db, never the live file. | M | Live file never opened for read; snapshot path logged. | Built | v0.1 |
 | R-203 | Mac port: process check without `tasklist.exe`, DB discovery under `~/Library/Pioneer/rekordbox`, path handling, Claude Desktop config path on macOS. | M | Tests green on `macos-latest` and `windows-latest`; live `dj_status` on one Mac when a Mac tester appears. | Built | v0.1 |
 | R-204 | One track/tree model fed by two readers: XML export and master.db. Fields: track metadata, playlist tree, smart playlists, ratings, colours, comments, date added; My Tags, play counts, history where the source has them. | M | Field list documented per reader; fixtures for each. | Built | v0.1 |
-| R-205 | Direct master.db writes (`dj tree --apply`, `dj apply --apply`, `dj copy --apply`) stay Windows-only power mode behind an explicit flag. | M | Flag absent → command refuses with a one-line reason. | Agreed | v0.1 |
+| R-205 | Direct master.db writes (`dj tree --apply`, `dj apply --apply`, `dj copy --apply`) stay Windows-only power mode behind an explicit flag. | M | Flag absent → command refuses with a one-line reason. | Built | v0.1 |
 
 ### E3 Analysis (`dj-profile`, `dj-structure`, `dj-taste`)
 
@@ -156,11 +156,11 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
-| R-1101 | Read tools and write tools are separate MCP tools; write tools default to "ask every time". | M | Tool list shows the split; install steps set permissions. | Built (Windows) | v0.1 |
-| R-1102 | Every write has a preview tool; the write tool refuses without a plan or preview id. | M | Test per writer. | Proposed | v0.1 |
+| R-1101 | Read tools and write tools are separate MCP tools; write tools default to "ask every time". | M | Tool list shows the split; install steps set permissions. | Built | v0.1 |
+| R-1102 | Every write has a preview tool; the write tool refuses without a plan or preview id. | M | Test per writer. | Built | v0.1 |
 | R-1103 | Power-mode DB writes: rekordbox-closed check, verified backup, one commit, rollback on error, undo where possible. | M | Existing tests kept green. | Built | v0.1 |
 | R-1104 | Tests for every component that writes to rekordbox, Spotify or audio files, including the XML writer. | M | CI enforces. | Agreed | v0.1 |
-| R-1105 | A real gate blocks writes without a yes: in Cowork, tool permission "ask every time" + XML import by the DJ; in Claude Code, additionally the plugin PreToolUse hook (C-10). | M | Hook test in Claude Code; permissions step in onboarding. | Proposed | v0.1 |
+| R-1105 | A real gate blocks writes without a yes: in Cowork, tool permission "ask every time" + XML import by the DJ; in Claude Code, additionally the plugin PreToolUse hook (C-10). | M | Hook test in Claude Code; permissions step in onboarding. | Built | v0.1 |
 
 ### E12 Open-source dev standard
 

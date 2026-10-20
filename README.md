@@ -9,9 +9,9 @@ Status: early (0.1.0, unreleased). Windows is the tested platform. macOS is port
 ## Safety model
 
 - **Create and add only.** Nothing that exists in rekordbox, on Spotify or on disk is ever deleted, renamed, moved or reordered.
-- **Dry-run is the default.** Every command shows what it would do and writes nothing. Real writes need `--apply`.
-- **Preview, then yes.** Through Claude, every write tool has a preview tool, and Claude asks you before it writes. Silence is not a yes.
-- **Import, don't inject.** The default write path is a rekordbox XML file that you import yourself. Direct writes to rekordbox's `master.db` are a Windows power mode: rekordbox must be closed, a verified backup is taken first, everything lands in one commit, and any error rolls back. Until the XML writer lands, today's `--apply` commands use this power mode.
+- **Dry-run is the default.** Every command shows what it would do, writes nothing and prints a preview id. Real writes need `--apply --preview-id <id>`: the id of the dry-run you said yes to. If anything changed since, the write is refused.
+- **Preview, then yes.** Through Claude, every write tool has a preview tool and needs its `preview_id`, and Claude asks you before it writes. Silence is not a yes. Which tools to leave on "ask every time": [docs/permissions.md](docs/permissions.md).
+- **Import, don't inject.** The default write path is a rekordbox XML file that you import yourself. Direct writes to rekordbox's `master.db` are a Windows power mode behind `--power-mode`: rekordbox must be closed, a verified backup is taken first, everything lands in one commit, and any error rolls back. Until the XML writer lands, today's `--apply` commands use this power mode.
 - **Idempotent.** A folder or playlist that exists at the same level is skipped. Running a command twice adds nothing the second time.
 
 The full rules are in [CLAUDE.md](CLAUDE.md) and [docs/requirements.md](docs/requirements.md).
@@ -35,21 +35,22 @@ uv run dj status
 |---|---|
 | `uv run dj status` | Read-only. Track count, the playlist tree, and per Spotify link the counts by status. |
 | `uv run dj tree [--file F]` | Dry-run of `tree.yaml` (or `F`): `CREATE`, `SKIP`, `HOLD`, `CONFLICT` per node. |
-| `uv run dj tree --apply` | Creates the missing folders and playlists. rekordbox closed, backup first, one commit. |
+| `uv run dj tree --apply --power-mode --preview-id <id>` | Creates the missing folders and playlists. Windows, rekordbox closed, backup first, one commit. |
 | `uv run dj pull <link>` / `--all` | Reads a Spotify playlist into `inbox/`. Read-only. |
 | `uv run dj match <link>` | Matches the inbox against your library: `IN_CRATE`, `PROPOSE`, `AMBIGUOUS`, `MISSING`, `DECLINED`. |
 | `uv run dj plan <link>` | Writes a plan file and a wishlist. You set `decision: yes\|no` per item. |
-| `uv run dj apply <plan> [--apply]` | Dry-run, then appends the approved tracks to the crate. |
-| `uv run dj copy "<src>" "<dst>" [--apply]` | Appends the tracks of one rekordbox playlist to another. The source is only read. |
-| `uv run dj push "<playlist>" [--apply]` | Mirrors a rekordbox playlist into a private Spotify playlist. Adds only. |
-| `uv run dj build <tracklist.txt> [--apply]` | Turns an `Artist - Title` text tracklist into a private Spotify playlist. |
+| `uv run dj apply <plan> [--apply --power-mode --preview-id <id>]` | Dry-run, then appends the approved tracks to the crate. |
+| `uv run dj copy "<src>" "<dst>" [--apply --power-mode --preview-id <id>]` | Appends the tracks of one rekordbox playlist to another. The source is only read. |
+| `uv run dj push "<playlist>" [--apply --preview-id <id>]` | Mirrors a rekordbox playlist into a private Spotify playlist. Adds only. |
+| `uv run dj build <tracklist.txt> [--apply --preview-id <id>]` | Turns an `Artist - Title` text tracklist into a private Spotify playlist. |
 | `uv run dj analyze` | Read-only census of your Spotify library into Markdown reports. |
 | `uv run dj tidy audit <crate>` / `--all` / `--folder D` | Read-only hygiene audit of the audio files: tags, artwork, names, CDJ playability, duplicates. |
 | `uv run dj tidy plan <target>` | Proposes values for EMPTY tags, parsed from the file names. |
-| `uv run dj tidy apply <plan> [--apply]` | Writes approved tags (undo record first). Then Reload Tag in rekordbox. |
-| `uv run dj tidy undo <plan> [--apply]` | Restores what that apply changed. |
+| `uv run dj tidy apply <plan> [--apply --preview-id <id>]` | Writes approved tags (undo record first). Then Reload Tag in rekordbox. |
+| `uv run dj tidy undo <plan> [--apply --preview-id <id>]` | Restores what that apply changed. |
+| `uv run dj library use <folder>` | Tells the engine where your `dj-library/` folder is. |
 
-Every command takes `--json`. Exit codes: `0` ok, `1` error or conflict, `2` rekordbox is running (writes refused).
+Every command takes `--json`. Exit codes: `0` ok, `1` error, conflict or refused (no valid preview id, no `--power-mode`), `2` rekordbox is running (writes refused) or a `dj library` command refused a folder that is not a set-up dj-library (`REFUSED` on stderr).
 
 ## Configuration
 
@@ -67,18 +68,21 @@ Your own configuration lives next to the code and is gitignored. Copy what you n
 
 The plugin adds two skills (`dj-sync`, `dj-tidy`) and an MCP server with a fixed list of `dj` tools. Read tools and write tools are separate, so you can leave every write tool on "ask every time".
 
-- **Claude desktop app:** Customize → Plugins → Add → Add marketplace, then enter this repository's GitHub URL. The plugin's MCP server runs on your computer and needs the clone and `uv sync` from the install step.
-- **Claude Code:**
+The plugin starts its MCP server from the folder above the plugin folder (`uv run --directory <plugin folder>/..`), so it works only while the plugin runs from your clone, after `uv sync` there.
+
+- **Claude Code:** add the marketplace from your clone, so the plugin loads in place. Run this inside the clone folder:
 
 ```bash
-claude plugin marketplace add OWNER/dj-librarian
+claude plugin marketplace add ./
 ```
 
 ```bash
 claude plugin install dj-librarian@dj-librarian
 ```
 
-On Claude Code 2.1.275 or later, one step also works: `/plugin install dj-librarian --marketplace OWNER/dj-librarian`.
+A marketplace added from GitHub (`OWNER/dj-librarian`) runs a cached copy of the plugin with no engine next to it.
+
+- **Claude desktop app:** Customize → Plugins → Add → Add marketplace. Whether the plugin's MCP server then starts from your clone is not verified yet (open question Q-08). If `dj_status` does not answer, register the engine by hand as below.
 
 ### The engine on Windows and macOS
 
@@ -105,7 +109,7 @@ On macOS, Claude Desktop starts programs with a short `PATH`: if it cannot find 
 
 - **master.db.** Found through pyrekordbox, else at rekordbox's default location: `%APPDATA%\Pioneer\rekordbox\master.db` on Windows, `~/Library/Pioneer/rekordbox/master.db` on macOS. Set `DJ_MASTER_DB` to use another file. Reads work while rekordbox is open.
 - **Is rekordbox running?** Checked with `tasklist` on Windows and `/usr/bin/pgrep` on macOS. If the check cannot answer, writes are refused.
-- **Writes.** Direct master.db writes (`dj tree`, `dj apply`, `dj copy` with `--apply`) stay Windows-only; on macOS they refuse with a one-line reason. `dj tidy apply --apply` and `dj tidy undo --apply` write audio files on Windows only in v0.1; on macOS they refuse with a one-line reason (macOS support is planned for v0.2). Their dry-runs only read.
+- **Writes.** Direct master.db writes (`dj tree`, `dj apply`, `dj copy` with `--apply`) need `--power-mode` and stay Windows-only; on macOS they refuse with a one-line reason. `dj tidy apply --apply` and `dj tidy undo --apply` write audio files on Windows only in v0.1; on macOS they refuse with a one-line reason (macOS support is planned for v0.2). Their dry-runs only read.
 
 ## Documentation
 

@@ -37,7 +37,8 @@ SKIP_REASONS = {SKIP_FORMAT, SKIP_UNREADABLE, SKIP_LOW_CONFIDENCE, SKIP_SWAP_SUS
                 SKIP_NO_CHANGES, SKIP_FILE_MISSING}
 ART_MODES = ("local", "none")
 HOW_TO = ("Set decision to yes or no per item (pending items are not applied). Then: "
-          "dj tidy apply <this file>  (dry-run), and add --apply to write the tags. Undo: dj tidy undo <this file> --apply")
+          "dj tidy apply <this file>  (dry-run, prints a preview id), and after a yes add --apply --preview-id <id> "
+          "to write the tags. Undo: dj tidy undo <this file> (dry-run), then --apply --preview-id <id>")
 
 
 # -- paths ---------------------------------------------------------------------------------
