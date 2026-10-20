@@ -279,7 +279,7 @@ def test_text_check_on_an_md_file():
 # output, and that item replaces the skip with text_problems / reply_problems on the real output.
 
 R1003_OUTPUTS = (
-    pytest.param("a generated MD file (dj-profile)", "W-14", id="md-file"),
+    pytest.param("a generated MD file reviewed by hand (Q-15)", "W-28", id="md-file"),
     pytest.param("a chat reply from the test session, without personal data", "W-28", id="chat-reply"),
 )
 
