@@ -99,9 +99,10 @@ Both work for any DJ whose `.env` holds their own app's keys.
 - `dj build <tracklist.txt>` (MCP `dj_build_preview`): matches every `Artist - Title` line of a
   text tracklist. Lines without ` - ` are listed as skipped.
 
-Both are dry-runs. Show the counts and any AMBIGUOUS links, get the DJ's yes, then run the same
-command with `--apply` (MCP `dj_push_apply` / `dj_build_apply`). That creates one private
-playlist once and only ever adds to it.
+Both are dry-runs that return a `preview_id`. Show the counts and any AMBIGUOUS links, get the
+DJ's yes, then run the same command with `--apply --preview-id <id>` (MCP `dj_push_apply` /
+`dj_build_apply` with the preview's `preview_id` and the same `name` and `include_ambiguous`).
+That creates one private playlist once and only ever adds to it.
 
 ## If something fails
 
@@ -118,7 +119,7 @@ playlist once and only ever adds to it.
 - Never ask for, repeat, open or print `.env`, the client secret or anything in `.cache/`.
 - The login token goes only to `https://api.spotify.com/v1/...`. The CLI enforces it.
 - On Spotify: create private playlists and add tracks. Never remove, reorder or rename.
-- Every Spotify write is a preview first, then the DJ's explicit yes, then `--apply`.
+- Every Spotify write is a preview first, then the DJ's explicit yes, then `--apply --preview-id <id>`.
 
 ## Pre-send checklist
 

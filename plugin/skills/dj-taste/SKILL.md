@@ -30,11 +30,11 @@ docstring of `src/dj/analysis/taste.py`. Quote it when the DJ asks "why is that 
 
 ## How to run it
 
-1. Script (Cowork, no install): `python <plugin>/skills/dj-taste/scripts/taste.py --library DIR
+1. Script (Cowork, no install): `python3 <plugin>/skills/dj-taste/scripts/taste.py --library DIR
    [--xml FILE] [--today YYYY-MM-DD] [--rebuild]`. `--xml` reads one specific export (a relative
    path is looked up in the library folder first, then in the current folder); `--rebuild` only
-   after the DJ's explicit yes (see below). In a clone of the repo the script finds the core by
-   itself.
+   after the DJ's explicit yes (see below). `python` on Windows. In a clone of the repo the
+   script finds the core by itself.
 2. CLI (engine or Claude Code): `uv run dj library taste [--library DIR] [--xml FILE]
    [--today YYYY-MM-DD] [--rebuild] [--json]`. Without `--library` it uses the configured folder.
 

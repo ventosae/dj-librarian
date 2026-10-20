@@ -113,9 +113,11 @@ Goes to taste/vetoes.md. Reply 1 or 2, or say skip (under a minute).
 
 ## Vetoes are honoured (R-702)
 
-- `never propose` in `taste/vetoes.md`: Crate me never picks that track, and the barber never
-  asks about it again. `never pair`: the two tracks never land in one crate together. Promise
-  nothing more: the structure proposals work with whole playlists and do not read vetoes.
+- `never propose` in `taste/vetoes.md`: Crate me never picks that track, the barber never
+  asks about it again, and a structure build (dj-build) leaves it out of the XML (its preview
+  counts it as `vetoed`). `never pair`: the two tracks never land in one crate together.
+  Promise nothing more: the structure proposals themselves (dj-report) work with whole
+  playlists and do not read vetoes, and a build does not apply pairs.
 - The parser is `read_vetoes` in `src/dj/taste_files.py`; the latest line for a key decides, so
   `keep proposing` / `good pair` on the same key lifts an earlier veto.
 - The first time a DJ vetoes in a session, say it once: "Crate me will never pick it. Say keep

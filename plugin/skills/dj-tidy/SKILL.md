@@ -68,9 +68,8 @@ command with `--apply --preview-id <id>`.
 7. Tell them: in rekordbox select those tracks -> right-click -> **Reload Tag**. If the apply
    renamed imported files, point at the Relocate checklist in `reports/` and say each track
    shows `!` until relocated (cues and playlists survive).
-8. Run the audit again to confirm the findings cleared. Update STATE.md (hygiene line, latest
-   report path). The tool already appended the log.md line (`log` in the result); never write
-   log.md yourself.
+8. Run the audit again to confirm the findings cleared, and name its report file to the DJ. The
+   tool already appended the log.md line (`log` in the result); never write log.md yourself.
 
 ## Undo
 `dj_tidy_undo_preview(plan)` is the dry-run: what would be restored, and a `preview_id`. After the

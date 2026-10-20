@@ -28,7 +28,7 @@ from dj.tidy import dupes as tidy_dupes
 from dj.tidy import plan as tidy_plan
 from dj.tidy import report as tidy_report
 from dj.tidy import scan as tidy_scan
-from dj.tree import KIND_BY_ATTRIBUTE, children_of
+from dj.tree import KIND_BY_ATTRIBUTE, alive, children_of
 
 # show_locals stays off: a traceback must never print a token or the client secret.
 app = typer.Typer(
@@ -48,7 +48,7 @@ _PREVIEW_ID_OPT = typer.Option(
 _POWER_MODE_OPT = typer.Option(
     False, "--power-mode",
     help="With --apply: write master.db directly (Windows only). The default write path is an XML "
-         "you import (dj library build).",
+         "you import (dj library build), for new folders and playlists only.",
 )  # fmt: skip
 
 
@@ -183,10 +183,15 @@ def rekordbox_version(db_path: Path) -> str | None:
     return match.group(1) if match else None
 
 
+def _entries(node: Any) -> int:
+    """A playlist's tracks, without the ones rekordbox removed but has not purged yet."""
+    return sum(1 for song in node.Songs if alive(song))
+
+
 def print_tree(db: Any, smart_xml: bool = False, parent_id: str = "root", depth: int = 0) -> None:
     for node in children_of(db, parent_id):
         kind = KIND_BY_ATTRIBUTE.get(node.Attribute, f"attr={node.Attribute}")
-        extra = f"  ({len(node.Songs)} tracks)" if kind == "playlist" else ""
+        extra = f"  ({_entries(node)} tracks)" if kind == "playlist" else ""
         typer.echo(f"{'  ' * depth}[{kind}] {node.Name}{extra}")
         if smart_xml and kind == "smart":
             typer.echo(f"{'  ' * (depth + 1)}{node.SmartList}")
@@ -200,7 +205,7 @@ def tree_data(db: Any, parent_id: str = "root") -> list[dict[str, Any]]:
         kind = KIND_BY_ATTRIBUTE.get(node.Attribute, f"attr={node.Attribute}")
         entry: dict[str, Any] = {"kind": kind, "name": node.Name}
         if kind == "playlist":
-            entry["tracks"] = len(node.Songs)
+            entry["tracks"] = _entries(node)
         if kind == "smart":
             entry["smart_xml"] = node.SmartList
         if kind == "folder":
@@ -259,7 +264,7 @@ def status(
     data["state_from_repo"] = paths.carried_state()
     try:
         with db_reader.open_snapshot(db_path) as db:
-            data["tracks"] = db.get_content().count()
+            data["tracks"] = len(library.all_tracks(db))  # soft-deleted rows left out
             data["links"] = links_data(db, paths)
             if as_json:
                 data["tree"] = tree_data(db)
@@ -691,14 +696,18 @@ def apply_plan(
         with safety.open_db(write=False) as db:
             crate = library.find_playlist(db, plan_data["crate"])
             adds = intake.to_add(plan_data, library.crate_content_ids(crate))
+            # the local file each add puts in the crate, as the library holds it (not the plan's copy)
+            local = {t.content_id: t.label for t in library.all_tracks(db)} if adds else {}
         gate_args = {"plan": write_gate.path_arg(plan_file)}
         changes = _apply_changes(plan_data, adds)
         payload: dict[str, Any] = {
             "crate": plan_data["crate"], "applied": False, "would_add": len(adds),
             "yes": len(by["yes"]), "no": len(by["no"]), "pending": len(by["pending"]),
-            "adds": [i["spotify"] for i in adds],
+            "adds": [{"spotify": i["spotify"], "rb_content_id": str(i["pick"]),
+                      "local": local.get(str(i["pick"]))} for i in adds],  # fmt: skip
         }
-        lines = [f"ADD  {i['spotify']}  -> {i['pick']}" for i in adds]
+        lines = [f"ADD  {i['spotify']}  -> {i['pick']} {local.get(str(i['pick'])) or '(not in the library)'}"
+                 for i in adds]
         lines.append(f"{len(adds)} to add, {len(by['yes']) - len(adds)} yes already in crate, "
                      f"{len(by['no'])} no, {len(by['pending'])} pending")
         if not apply:
@@ -754,8 +763,8 @@ def _apply_changes(plan_data: dict[str, Any], adds: list[dict[str, Any]]) -> dic
 
 @app.command(name="copy")
 def copy_playlist(
-    source: str = typer.Argument(..., help="rekordbox playlist to read, e.g. 'jazzy_relevations'."),
-    target: str = typer.Argument(..., help="Playlist to append to, e.g. 'jazz_base/2.1_jazzy_relevations'."),
+    source: str = typer.Argument(..., help="rekordbox playlist to read, e.g. 'warm_up_ideas'."),
+    target: str = typer.Argument(..., help="Playlist to append to, e.g. 'house_base/1.1_warm_up'."),
     apply: bool = typer.Option(False, "--apply", help="Really write. Default is a dry-run."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     preview_id: str = _PREVIEW_ID_OPT,

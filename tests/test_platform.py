@@ -119,8 +119,42 @@ def test_win32_still_asks_tasklist_exactly_as_before(monkeypatch, fake_run, stdo
     ((cmd, kwargs),) = run.calls
     assert cmd[0].replace("/", "\\").lower().endswith("system32\\tasklist.exe")
     assert cmd[1:] == ["/FI", "IMAGENAME eq rekordbox.exe", "/FO", "CSV", "/NH"]
-    assert kwargs == {"capture_output": True, "text": True, "check": True}
+    assert kwargs == {"capture_output": True, "text": True, "errors": "replace", "check": True}
     assert "pgrep" not in " ".join(cmd)
+
+
+# A French tasklist in code page 850 ("Aucune tâche ...", â = 0x83) with 0x81 next to it: neither
+# byte decodes as UTF-8 (PYTHONUTF8=1 in the MCP server) and 0x81 is not cp1252 either.
+LOCALIZED_NO_MATCH = b"INFO\xff: Aucune t\x83che en service ne correspond aux crit\x8ares sp\x82cifi\x82s \x81.\r\n"
+
+
+@pytest.mark.parametrize("stdout, expected", [
+    (LOCALIZED_NO_MATCH, False),
+    (LOCALIZED_NO_MATCH + RUNNING_CSV.encode("ascii"), True),
+], ids=["not-running", "running"])  # fmt: skip
+def test_win32_tasklist_in_another_code_page_is_read_not_a_crash(monkeypatch, stdout, expected):
+    """A real child process prints the bytes; only the program is swapped, the check's own
+    subprocess.run arguments decode them. Non-English Windows must answer, never crash."""
+    on(monkeypatch, "win32")
+    real_run = subprocess.run
+    seen = []
+
+    def child(cmd, **kwargs):
+        seen.append(kwargs)
+        code = "import sys; sys.stdout.buffer.write(bytes.fromhex(sys.argv[1]))"
+        return real_run([sys.executable, "-c", code, stdout.hex()], **kwargs)
+
+    monkeypatch.setattr(safety.subprocess, "run", child)
+    assert safety.rekordbox_running() is expected
+    assert seen and seen[0].get("text") is True  # decoded by the check itself, as in production
+
+
+def test_win32_tasklist_output_that_did_not_read_is_a_safety_error(monkeypatch):
+    on(monkeypatch, "win32")
+    monkeypatch.setattr(safety.subprocess, "run",
+                        lambda cmd, **kwargs: SimpleNamespace(returncode=0, stdout=None, stderr=None))
+    with pytest.raises(safety.SafetyError, match="tasklist failed"):
+        safety.rekordbox_running()
 
 
 @pytest.mark.parametrize("error", [
@@ -490,6 +524,39 @@ def test_status_counts_on_both_os_while_rekordbox_runs(monkeypatch, fake_run, st
     assert data["master_db"] == str(status_env.live)  # names the live file; reads the copy
     assert len(run.calls) == 1
     read_a_snapshot(status_env)
+
+
+def _spec_tracks(nodes):
+    """{playlist name: its track count} from the synthetic spec."""
+    out = {}
+    for node in nodes:
+        if node["kind"] == "playlist":
+            out[node["name"]] = len(node["tracks"])
+        out |= _spec_tracks(node.get("children", []))
+    return out
+
+
+def _status_tracks(rows):
+    out = {}
+    for row in rows:
+        if row["kind"] == "playlist":
+            out[row["name"]] = row["tracks"]
+        out |= _status_tracks(row.get("children", []))
+    return out
+
+
+def test_status_leaves_out_rows_rekordbox_soft_deleted(monkeypatch, fake_run, status_env):
+    """CLAUDE.md: rows are read through alive(). The snapshot holds a deleted track, a deleted
+    playlist and deleted playlist entries (rb_local_deleted=1): none of them is counted."""
+    on(monkeypatch, "win32")
+    fake_run(stdout=NOT_RUNNING_CSV)
+    status_env.connect.deleted = True
+    data = status_json()
+    assert data["tracks"] == fx.EXPECTED_COUNTS["tracks"]
+    assert _status_tracks(data["tree"]) == _spec_tracks(fx.SPEC["tree"])
+    human = runner.invoke(cli.app, ["status"])
+    assert human.exit_code == 0 and "[playlist] 1.1_warm_up  (4 tracks)" in human.output
+    assert f"tracks:        {fx.EXPECTED_COUNTS['tracks']}" in human.output
 
 
 @pytest.mark.parametrize("platform, answer", [

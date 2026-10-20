@@ -326,3 +326,14 @@ def test_the_v01_skill_set_is_complete():
     """BUILD-v0.1 success criterion: these eleven skills, no more, no fewer."""
     folders = {p.name for p in (Path(__file__).resolve().parents[1] / "plugin" / "skills").iterdir() if p.is_dir()}
     assert folders == EXPECTED_SKILLS
+
+
+def test_skill_scripts_run_with_python3_not_a_bare_python():
+    """macOS ships no `python` command (only python3), nor do many Linux sandboxes: a script line
+    says python3, with `python` named as the Windows form (as dj-start does)."""
+    for skill in sorted(SKILLS.glob("*/SKILL.md")):
+        text = skill.read_text(encoding="utf-8")
+        bare = re.findall(r"`python (?!3)[^`]*scripts/[^`]*`", text)
+        assert not bare, (skill.parent.name, bare)
+        if "python3 " in text and "scripts/" in text:
+            assert "`python` on Windows" in text, skill.parent.name

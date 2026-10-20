@@ -12,7 +12,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from dj import library
+from dj import libfolder, library
 from dj.intake import slug
 from dj.safety import REPO_ROOT
 
@@ -119,7 +119,6 @@ def apply(db: Any, source: str, target: str) -> Plan:
 
 def write_report(done: Plan) -> Path:
     report = done.as_dict() | {"applied_at": datetime.now().isoformat(timespec="seconds")}
-    path = REPORT_DIR / f"{date.today().isoformat()}-copy-{slug(done.target)}.report.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    return path
+    # create-only: a second copy into the same target on one day gets -2, the first report stays
+    return libfolder.write_new_numbered(REPORT_DIR, f"{date.today().isoformat()}-copy-{slug(done.target)}",
+                                        ".report.json", json.dumps(report, indent=2, ensure_ascii=False))

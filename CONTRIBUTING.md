@@ -74,6 +74,10 @@ Anything that writes to rekordbox, Spotify or audio files must follow these rule
 - Before a `master.db` write: rekordbox closed, verified backup, one commit, rollback on any exception. All database access goes through `dj.safety.open_db()`.
 - Only the pyrekordbox calls listed in [CLAUDE.md](CLAUDE.md) may mutate. Never `delete_*`, `move_*`, `rename_*` or `update_*`.
 - MCP tools are a fixed list. A write tool has a matching preview tool and refuses without a plan or preview id. Arguments are passed as a list, never through a shell.
+- The dry-run records a preview id and `--apply` checks it, through `dj.write_gate` (`record`, `check`, `consume`; the CLI's `--preview-id`). Anything that changed since the preview refuses the write (R-1102).
+- A `master.db` write also needs `--power-mode` and runs on Windows only (`write_gate.require_power_mode`, R-205).
+- A writing command appends its own `log.md` line through `dj.activity_log` (R-904); a dry-run or a refusal appends none.
+- An MCP tool whose list grows with the library returns it through `paginate` / `run_paged`: counts first, pages under the tool-result limit (NFR-03).
 
 PRs that touch writers, hooks or Spotify get an extra review.
 

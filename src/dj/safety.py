@@ -110,17 +110,24 @@ def rekordbox_running() -> bool:
 
 
 def _running_windows() -> bool:
-    """tasklist as before; a tasklist that cannot run or fails is a SafetyError, like pgrep."""
+    """tasklist as before; a tasklist that cannot run or fails is a SafetyError, like pgrep.
+
+    tasklist writes its localized messages in the console's OEM code page, which is neither
+    UTF-8 (the MCP server sets PYTHONUTF8=1) nor the ANSI code page: decode with errors="replace".
+    The process name is ASCII, the same in every one of those code pages."""
     tasklist = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tasklist.exe"
     try:
         result = subprocess.run(
             [str(tasklist), "/FI", f"IMAGENAME eq {PROCESS_NAME}", "/FO", "CSV", "/NH"],
             capture_output=True,
             text=True,
+            errors="replace",
             check=True,
         )
-    except (OSError, subprocess.SubprocessError) as exc:
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
         raise SafetyError(f"Cannot tell whether rekordbox runs: tasklist failed ({exc}).") from exc
+    if not isinstance(result.stdout, str):
+        raise SafetyError("Cannot tell whether rekordbox runs: tasklist failed (its output did not read).")
     return PROCESS_NAME.lower() in result.stdout.lower()
 
 
@@ -131,6 +138,7 @@ def _running_macos() -> bool:
             [PGREP, "-x", MAC_PROCESS_NAME],
             capture_output=True,
             text=True,
+            errors="replace",
             check=False,
             timeout=PGREP_TIMEOUT_S,
         )

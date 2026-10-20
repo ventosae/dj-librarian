@@ -75,3 +75,45 @@ def test_read_xml_works_without_engine_packages():
     """)
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout)["tracks"] == 24
+
+
+# Every Door 1 script with the arguments of a normal run. Installed from a zip or a GitHub
+# marketplace, the plugin runs as a copy with no dj core next to it (and dj is not on PyPI yet).
+SCRIPTS = {
+    "dj-start/scripts/start.py": ["find-xml"],
+    "dj-profile/scripts/profile.py": [],
+    "dj-structure/scripts/structure.py": [],
+    "dj-taste/scripts/taste.py": [],
+    "dj-report/scripts/report.py": [],
+    "dj-barber/scripts/barber.py": ["next"],
+    "dj-build/scripts/build.py": ["preview", "lanes"],
+    "dj-crate/scripts/crate.py": ["preview", "saturday"],
+}
+
+
+def test_every_skill_script_names_the_missing_core_in_one_json_object(tmp_path):
+    """No traceback where the core is missing: one JSON object that says so, exit 1."""
+    import pytest
+    import yaml
+
+    site = Path(yaml.__file__).resolve().parents[1]
+    if (site / "dj").exists():
+        pytest.skip("dj is installed as a package here; the missing-core branch is not reachable")
+    assert set(SCRIPTS) == {p.relative_to(REPO / "plugin" / "skills").as_posix()
+                            for p in (REPO / "plugin" / "skills").glob("*/scripts/*.py")}
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env["PYTHONPATH"] = str(site)  # PyYAML and the engine packages, but no dj (no .pth under -S)
+    library = tmp_path / "lib"
+    library.mkdir()
+    for script, args in SCRIPTS.items():
+        copy = tmp_path / "cache" / "dj-librarian" / "0.1.0" / "skills" / script
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        copy.write_bytes((REPO / "plugin" / "skills" / script).read_bytes())
+        done = subprocess.run([sys.executable, "-S", str(copy), *args, "--library", str(library)],
+                              cwd=tmp_path, env=env, capture_output=True, text=True, encoding="utf-8",
+                              timeout=120)  # fmt: skip
+        assert done.returncode == 1, (script, done.stdout, done.stderr)
+        assert "Traceback" not in done.stderr, (script, done.stderr)
+        out = json.loads(done.stdout)
+        assert "core" in out["error"] and "No module named 'dj'" in out["error"], (script, out)
+    assert list(library.iterdir()) == []

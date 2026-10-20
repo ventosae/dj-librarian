@@ -43,7 +43,10 @@ The write refuses without the id, with another command's id, after anything chan
 preview, or with an id already used: preview again and show the new result. Never invent an id.
 Writes into master.db (`dj_tree_apply`, `dj_apply_write`, `dj_copy_apply`) are Windows power mode
 (R-205): they also need `power_mode=true` and refuse on a Mac. Pass it only on Windows, after the
-DJ said yes to a direct write; otherwise the XML they import is the way (dj-build).
+DJ said yes to a direct write. Off Windows, new folders and playlists go through the XML they
+import (dj-build). Inbox adds (`dj_apply_write`) and playlist copies (`dj_copy_apply`) have no
+import path in v0.1: say so plainly, and the DJ adds those tracks in rekordbox by hand (the
+preview lists them).
 `exit_code: 2` = rekordbox is open: ask them to close it, call again with the same `preview_id`.
 Never hand them a shell command when a tool exists.
 
@@ -54,14 +57,16 @@ Always from the repo root:
 
 If the repo sits in a cloud-synced folder, the venv must live outside it: set
 `UV_PROJECT_ENVIRONMENT` (see CONTRIBUTING.md).
-Every command takes `--json`. Read that, not the human text.
+Every command takes `--json`, except `dj tree --apply` (text only; it refuses `--json`). Read the
+JSON, not the human text.
 Exit codes: 0 ok · 1 error or `REFUSED` (no valid preview id, no `--power-mode`) · 2 rekordbox is
 running (writes refused). A dry-run prints `Preview id: <id>` (`preview_id` in `--json`); the write
 is the same command with `--apply --preview-id <id>`, plus `--power-mode` for master.db.
 
 ## Before anything
-1. Read STATE.md, then README.md. CLAUDE.md holds the hard rules.
-2. Pick the link: the one the DJ named, else the one STATE.md marks as current.
+1. Read README.md; CLAUDE.md holds the hard rules. Then `dj status --json` (`dj_status`): the
+   links in use, with each one's last pull and last apply. log.md says what ran lately.
+2. Pick the link: the one the DJ named, else ask which one (one question, the links as chips).
    A `<link>` is the `spotify` or the `crate` value of an entry in links.yaml.
    links.yaml lives in the DJ's dj-library folder; while that file holds no link, the repo's
    links.yaml is used as before (`dj status` names the one in use as `links_file`). With the
@@ -85,16 +90,19 @@ is the same command with `--apply --preview-id <id>`, plus `--power-mode` for ma
    - AMBIGUOUS + yes also needs `pick`: a `rb_content_id` from that item's `candidates`.
    They say "yes to all" or name exceptions. Re-running `dj plan` the same day keeps the
    decisions already written.
-6. `uv run dj apply <plan> --json` is a DRY-RUN. Show `would_add` and the `adds` list; keep
-   its `preview_id`.
+6. `uv run dj apply <plan> --json` is a DRY-RUN. Show `would_add` and the `adds` list (each
+   add names the local file it puts in the crate, `local`); keep its `preview_id`. A `pick` the
+   plan did not offer as a candidate is refused: run `dj plan` again.
 7. Ask: "add these to the crate? is rekordbox closed?" Wait for a yes. Then
    `uv run dj apply <plan> --apply --power-mode --preview-id <preview_id> --json` (Windows only).
    The CLI checks rekordbox itself and backs up master.db first. Exit code 2 means
    rekordbox is open: tell them, wait, run the same command again. Never work around it.
-8. Read the report named in the output. `yes` picks are now in state/match_cache.json,
-   `no` decisions in state/declined.json: neither is ever asked again.
-9. Update STATE.md: counts, last sync date, next action. The tool already appended the log.md
-   line (`log` in the result); never write log.md yourself.
+8. Read the report named in the output. `yes` picks are now in the match memory
+   (`match_cache.json`), `no` decisions in the declined list (`declined.json`), both in
+   `.cache/state/` of the library folder (`state/` in the repo without one): neither is ever
+   asked again.
+9. Tell the DJ the counts and the next action. The tool already appended the log.md line (`log`
+   in the result); never write log.md yourself.
 
 ## Copying a rekordbox playlist to Spotify
 `uv run dj push "<rekordbox playlist path>" --json` is a dry-run: MATCH · AMBIGUOUS · MISSING,

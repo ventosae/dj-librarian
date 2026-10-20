@@ -26,7 +26,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterator, Mapping
 
 import yaml
@@ -771,7 +771,7 @@ def _library_root(path: str | Path, where: str) -> Path:
         resolved = Path(path).expanduser().resolve()
     except (OSError, RuntimeError) as exc:  # RuntimeError: `~` with no home folder known
         raise LibraryFolderError(f"{where}: cannot use {path}: {exc}") from exc
-    too_wide = resolved.parent == resolved  # a filesystem or drive root
+    too_wide = resolved.parent == resolved or _volume_root(resolved)  # a filesystem, drive or volume root
     try:
         home = Path.home().resolve()
     except (OSError, RuntimeError):
@@ -784,6 +784,20 @@ def _library_root(path: str | Path, where: str) -> Path:
             "Point it at the dj-library folder itself."
         )
     return resolved
+
+
+# Where macOS and Linux desktops mount a whole drive, and how deep the drive's own folder sits:
+# /Volumes/<drive>, /media/<drive> or /media/<user>/<drive>, /run/media/<user>/<drive>. Not /mnt:
+# a sandbox may mount the connected folder itself there (and WSL is not supported anyway).
+_VOLUME_MOUNTS = ((("/", "Volumes"), 3), (("/", "media"), 4), (("/", "run", "media"), 5))
+
+
+def _volume_root(path: str | Path) -> bool:
+    """True for a mounted drive's own folder, or a folder above it (a DJ's external music drive
+    on a Mac is /Volumes/<drive>). By path, not os.path.ismount: Cowork mounts the folder the DJ
+    connected, the dj-library folder itself, and that one must stay usable."""
+    parts = PurePosixPath(Path(path).as_posix()).parts
+    return any(parts[: len(base)] == base and len(parts) <= depth for base, depth in _VOLUME_MOUNTS)
 
 
 def relative(root: str | Path, path: str | Path) -> str:
@@ -834,6 +848,21 @@ def write_new_text(path: str | Path, text: str) -> bool:
         return _place_new(tmp, path)
     finally:
         _discard(tmp)
+
+
+MAX_NUMBERED = 10_000  # `<base>-N<suffix>` tries before giving up
+
+
+def write_new_numbered(folder: str | Path, base: str, suffix: str, text: str) -> Path:
+    """Write `text` to `<folder>/<base><suffix>`, or to the first free `<base>-N<suffix>` (N = 2,
+    3, ...). Returns the path. Create-only: a report from an earlier run is never replaced."""
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    for n in range(1, MAX_NUMBERED + 1):
+        path = folder / (f"{base}{suffix}" if n == 1 else f"{base}-{n}{suffix}")
+        if write_new_text(path, text):
+            return path
+    raise LibraryFolderError(f"{base}{suffix}: {MAX_NUMBERED} numbered names are taken. Nothing was written.")
 
 
 def _temp_next_to(target: Path) -> tuple[int, Path]:

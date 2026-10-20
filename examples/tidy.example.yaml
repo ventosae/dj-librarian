@@ -3,7 +3,8 @@
 # the audit shows which profile each finding comes from, so a wrong value is visible.
 
 roots: ["/path/to/your/music"]    # folder targets AND file writes are limited to these
-enforce_roots_for_writes: true    # a plan item outside roots is SKIP_OUTSIDE_ROOTS
+enforce_roots_for_writes: true    # a plan item outside roots is SKIP_OUTSIDE_ROOTS; apply and undo
+                                  # never write outside roots, whatever this says
 
 id3_version: 3                    # rekordbox + CDJ + Windows Explorer all read ID3v2.3
 

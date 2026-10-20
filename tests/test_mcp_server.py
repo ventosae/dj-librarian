@@ -28,11 +28,11 @@ PID = "0123456789ab"  # the shape of a preview id
 
 
 def test_every_call_is_an_argument_list_with_no_shell_and_no_stdin(calls):
-    m.dj_match("hypnotic_texture")
+    m.dj_match("example_link")
     cmd, kwargs = calls[-1]
     assert cmd[1:3] == ["-m", "dj.cli"] and isinstance(cmd, list)
     assert "shell" not in kwargs and kwargs["stdin"] == m.subprocess.DEVNULL
-    assert args(calls) == ["match", "--json", "--", "hypnotic_texture"]
+    assert args(calls) == ["match", "--json", "--", "example_link"]
 
 
 def test_a_value_can_never_become_an_option(calls):
@@ -124,7 +124,8 @@ def test_tool_list_and_which_ones_are_read_only():
     }
     writers = {n for n, t in tools.items() if not t.annotations.read_only_hint}
     assert writers == {"dj_plan", "dj_tree_apply", "dj_apply_write", "dj_copy_apply", "dj_push_apply",
-                       "dj_build_apply", "dj_tidy_plan", "dj_tidy_apply", "dj_tidy_undo", "dj_library_analyze",
+                       "dj_build_apply", "dj_tidy_audit", "dj_tidy_plan", "dj_tidy_apply", "dj_tidy_undo",
+                       "dj_library_analyze",
                        "dj_structure_preview", "dj_structure_write", "dj_crate_write", "dj_barber_next",
                        "dj_barber_record", "dj_wishlist_shop"}
     assert not any(t.annotations.destructive_hint for t in tools.values())

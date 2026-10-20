@@ -39,8 +39,10 @@ class FakeSpotify:
         return {"id": pid, "external_urls": {"spotify": f"https://open.spotify.com/playlist/{pid}"}}
 
     def playlist_item_uris(self, pid):
+        if getattr(self, "down", None):
+            raise SpotifyError(self.down)
         if pid not in self.playlists:
-            raise SpotifyError("404")
+            raise SpotifyError(f"GET https://api.spotify.com/v1/playlists/{pid}/items -> 404 not found")
         return list(self.playlists[pid])
 
     def add_items(self, pid, uris):
@@ -117,6 +119,32 @@ def test_apply_makes_a_new_playlist_if_the_old_one_is_gone(tmp_path):
     assert again["created"] and again["added"] == 1
 
 
+@pytest.mark.parametrize("error", [
+    "GET https://api.spotify.com/v1/playlists/pl1/items -> 502 bad gateway",
+    "GET https://api.spotify.com/v1/playlists/pl1/items -> 429 slow down",
+    "GET https://api.spotify.com/v1/playlists/pl1/items failed: ConnectError",
+])  # fmt: skip
+def test_apply_never_makes_a_second_playlist_when_spotify_does_not_answer(tmp_path, error):
+    """Only 404/403 means gone. Any other error reading the remembered playlist is raised before
+    anything is created, and state/push.json still points at the first playlist."""
+    api, state = FakeSpotify(), tmp_path / "push.json"
+    push.apply(api, "rb1", "deep", ["u1"], state)
+    before = state.read_text(encoding="utf-8")
+    api.down = error
+    with pytest.raises(SpotifyError, match="pl1/items"):
+        push.apply(api, "rb1", "deep", ["u1", "u2"], state)
+    assert api.created == ["deep"] and api.playlists == {"pl1": ["u1"]}
+    assert state.read_text(encoding="utf-8") == before
+
+
+def test_apply_makes_a_new_playlist_when_the_old_one_is_no_longer_readable(tmp_path):
+    api, state = FakeSpotify(), tmp_path / "push.json"
+    push.apply(api, "rb1", "deep", ["u1"], state)
+    api.down = "GET https://api.spotify.com/v1/playlists/pl1/items -> 403 forbidden"
+    again = push.apply(api, "rb1", "deep", ["u1"], state)
+    assert again["created"] and api.created == ["deep", "deep"]
+
+
 def row(id_, name, attribute, parent, seq=1, songs=()):
     return NS(ID=id_, Name=name, Attribute=attribute, ParentID=parent, Seq=seq, Songs=list(songs))
 
@@ -144,3 +172,10 @@ def test_find_playlist_errors():
         push.find_playlist(db, "nope")
     with pytest.raises(push.PushError, match="is a folder"):
         push.find_playlist(db, "funk_base")
+
+
+def test_a_second_report_on_the_same_day_never_replaces_the_first(tmp_path):
+    first = push.write_report("deep", {"run": 1}, tmp_path)
+    second = push.write_report("deep", {"run": 2}, tmp_path)
+    assert second.name == first.name.replace(".report.json", "-2.report.json")
+    assert '"run": 1' in first.read_text(encoding="utf-8") and '"run": 2' in second.read_text(encoding="utf-8")

@@ -31,7 +31,7 @@ from it, never from a generic idea of a tidy library.
 Step 1 of 2, about a minute.
 
 1. Door 1, no engine (Cowork): from this skill's folder run
-   `python3 scripts/profile.py --library <dj-library folder>`. Options: `--xml FILE` reads one
+   `python3 scripts/profile.py --library <dj-library folder>` (`python` on Windows). Options: `--xml FILE` reads one
    export instead of the latest in `exports/`; `--today YYYY-MM-DD` fixes the date in the files.
 2. Engine (Claude Code, or the DJ in a terminal at the repo root):
    `uv run dj library profile --json`. `--library DIR` defaults to the configured folder;

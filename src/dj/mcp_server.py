@@ -46,12 +46,13 @@ server = MCPServer(
     "dj-librarian",
     instructions=(
         "Tools for the DJ's rekordbox library via the dj CLI. rekordbox is the truth; you only "
-        "propose. Read STATE.md and the dj-sync skill first. Every *_apply / *_write / *_undo tool "
+        "propose. Read the dj-sync skill first. Every *_apply / *_write / *_undo tool "
         "needs the preview_id its preview tool returned: call the preview, show the DJ the result, "
         "ask, and only after their explicit yes pass that preview_id. Direct master.db writes "
         "(dj_tree_apply, dj_apply_write, dj_copy_apply) also need power_mode=true and run on Windows "
-        "only; the default write path is an XML the DJ imports (dj_structure_preview / "
-        "dj_structure_write). exit_code 2 = refused: the `hint` says why. Usually rekordbox is open: ask "
+        "only; the default write path is an XML the DJ imports, for new structures and crates "
+        "(dj_structure_preview / dj_structure_write, dj_crate_preview / dj_crate_write). "
+        "exit_code 2 = refused: the `hint` says why. Usually rekordbox is open: ask "
         "them to close it, then retry the same call; a library folder that is not set up needs "
         "dj-start first. Never ask for a way around a refusal. The dj_tidy_* tools work on the audio files "
         "(tags, names), never on master.db: after dj_tidy_apply they must Reload Tag in rekordbox. "
@@ -521,7 +522,9 @@ def preview_id_arg(preview_id: Any, preview_tool: str) -> str:
 
 POWER_MODE_REFUSAL = (
     "master.db writes are power mode (Windows only): pass power_mode=true only when the DJ asked for a "
-    "direct write, or build an XML to import (dj_structure_preview / dj_structure_write)."
+    "direct write. New folders and playlists can go through an XML to import instead "
+    "(dj_structure_preview / dj_structure_write); inbox adds and copies have no import path in v0.1 "
+    "(the DJ adds those tracks in rekordbox by hand)."
 )
 
 
@@ -728,8 +731,9 @@ def dj_apply_write(plan_file: str, preview_id: str, power_mode: bool = False) ->
     """WRITES to rekordbox master.db: append the `decision: yes` tracks of a plan to its crate.
     Backup first, one commit, exit_code 2 while rekordbox is open. Then updates
     the match cache and the declined list and writes a report (reports/apply/ in a library folder). Windows power mode (R-205):
-    needs power_mode=true, else refused; the default write path is an XML the DJ imports
-    (dj_structure_preview / dj_structure_write). Call dj_apply_preview, show the DJ the result,
+    needs power_mode=true, else refused. The default write path is an XML the DJ imports, but only for
+    new structures and crates (dj_structure_write, dj_crate_write): v0.1 has no XML for inbox adds, so
+    off Windows the DJ adds the plan's tracks in rekordbox by hand. Call dj_apply_preview, show the DJ the result,
     ask, and only after their explicit yes pass its preview_id (same `plan_file`; a bare name is
     looked up in plans/: "2026-10-20-house.plan.json" -> plans/2026-10-20-house.plan.json).
     Appends one log.md line itself. A long list comes back as its first page;
@@ -745,8 +749,9 @@ def dj_apply_write(plan_file: str, preview_id: str, power_mode: bool = False) ->
 def dj_copy_apply(source: str, target: str, preview_id: str, power_mode: bool = False) -> str:
     """WRITES to rekordbox master.db: append the tracks of playlist `source` to `target` (skips
     tracks already there). Backup first, one commit, exit_code 2 while rekordbox is open.
-    Windows power mode (R-205): needs power_mode=true, else refused; the default write path is an
-    XML the DJ imports (dj_structure_preview / dj_structure_write). Call dj_copy_preview, show
+    Windows power mode (R-205): needs power_mode=true, else refused. The default write path is an
+    XML the DJ imports, but only for new structures and crates (dj_structure_write, dj_crate_write):
+    v0.1 has no XML for a copy, so off Windows the DJ copies the tracks in rekordbox by hand. Call dj_copy_preview, show
     the DJ the result, ask, and only after their explicit yes pass its preview_id (same source
     and target). Appends one log.md line itself. A long list comes back as its first page;
     `paging.<list>.rest_in` names the report with all of it."""
@@ -889,14 +894,14 @@ def dj_crate_write(spec: str, preview_id: str) -> str:
 # -- dj tidy: audio files, never master.db -------------------------------------------------
 
 
-@server.tool(annotations=READ)
+@server.tool(annotations=LIBRARY_TEXT)
 @guarded
 def dj_tidy_audit(crate: str = "", folder: str = "", all_tracks: bool = False, profiles: str = "",
                   brief: bool = True, page: int = 1, page_size: int = PAGE_SIZE) -> str:
-    """Read-only hygiene audit of the audio files behind a rekordbox crate (path like
-    house_base/0_INBOX), a music folder inside tidy.yaml roots, or the whole collection:
-    missing/odd tags, artwork, file names, CDJ playability per profile, duplicates. Writes
-    reports/tidy/<date>-<target>.audit.md + .json and one log.md line, and returns the counts
+    """Hygiene audit of the audio files behind a rekordbox crate (path like house_base/0_INBOX),
+    a music folder inside tidy.yaml roots, or the whole collection: missing/odd tags, artwork,
+    file names, CDJ playability per profile, duplicates. Only reads the audio files and rekordbox;
+    writes reports/tidy/<date>-<target>.audit.md + .json and one log.md line, and returns the counts
     (brief) or everything (brief=false: `items` and `duplicates` in pages, `paging`; page=2 for
     the next). Page 1 scans the files; pages 2+ are cut from that scan (10 minutes) and scan and
     log nothing. `profiles` = comma-separated tidy.yaml profile names. Works while rekordbox is

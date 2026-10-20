@@ -1,5 +1,6 @@
 """Plan building, validation, apply and undo on real (synthetic) files in tmp_path."""
 
+import dataclasses
 import json
 
 import pytest
@@ -345,3 +346,51 @@ def test_outside_roots_is_skipped_when_enforced(env, tmp_path):
     items, _, known = scan.items_for(target, TidyDB(), loose, "none")
     plan2 = plan_mod.build_plan(items, target, loose, known)
     assert plan2["items"][0]["skip_reason"] == "SKIP_OUTSIDE_ROOTS" and plan["items"][0]["skip_reason"] is None
+
+
+# -- writes stay inside the tidy.yaml roots, and a rename never replaces a file (CLAUDE.md) -----
+
+
+def test_apply_never_writes_outside_the_roots_even_when_the_config_opts_out(env, tmp_path):
+    """enforce_roots_for_writes: false only shapes the plan; the write itself stays in the roots."""
+    root, cfg, paths = env
+    a = make_audio(root / "Huerta - Low Five.mp3")
+    path = plan_mod.write_plan(build(root, cfg), paths)
+    plan = decide(path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    narrowed = dataclasses.replace(cfg, roots=[elsewhere], enforce_roots_for_writes=False)
+    before = a.read_bytes()
+    result = plan_mod.apply_plan(plan, path, narrowed, paths, dry_run=False)
+    assert result.applied == [] and [why for _, why in result.skipped] == ["outside tidy.yaml roots"]
+    assert a.read_bytes() == before and not plan_mod.undo_path_for(path, paths).exists()
+
+
+def test_undo_never_touches_a_file_outside_the_roots(env, tmp_path):
+    """The undo record's paths are data: one that points outside the roots is skipped."""
+    root, cfg, paths = env
+    a = make_audio(root / "Huerta - Low Five.mp3")
+    path = plan_mod.write_plan(build(root, cfg), paths)
+    applied = plan_mod.apply_plan(decide(path), path, cfg, paths, dry_run=False)
+    outside = tmp_path / "outside.mp3"
+    outside.write_bytes(a.read_bytes())  # same bytes, so the sha check alone would let it through
+    undo = json.loads(applied.undo_path.read_text(encoding="utf-8"))
+    undo["records"][0]["file_after"] = outside.as_posix()
+    applied.undo_path.write_text(json.dumps(undo), encoding="utf-8")
+    before = outside.read_bytes()
+    for dry_run in (True, False):
+        result = plan_mod.undo_plan(plan_mod.load_plan(path), path, cfg, paths, dry_run=dry_run)
+        assert result.restored == [] and [why for _, why in result.skipped] == ["outside tidy.yaml roots"]
+    assert outside.read_bytes() == before and tags.read(a)[0].artist == ("Huerta",)
+
+
+def test_a_rename_never_replaces_a_file_that_sits_at_the_target(tmp_path):
+    """The existence check and the rename are one step: a file that appeared in between stays."""
+    src, dst = tmp_path / "a.mp3", tmp_path / "b.mp3"
+    src.write_bytes(b"mine")
+    dst.write_bytes(b"theirs")
+    with pytest.raises(FileExistsError):
+        plan_mod._rename_new(src, dst)
+    assert src.read_bytes() == b"mine" and dst.read_bytes() == b"theirs"
+    plan_mod._rename_new(src, tmp_path / "c.mp3")
+    assert not src.exists() and (tmp_path / "c.mp3").read_bytes() == b"mine"

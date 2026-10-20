@@ -106,3 +106,13 @@ def test_report_is_written(tmp_path, monkeypatch):
     path = pc.write_report(pc.apply(db, SRC, DST))
     assert path.parent == tmp_path and "copy-jazz_base_2.1_jazzy" in path.name
     assert '"ADD": 1' in path.read_text(encoding="utf-8")
+
+
+def test_a_second_report_on_the_same_day_never_replaces_the_first(tmp_path, monkeypatch):
+    """The report is the only per-track record of what went into master.db: create-only."""
+    monkeypatch.setattr(pc, "REPORT_DIR", tmp_path)
+    first = pc.write_report(pc.apply(CopyDB([song("1", 1)]), SRC, DST))
+    text = first.read_text(encoding="utf-8")
+    second = pc.write_report(pc.apply(CopyDB([song("1", 1), song("2", 2)]), SRC, DST))
+    assert second != first and second.name == first.name.replace(".report.json", "-2.report.json")
+    assert first.read_text(encoding="utf-8") == text

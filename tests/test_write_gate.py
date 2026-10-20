@@ -39,8 +39,9 @@ from dj.tidy import tags
 
 runner = CliRunner()
 
-POWER_MODE_LINE = ("REFUSED master.db writes are power mode (Windows only): add --power-mode, or build an XML to "
-                   "import (dj library build)")  # fmt: skip
+POWER_MODE_LINE = ("REFUSED master.db writes are power mode (Windows only): add --power-mode. Only new folders and "
+                   "playlists have an XML to import instead (dj library build); inbox adds and copies have none "
+                   "in v0.1")  # fmt: skip
 NO_SUCH_ID = "0" * 12
 
 

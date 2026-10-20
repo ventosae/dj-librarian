@@ -832,6 +832,30 @@ def test_configured_root_refuses_a_drive_root_or_home(fake_repo, tmp_path, home,
             configured_root()
 
 
+@pytest.mark.parametrize("path, wide", [
+    ("/Volumes/MusicSSD", True),
+    ("/Volumes", True),
+    ("/media/dj/USB", True),
+    ("/media/USB", True),
+    ("/run/media/dj/USB", True),
+    ("/Volumes/MusicSSD/dj-library", False),
+    ("/media/dj/USB/dj-library", False),
+    ("/sessions/abc/mnt/dj-library", False),  # a sandbox mounts the connected folder itself
+    ("/mnt/dj-library", False),
+    ("/Users/dj/Music/dj-library", False),
+])  # fmt: skip
+def test_a_mounted_drive_root_is_too_wide(path, wide):
+    """A DJ's external drive on a Mac is /Volumes/<drive>: that is a whole drive, not a folder."""
+    assert libfolder._volume_root(path) is wide
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mount paths")
+def test_remember_root_refuses_a_mac_volume_root(fake_repo):
+    with pytest.raises(LibraryFolderError, match="whole drive"):
+        remember_root("/Volumes/MusicSSD")
+    assert not (fake_repo / "state" / "library-path.txt").exists()
+
+
 def test_relative_gives_posix_paths_inside_the_folder(lib, tmp_path):
     assert relative(lib, lib / "taste" / "lanes.md") == "taste/lanes.md"
     assert relative(lib, "taste/lanes.md") == "taste/lanes.md"

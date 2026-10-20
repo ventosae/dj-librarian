@@ -142,3 +142,20 @@ def test_find_master_db_override_must_exist(monkeypatch, tmp_path):
     monkeypatch.setenv("DJ_MASTER_DB", str(tmp_path / "nope.db"))
     with pytest.raises(FileNotFoundError):
         safety.find_master_db()
+
+
+# -- the conftest guard itself: no test reaches the network (CLAUDE.md, Tests) -----------------
+
+
+def test_the_suite_blocks_dns_connect_ex_and_udp_not_only_connect():
+    import socket
+
+    with pytest.raises(AssertionError, match="network"):
+        socket.getaddrinfo("api.spotify.com", 443)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        with pytest.raises(AssertionError, match="network"):
+            sock.connect_ex(("192.0.2.1", 443))  # TEST-NET-1: never routed
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        with pytest.raises(AssertionError, match="network"):
+            sock.sendto(b"x", ("192.0.2.1", 53))
+    assert socket.getaddrinfo("127.0.0.1", 80)  # the machine itself still resolves

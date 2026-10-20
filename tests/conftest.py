@@ -90,7 +90,11 @@ def db():
 
 @pytest.fixture(autouse=True)
 def no_real_db_no_network(monkeypatch):
-    """A test that forgets to mock must fail loudly, never touch master.db or the internet."""
+    """A test that forgets to mock must fail loudly, never touch master.db or the internet.
+
+    Network: connect, connect_ex and sendto reach loopback only, and only the machine's own names
+    resolve. asyncio's Proactor connects to a numeric address without socket.connect; a host name
+    still has to resolve first, which is blocked."""
     import socket
 
     from dj import safety
@@ -101,14 +105,41 @@ def no_real_db_no_network(monkeypatch):
     monkeypatch.setattr(safety, "_connect", refuse)
     monkeypatch.setattr(safety, "find_master_db", refuse)
     real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+    real_sendto = socket.socket.sendto
+    real_getaddrinfo = socket.getaddrinfo
+    loopback = ("127.0.0.1", "::1")
+
+    def is_loopback(address):
+        return isinstance(address, tuple) and address[0] in loopback
 
     def loopback_only(sock, address):
         # asyncio on Windows wires its event loop through a 127.0.0.1 socket pair.
-        if isinstance(address, tuple) and address[0] in ("127.0.0.1", "::1"):
+        if is_loopback(address):
             return real_connect(sock, address)
         refuse()
 
+    def loopback_only_ex(sock, address):
+        if is_loopback(address):
+            return real_connect_ex(sock, address)
+        refuse()
+
+    def loopback_sendto(sock, data, *args):
+        if args and is_loopback(args[-1]):  # sendto(data, address) or sendto(data, flags, address)
+            return real_sendto(sock, data, *args)
+        refuse()
+
+    def local_names_only(host, *args, **kwargs):
+        # DNS is the network too: only the machine itself resolves (asyncio and httpx resolve
+        # before they connect, so this also covers connections that bypass socket.connect).
+        if host in (None, "", "localhost", b"localhost", *loopback):
+            return real_getaddrinfo(host, *args, **kwargs)
+        refuse()
+
     monkeypatch.setattr(socket.socket, "connect", loopback_only)
+    monkeypatch.setattr(socket.socket, "connect_ex", loopback_only_ex)
+    monkeypatch.setattr(socket.socket, "sendto", loopback_sendto)
+    monkeypatch.setattr(socket, "getaddrinfo", local_names_only)
 
 
 @pytest.fixture(autouse=True)

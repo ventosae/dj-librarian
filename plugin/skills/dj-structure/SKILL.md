@@ -24,7 +24,7 @@ What the DJ already does comes before any suggestion (R-301). The script measure
 
 ## How to run it
 
-1. Cowork, no engine (Door 1): `python scripts/structure.py --library <dj-library folder>` from this skill's folder. Options: `--xml FILE` reads another export instead of the newest in `exports/`; `--today YYYY-MM-DD` sets the date written into the files.
+1. Cowork, no engine (Door 1): `python3 scripts/structure.py --library <dj-library folder>` from this skill's folder (`python` on Windows, `uv run python` inside a clone of the repo). Options: `--xml FILE` reads another export instead of the newest in `exports/`; `--today YYYY-MM-DD` sets the date written into the files.
 2. Engine installed (Door 2): `dj library structure --library DIR [--xml FILE] [--today YYYY-MM-DD] [--json]`. Without `--library` it uses the configured folder.
 3. The script prints one JSON object: `ok`, `written` (the 4 files), `kept`, `source`, `counts`, `reveals`, `log`. Exit 1 = error, with `error` saying what failed.
 4. No export yet, or a folder that is not a dj-library folder (no valid `library.yaml`): the error says so and nothing is written. Tell the DJ to run dj-start on the folder or drop the collection XML in it, then run it again. About 1 minute.

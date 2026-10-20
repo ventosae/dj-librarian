@@ -9,6 +9,7 @@ and `undo` refuse to touch silently. master.db is never opened here.
 from __future__ import annotations
 
 import dataclasses
+import errno
 import json
 import os
 from dataclasses import dataclass, field
@@ -16,7 +17,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Collection, Sequence
 
-from dj import intake
+from dj import intake, libfolder
 from dj.intake import Paths
 from dj.tidy import TidyError, names, tags
 from dj.tidy.checks import Item
@@ -352,7 +353,7 @@ def preflight(plan: dict[str, Any], cfg: TidyConfig, undo: dict[str, Any]) -> tu
             reason = "an earlier apply stopped half-way on this file (undo record incomplete): check it by hand"
         elif not path.is_file():
             reason = "file is missing"
-        elif cfg.enforce_roots_for_writes and not any(_inside(path, r) for r in cfg.roots):
+        elif not _in_roots(path, cfg):  # always: enforce_roots_for_writes only shapes the plan
             reason = "outside tidy.yaml roots"
         elif item.get("sha256") and tags.sha256(path) != item["sha256"]:
             reason = "file changed since the plan was written (re-run dj tidy plan)"
@@ -392,6 +393,30 @@ def _inside(path: Path, root: Path) -> bool:
         return path.resolve().is_relative_to(root.resolve())
     except OSError:
         return False
+
+
+def _in_roots(path: Path, cfg: TidyConfig) -> bool:
+    """CLAUDE.md: audio file writes stay inside the tidy.yaml roots, for apply and undo alike."""
+    return any(_inside(path, r) for r in cfg.roots)
+
+
+def _rename_new(path: Path, target: Path) -> None:
+    """Rename `path` to `target`, never over a file that sits there: the check and the rename are
+    one step. os.rename refuses an existing target on Windows (where tidy writes run in v0.1);
+    elsewhere a hard link does, and a disk without hard links checks first."""
+    if os.name == "nt":
+        os.rename(path, target)  # FileExistsError when target exists
+        return
+    try:
+        os.link(path, target)  # FileExistsError when target exists
+    except FileExistsError:
+        raise
+    except OSError:
+        if target.exists():
+            raise FileExistsError(errno.EEXIST, "File exists", str(target)) from None
+        os.rename(path, target)
+        return
+    os.unlink(path)
 
 
 def apply_plan(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, paths: Paths, strict: bool = False,
@@ -464,7 +489,7 @@ def _write_ready(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, paths: 
                 target = path.with_name(ren["new"])
                 if target.exists():
                     raise TidyError(f"rename target {ren['new']!r} appeared since preflight")
-                os.replace(path, target)
+                _rename_new(path, target)
                 path = target
                 record["renamed"] = True
         except (TidyError, OSError) as exc:
@@ -494,11 +519,11 @@ def _write_ready(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, paths: 
 
 
 def write_apply_report(result: ApplyResult, plan: dict[str, Any], paths: Paths) -> Path:
-    folder = paths.reports / "tidy"
-    path = folder / f"{date.today().isoformat()}-tidy-apply-{plan['target']['slug']}.report.json"
     data = result.as_dict() | {"applied_at": datetime.now().isoformat(timespec="seconds"), "plan_id": plan["plan_id"]}
-    _write_json_atomic(path, data)
-    return path
+    # create-only: a second apply on one day gets -2, the first report stays
+    return libfolder.write_new_numbered(paths.reports / "tidy", f"{date.today().isoformat()}-tidy-apply-"
+                                        f"{plan['target']['slug']}", ".report.json",
+                                        json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def write_relocate(plan: dict[str, Any], renames: Sequence[dict[str, Any]], paths: Paths) -> Path:
@@ -571,6 +596,9 @@ def _restore(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, undo: dict[
             result.skipped.append((record, "incomplete record (apply stopped half-way): check the file by hand"))
             continue
         path = Path(record["file_after"])
+        if not (_in_roots(path, cfg) and _in_roots(Path(record["file_before"]), cfg)):
+            result.skipped.append((record, "outside tidy.yaml roots"))
+            continue
         if not path.is_file():
             result.failed.append((record, f"{path.name} is missing"))
             continue
@@ -586,7 +614,7 @@ def _restore(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, undo: dict[
                 back = Path(record["file_before"])
                 if back.exists():
                     raise TidyError(f"cannot rename back: {back.name} exists")
-                os.replace(path, back)
+                _rename_new(path, back)
                 path = back
             before = record.get("id3_version_before")  # put the tag back in the version the file had
             version = before[1] if before and before[0] == 2 and before[1] in (3, 4) else id3_version

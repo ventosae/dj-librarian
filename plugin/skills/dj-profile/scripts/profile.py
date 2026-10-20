@@ -39,9 +39,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--today", help="date written into the files, YYYY-MM-DD (default: today)")
     args = parser.parse_args(argv)
 
-    from dj.analysis import profile
-    from dj.analysis.common import NotALibraryFolder, parse_day
-    from dj.model import LibraryError
+    try:
+        from dj.analysis import profile
+        from dj.analysis.common import NotALibraryFolder, parse_day
+        from dj.model import LibraryError
+    except ImportError as exc:  # no engine venv and not inside a clone of the repo (Q-06)
+        print(json.dumps({"ok": False, "error": f"cannot load the dj-librarian core: {exc}", "reason": "core"}))
+        return EXIT_ERROR
 
     try:
         result = profile.run(Path(args.library), xml=args.xml, today=parse_day(args.today))

@@ -40,8 +40,10 @@ Say done when Claude is back (under a minute).
 ```
 
 Until the engine is on PyPI, step 2 is the clone plus `uv sync`; after that it becomes one `uvx` line.
-Keep the clone outside cloud-synced folders (Dropbox, iCloud Drive, OneDrive), or set
-`UV_PROJECT_ENVIRONMENT` as CONTRIBUTING.md says.
+Keep the clone outside cloud-synced folders (Dropbox, iCloud Drive, OneDrive). On Windows you can
+instead set `UV_PROJECT_ENVIRONMENT` as CONTRIBUTING.md says. On a Mac the plugin's engine never
+sees that setting (Claude does not read `~/.zshrc`): keep the clone out of synced folders, or
+register the engine by hand with `env` (README, "The engine on Windows and macOS").
 
 The plugin's `.mcp.json` starts the engine from the folder above the plugin folder (`uv run
 --directory <plugin folder>/..`), so it works only while the plugin runs from the clone itself.
@@ -67,7 +69,8 @@ When it fails, one matter-of-fact line and the fix, then wait:
 - No dj_status tool: the plugin is not on, or Claude was not restarted (step 2, last part). If both are done, the plugin runs from a copy: the next line.
 - `dj-mcp` not found, or no `pyproject.toml`: the plugin runs from a copy, not from the clone (Q-08). Claude Code: add the marketplace from the clone folder (`claude plugin marketplace add ./`). Cowork: register the engine by hand, README "The engine on Windows and macOS".
 - `master.db not found`: rekordbox 7 is not in its usual place. Set `DJ_MASTER_DB` to the master.db path and restart Claude.
-- `uv` not found: step 1 did not finish. Open a new Terminal or PowerShell and run `uv --version`.
+- `uv` not found: step 1 did not finish. Open a new Terminal or PowerShell and run `uv --version`. Works there but not in Claude on a Mac: Claude started from the Dock has a short `PATH`; register the engine by hand with the full path `which uv` prints (README).
+- No virtual environment, or `dj-mcp` missing although the clone is right: the engine looks for its venv in the clone (`.venv/`). A Mac clone in a synced folder whose venv lives elsewhere: move the clone out, run `uv sync` there, restart Claude.
 
 ## The gates
 

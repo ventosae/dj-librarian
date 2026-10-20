@@ -24,13 +24,12 @@ Windows power mode on top: they also need `power_mode=true` (R-205).
 | `dj_status` | Track count, playlist tree, links. Reads a snapshot of master.db. |
 | `dj_library_inspect` | Library summary from an XML export or a master.db snapshot. |
 | `dj_match` | Matches the last Spotify pull against the library. |
-| `dj_pull` | Reads a Spotify playlist into `inbox/` (read-only on Spotify). |
+| `dj_pull` | Reads a Spotify playlist into `.cache/inbox/` in your dj-library folder (`inbox/` in the repo while the library's links.yaml holds no link). Read-only on Spotify. |
 | `dj_tree_preview` | Dry-run of a tree file; returns a `preview_id`. |
 | `dj_apply_preview` | Dry-run of a sync plan; returns a `preview_id`. |
 | `dj_copy_preview` | Dry-run of a playlist copy; returns a `preview_id`. |
 | `dj_push_preview` | Dry-run of a push to Spotify; returns a `preview_id`. |
 | `dj_build_preview` | Dry-run of a tracklist to Spotify; returns a `preview_id`. |
-| `dj_tidy_audit` | Hygiene audit of the audio files; writes a report only. |
 | `dj_tidy_dupes` | Duplicate report; never deletes. |
 | `dj_tidy_apply_preview` | Dry-run of a tidy plan; returns a `preview_id`. |
 | `dj_tidy_undo_preview` | Dry-run of a tidy undo; returns a `preview_id`. |
@@ -45,6 +44,7 @@ rekordbox, Spotify or audio files.
 |---|---|
 | `dj_plan` | A sync plan and a wishlist (`plans/`, `wishlist/`). |
 | `dj_tidy_plan` | A tidy plan (`plans/`). |
+| `dj_tidy_audit` | An audit report of the audio files (`reports/tidy/`); the files are only read. |
 | `dj_library_analyze` | profile/, structure/, taste/ and the HTML report. |
 | `dj_structure_preview` | `proposals/<slug>.yaml` and a preview record; returns a `preview_id`. |
 | `dj_barber_next` | Plans or resumes a Style Barber session (`.cache/barber.json`); returns the next question. |
@@ -68,9 +68,12 @@ rekordbox, Spotify or audio files.
 Every write tool's name ends in `_apply`, `_write` or `_undo`; no read or library-text tool's does.
 That is the pattern the Claude Code hook matches.
 
-These are the tools the engine has today. Crate me adds `dj_crate_preview` (a read tool) and
-`dj_crate_write` (a write tool: Ask every time) when it ships; the hook already matches the
-write tool's name.
+## File and folder arguments
+
+A tool takes a file inside your dj-library folder or the repo, never anywhere else. One exception:
+`dj_tidy_audit`, `dj_tidy_dupes` and `dj_tidy_plan` take a music `folder`, which must sit inside the
+`roots:` of your `tidy.yaml`; audio file writes (`dj_tidy_apply`, `dj_tidy_undo`) stay inside those
+roots too.
 
 ## Where to set it
 

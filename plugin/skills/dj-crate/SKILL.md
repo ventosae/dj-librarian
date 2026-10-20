@@ -18,9 +18,10 @@ playlists in. master.db is never opened.
 
 | Step | Engine (MCP tool) | Cowork sandbox (script) |
 |---|---|---|
-| Preview | `dj_crate_preview(spec)` | `python scripts/crate.py preview <slug> --library <folder>` |
-| Write | `dj_crate_write(spec, preview_id)` | `python scripts/crate.py apply <slug> --preview-id <id> --library <folder>` |
+| Preview | `dj_crate_preview(spec)` | `python3 scripts/crate.py preview <slug> --library <folder>` |
+| Write | `dj_crate_write(spec, preview_id)` | `python3 scripts/crate.py apply <slug> --preview-id <id> --library <folder>` |
 
+- Scripts run with `python3` (`python` on Windows, `uv run python` inside a clone of the repo).
 - `<slug>` names `crates/<slug>.spec.yaml` in the dj-library folder (the path works too).
 - The script prints one JSON object. Exit 0 = done, 1 = error, 2 = refused. The MCP tools return
   `{ok, exit_code, result | stderr}`; a `REFUSED` line means the same as exit 2.

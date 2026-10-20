@@ -316,7 +316,8 @@ def match_one(
     cached = by_id.get(str(cache.get(cand.uri, "")))
     if cached:
         status = IN_CRATE if cached.content_id in in_crate else PROPOSE
-        return Item(cand, status, pick=cached, how="cache")
+        # the remembered file is the one candidate offered: a plan's pick is checked against it
+        return Item(cand, status, pick=cached, how="cache", top=((cached, match.score(cached, cand)),))
 
     scored = [(t, match.score(t, cand)) for t in tracks]
     scored.sort(key=lambda p: (not p[1].isrc_match, -p[1].score, p[1].duration_diff_s))
@@ -447,8 +448,11 @@ def load_plan(path: Path) -> dict[str, Any]:
         if item.get("decision") == YES and not item.get("pick"):
             raise IntakeError(f"decision is yes but pick is empty: {item.get('spotify')}")
         offered = {str(c.get("rb_content_id")) for c in item.get("candidates") or []}
-        if item.get("decision") == YES and offered and str(item["pick"]) not in offered:
-            raise IntakeError(f"pick {item['pick']} is not one of the candidates: {item.get('spotify')}")
+        if item.get("decision") == YES and str(item["pick"]) not in offered:
+            raise IntakeError(
+                f"pick {item['pick']} is not one of the candidates the tool offered: {item.get('spotify')}"
+                + ("" if offered else " (no candidates in the plan: run dj plan again)")
+            )
         if item.get("decision") not in (None, PENDING, YES, NO):
             raise IntakeError(f"decision must be pending, yes or no: {item.get('spotify')}")
     return plan
@@ -473,8 +477,9 @@ def add_to_crate(db: Any, plan: dict[str, Any]) -> list[dict[str, Any]]:
     """Inside a write session. Append only: never passes track_no (see CLAUDE.md)."""
     playlist = library.find_playlist(db, plan["crate"])
     adds = to_add(plan, library.crate_content_ids(playlist))
+    in_library = {t.content_id for t in library.all_tracks(db)} if adds else set()  # alive rows only
     for item in adds:  # check everything before the first write
-        if db.get_content(ID=str(item["pick"])) is None:
+        if str(item["pick"]) not in in_library:
             raise IntakeError(f"pick {item['pick']} is not in the library: {item['spotify']}")
     for item in adds:
         db.add_to_playlist(playlist, str(item["pick"]))
@@ -515,9 +520,9 @@ def record(plan: dict[str, Any], plan_path: Path, added: list[dict[str, Any]], p
             "still_pending": len(by_decision[PENDING]),
         },
     }
-    path = paths.reports / f"{date.today().isoformat()}-{slug(plan['crate'])}.report.json"
-    _write_json(path, report)
-    return path
+    # create-only: a second apply on the same day is <date>-<crate>-2.report.json, the first stays
+    return libfolder.write_new_numbered(paths.reports, f"{date.today().isoformat()}-{slug(plan['crate'])}",
+                                        ".report.json", json.dumps(report, indent=2, ensure_ascii=False))
 
 
 def _plan_ref(plan_path: Path, paths: Paths) -> str:
@@ -532,5 +537,11 @@ def _plan_ref(plan_path: Path, paths: Paths) -> str:
 
 
 def last_report(link: Link, paths: Paths) -> str | None:
-    found = sorted(paths.reports.glob(f"*-{link.slug}.report.json"))
-    return _read_json(found[-1], {}).get("applied_at") if found else None
+    """When this link's crate was last applied: the newest `applied_at` of its reports (numbered
+    ones included, `<date>-<crate>-2.report.json`)."""
+    stamps = []
+    for path in paths.reports.glob(f"*-{link.slug}*.report.json"):
+        data = _read_json(path, {})
+        if data.get("crate") == link.crate and data.get("applied_at"):
+            stamps.append(str(data["applied_at"]))
+    return max(stamps) if stamps else None

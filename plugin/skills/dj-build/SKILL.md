@@ -16,9 +16,10 @@ changes when the DJ drags the playlists in, never before. master.db is never ope
 
 | Step | Engine (MCP tool) | Cowork sandbox (script) |
 |---|---|---|
-| Preview | `dj_structure_preview(proposal)` | `python scripts/build.py preview "<proposal>" --library <folder>` |
-| Write | `dj_structure_write(proposal, preview_id)` | `python scripts/build.py apply "<proposal>" --preview-id <id> --library <folder>` |
+| Preview | `dj_structure_preview(proposal)` | `python3 scripts/build.py preview "<proposal>" --library <folder>` |
+| Write | `dj_structure_write(proposal, preview_id)` | `python3 scripts/build.py apply "<proposal>" --preview-id <id> --library <folder>` |
 
+- Scripts run with `python3` (`python` on Windows, `uv run python` inside a clone of the repo).
 - `<proposal>` = the slug, the name, or the trigger sentence the DJ typed ("Build me the Lanes structure").
 - The script prints one JSON object. Exit 0 = done, 1 = error, 2 = refused. The MCP tools return
   `{ok, exit_code, result | stderr}`; a `REFUSED` line means the same as exit 2.

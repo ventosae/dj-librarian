@@ -61,10 +61,13 @@ def main(argv: list[str] | None = None) -> NoReturn:
         emit({"ok": False, "refused": "No preview id: run the preview, show it, write only after a yes."},
              EXIT_REFUSED)  # fmt: skip
 
-    from dj import build_structure, libfolder
-    from dj.gate import GateError
-    from dj.model import LibraryError
-    from dj.treeschema import TreeSchemaError
+    try:
+        from dj import build_structure, libfolder
+        from dj.gate import GateError
+        from dj.model import LibraryError
+        from dj.treeschema import TreeSchemaError
+    except ImportError as exc:  # no engine venv and not inside a clone of the repo (Q-06)
+        emit({"ok": False, "error": f"cannot load the dj-librarian core: {exc}", "reason": "core"}, EXIT_ERROR)
 
     try:
         today = date.fromisoformat(args.today) if args.today else None

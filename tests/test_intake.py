@@ -62,6 +62,28 @@ def test_cache_decides_before_any_scoring():
     assert one(track, cache={track["uri"]: "2"}, in_crate={"2"}).status == IN_CRATE
 
 
+def test_a_cache_match_offers_the_remembered_file_as_its_candidate():
+    """CLAUDE.md: a plan's pick must be one of the candidates the tool offered. A match from the
+    match cache offers the remembered file, so the plan always carries the set to check against."""
+    track = sp("Loops For Healing", "Octo Octa", 327)
+    item = one(track, cache={track["uri"]: "2"})
+    entry = intake.item_dict(item, set())
+    assert entry["pick"] == "2" and [c["rb_content_id"] for c in entry["candidates"]] == ["2"]
+    assert entry["candidates"][0]["title"] == "Loops For Healing (Extended Mix)"
+
+
+@pytest.mark.parametrize("candidates", [[], [{"rb_content_id": "2"}]])
+def test_a_yes_whose_pick_the_tool_never_offered_is_refused(tmp_path, candidates):
+    """An edited pick (a cache item from an older plan with no candidates, or a pick swapped for
+    another file) never reaches the crate."""
+    path = tmp_path / "p.json"
+    path.write_text(json.dumps({"crate": "c", "items": [
+        {"spotify": "x", "status": PROPOSE, "how": "cache", "decision": "yes", "pick": "999999",
+         "candidates": candidates}]}))
+    with pytest.raises(intake.IntakeError, match="not one of the candidates the tool offered"):
+        intake.load_plan(path)
+
+
 def test_cache_entry_for_a_file_that_left_the_library_is_ignored():
     track = sp("Low Five", "Huerta", 413)
     assert one(track, cache={track["uri"]: "999"}).how != "cache"
@@ -132,16 +154,22 @@ def test_yes_without_pick_is_rejected(tmp_path):
 class CrateDB:
     """A crate inside a fake rekordbox. add_to_playlist must never get a track_no."""
 
-    def __init__(self, library_ids=("1", "2", "3")):
+    def __init__(self, library_ids=("1", "2", "3"), deleted_ids=()):
         self.crate = NS(ID="p", Name="funk_crate", Attribute=0, ParentID="f", Seq=1, Songs=[])
         self.rows = [NS(ID="f", Name="funk_base", Attribute=1, ParentID="root", Seq=1, Songs=[]), self.crate]
         self.library_ids, self.added = set(library_ids), []
+        self.deleted_ids = set(deleted_ids)  # rows rekordbox soft-deleted (rb_local_deleted=1)
 
     def get_playlist(self, ParentID):
         return NS(all=lambda: [r for r in self.rows if r.ParentID == ParentID])
 
-    def get_content(self, ID):
-        return NS(ID=ID) if ID in self.library_ids else None
+    def get_content(self, **kwargs):
+        assert not kwargs, "read all content and filter alive rows in Python (library.all_tracks)"
+        def row(cid, deleted):
+            return NS(ID=cid, ArtistName="A", Title=f"t{cid}", AlbumName="", Length=200, ISRC="",
+                      rb_local_deleted=deleted)
+        rows = [row(i, 0) for i in sorted(self.library_ids)] + [row(i, 1) for i in sorted(self.deleted_ids)]
+        return NS(all=lambda: rows)
 
     def add_to_playlist(self, playlist, content, **kwargs):
         assert not kwargs, "append only: never pass track_no"
@@ -150,8 +178,10 @@ class CrateDB:
 
 
 def plan_with(*decisions):
+    """A plan as `dj plan` writes it: each pick is the candidate the tool offered."""
     return {"spotify": "funk_109_bpm", "crate": LINK.crate, "items": [
-        {"spotify": f"t{n}", "spotify_uri": f"u{n}", "decision": d, "pick": pick}
+        {"spotify": f"t{n}", "spotify_uri": f"u{n}", "decision": d, "pick": pick,
+         "candidates": [{"rb_content_id": pick}] if pick else []}
         for n, (d, pick) in enumerate(decisions)]}
 
 
@@ -176,6 +206,14 @@ def test_apply_checks_every_pick_before_the_first_write():
     assert db.added == []
 
 
+def test_apply_refuses_a_pick_rekordbox_soft_deleted():
+    """A row rekordbox removed but has not purged (rb_local_deleted=1) is not in the library."""
+    db = CrateDB(library_ids=("1",), deleted_ids=("7",))
+    with pytest.raises(intake.IntakeError, match="pick 7 is not in the library"):
+        intake.add_to_crate(db, plan_with(("yes", "1"), ("yes", "7")))
+    assert db.added == []
+
+
 def test_record_updates_cache_declined_and_report(tmp_path):
     paths = Paths(tmp_path)
     plan = plan_with(("yes", "1"), ("no", "2"), ("pending", "3"))
@@ -187,6 +225,21 @@ def test_record_updates_cache_declined_and_report(tmp_path):
     assert [(d["crate"], d["spotify_uri"]) for d in declined] == [(LINK.crate, "u1")]
     assert json.loads(report.read_text())["counts"]["still_pending"] == 1
     assert intake.last_report(LINK, paths) is not None
+
+
+def test_a_second_apply_on_the_same_day_keeps_the_first_report(tmp_path):
+    """reports/apply/ is the only per-track record of what went into master.db: create-only."""
+    paths = Paths(tmp_path)
+    plan = plan_with(("yes", "1"))
+    first = intake.record(plan, tmp_path / "p.plan.json", [plan["items"][0]], paths)
+    text = first.read_text(encoding="utf-8")
+    second = intake.record(plan_with(("yes", "2")), tmp_path / "p.plan.json", [], paths)
+    assert second.name == first.name.replace(".report.json", "-2.report.json")
+    assert first.read_text(encoding="utf-8") == text
+    data = json.loads(second.read_text(encoding="utf-8"))
+    assert intake.last_report(LINK, paths) == max(json.loads(text)["applied_at"], data["applied_at"])
+    other = Link("other", "funk_base/funk")  # its slug is the start of the first crate's
+    assert intake.last_report(other, paths) is None
 
 
 def test_soft_deleted_songs_are_not_in_the_crate():

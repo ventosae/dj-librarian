@@ -40,8 +40,8 @@ from dj.gate import Gate, GateError, require_id
 STATE_DIR = safety.REPO_ROOT / "state"
 
 POWER_MODE_REFUSAL = (
-    "master.db writes are power mode (Windows only): add --power-mode, or build an XML to "
-    "import (dj library build)"
+    "master.db writes are power mode (Windows only): add --power-mode. Only new folders and "
+    "playlists have an XML to import instead (dj library build); inbox adds and copies have none in v0.1"
 )
 
 __all__ = [
@@ -142,8 +142,9 @@ def require_power_mode(power_mode: bool) -> None:
         raise GateError(POWER_MODE_REFUSAL)
     if sys.platform not in safety.DB_WRITE_PLATFORMS:
         raise GateError(
-            f"master.db writes are power mode, Windows only; this is {sys.platform}. Build an XML "
-            "to import instead (dj library build). Nothing written."
+            f"master.db writes are power mode, Windows only; this is {sys.platform}. New folders and "
+            "playlists: build an XML to import instead (dj library build). Inbox adds and copies have "
+            "no import path in v0.1: add those tracks in rekordbox by hand. Nothing written."
         )
 
 

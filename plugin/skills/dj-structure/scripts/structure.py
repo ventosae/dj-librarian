@@ -20,10 +20,6 @@ try:
 except ImportError:  # plugin inside a clone of the repo
     sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from dj.analysis import structure  # noqa: E402
-from dj.model import LibraryError  # noqa: E402
-from dj.treeschema import TreeSchemaError  # noqa: E402
-
 EXIT_OK, EXIT_ERROR = 0, 1
 
 
@@ -49,6 +45,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--xml", help="A collection XML to read instead of the newest export.")
     parser.add_argument("--today", help="Date written into the files, YYYY-MM-DD. Default: today.")
     args = parser.parse_args(argv)
+    try:
+        from dj.analysis import structure
+        from dj.model import LibraryError
+        from dj.treeschema import TreeSchemaError
+    except ImportError as exc:  # no engine venv and not inside a clone of the repo (Q-06)
+        _emit({"ok": False, "error": f"cannot load the dj-librarian core: {exc}", "reason": "core"})
+        return EXIT_ERROR
     try:
         today = date.fromisoformat(args.today) if args.today else None
         result = structure.run(Path(args.library), xml=args.xml, today=today)

@@ -11,10 +11,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from dj import library, match
+from dj import libfolder, library, match
 from dj.match import AMBIGUOUS, MATCH, Candidate, Local, Result
 from dj.safety import REPO_ROOT
-from dj.spotify import SpotifyError
+from dj.spotify import SpotifyError, refused_status
 
 STATE_FILE = REPO_ROOT / "state" / "push.json"
 REPORT_DIR = REPO_ROOT / "reports"
@@ -115,6 +115,8 @@ def apply(
 ) -> dict[str, Any]:
     """Create the Spotify playlist once (remembered in state/push.json), add what is missing.
 
+    Only a remembered playlist Spotify answers 404 or 403 for counts as gone and is made again; any
+    other error reading it (5xx, network, rate limit) is raised before anything is created.
     An error once the playlist exists (a new one is created, or adds have begun) is raised as
     PushInterrupted with what was written by then; an error before that writes nothing."""
     state_file = state_file or STATE_FILE
@@ -125,8 +127,10 @@ def apply(
     if entry:
         try:
             existing = api.playlist_item_uris(entry["spotify_id"])
-        except SpotifyError:
-            entry = None  # deleted on Spotify: make a new one
+        except SpotifyError as exc:
+            if refused_status(exc) is None:
+                raise  # Spotify did not answer: never a second playlist the DJ did not say yes to
+            entry = None  # deleted on Spotify, or no longer this app's to read: make a new one
     if not entry:
         made = api.create_playlist(name, description)
         entry = {
@@ -201,8 +205,7 @@ def write_report(
     name: str, payload: dict[str, Any], report_dir: Path | None = None, kind: str = "push"
 ) -> Path:
     report_dir = report_dir or REPORT_DIR
-    report_dir.mkdir(parents=True, exist_ok=True)
     slug = re.sub(r"[^\w.-]+", "_", name).strip("_")
-    path = report_dir / f"{date.today().isoformat()}-{kind}-{slug}.report.json"
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    return path
+    # create-only: a second run on one day gets -2, the first report stays
+    return libfolder.write_new_numbered(report_dir, f"{date.today().isoformat()}-{kind}-{slug}", ".report.json",
+                                        json.dumps(payload, indent=2, ensure_ascii=False))

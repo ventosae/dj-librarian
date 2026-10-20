@@ -342,3 +342,31 @@ def test_a_real_write_needs_the_write_scope_consent_first(own_app, server, track
     assert own_app == [spotify.WRITE_SCOPES]  # the browser consent for playlist-modify-private
     # matching ran with the read scopes (W-21); the consent tab came before any write request
     assert server.writes() == [] and not (tmp_path / "state").exists()
+
+
+# -- R-801: the guided setup card in plugin/skills/dj-spotify/SKILL.md --------------------------
+
+SPOTIFY_SKILL = Path(__file__).resolve().parents[1] / "plugin" / "skills" / "dj-spotify" / "SKILL.md"
+
+
+def test_the_setup_card_matches_what_the_code_needs():
+    """R-801: Premium, their own app, the redirect URI the login uses, the two .env keys the code
+    reads (only in .env, never in the chat), and `dj pull` as the proof; scopes as the code asks."""
+    text = SPOTIFY_SKILL.read_text(encoding="utf-8").replace("\r\n", "\n")
+    card = re.search(r"^## Setup card: about \d+ minutes\n(.*?)(?=^## )", text, re.MULTILINE | re.DOTALL).group(1)
+    steps = re.findall(r"^(\d)\. \*\*(.+?)\*\*", card, re.MULTILINE)
+    assert [n for n, _ in steps] == ["1", "2", "3", "4", "5"]
+    titles = [title for _, title in steps]
+    assert titles[0].startswith("Premium") and titles[1].startswith("Your own app")
+    assert titles[2].startswith("Two keys into `.env`") and titles[4].startswith("Proof")
+    assert f"`{spotify.REDIRECT}`" in card and "not `localhost`" in card
+    for key in ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET"):
+        assert f"`{key}=`" in card
+        assert f"{key}=" in (SPOTIFY_SKILL.parents[3] / "examples" / ".env.example").read_text(encoding="utf-8")
+    assert "Never into the chat" in card and "treat it as leaked" in card
+    assert "`dj pull <link>`" in card and "`dj_pull(link)`" in card
+    scopes = text.split("## Permissions (scopes)", 1)[1].split("\n## ", 1)[0]
+    read = set(re.findall(r"`(playlist-read-[a-z]+)`", scopes))
+    assert read == set(spotify.READ_SCOPES) and "the first pull asks for these two" in scopes
+    assert set(spotify.WRITE_SCOPES) - set(spotify.READ_SCOPES) == {"playlist-modify-private"}
+    assert "`playlist-modify-private`: only for `dj push --apply` and `dj build --apply`" in scopes

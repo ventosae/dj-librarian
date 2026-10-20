@@ -118,6 +118,13 @@ def test_apply_dry_run_reads_only(sessions, plan_file):
     assert sessions.log == [False] and sessions.db.added == []
 
 
+def test_apply_dry_run_shows_the_local_track_each_add_puts_in_the_crate(sessions, plan_file):
+    """The DJ's yes covers the local file, not only the Spotify label: show it from the library."""
+    data = json.loads(run("apply", plan_file, "--json").output)
+    assert data["adds"] == [{"spotify": "t0", "rb_content_id": "1", "local": "A - t1"}]
+    assert "ADD  t0  -> 1 A - t1" in run("apply", plan_file).output
+
+
 def test_apply_writes_once_and_a_second_apply_opens_no_write_session(sessions, plan_file, tmp_path, monkeypatch):
     monkeypatch.setattr(cli.intake, "Paths", functools.partial(cli.intake.Paths, tmp_path))
     assert run("apply", plan_file, *approve(sessions, "apply", plan_file)).exit_code == 0

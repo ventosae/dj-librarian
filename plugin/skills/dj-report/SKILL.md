@@ -37,6 +37,7 @@ six parts each: name, principle, new tree, where playlists land, cost, trigger, 
 ## How to run
 
 Paths are relative to this skill's folder. Each run prints one JSON object (counts first).
+Scripts run with `python3` (`python` on Windows, `uv run python` inside a clone of the repo).
 
 1. Both steps, as dj-start step 4 runs it: `python3 scripts/report.py --library <folder>`.
 2. One step: `python3 scripts/report.py propose --library <folder>` or

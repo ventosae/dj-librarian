@@ -66,9 +66,9 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
 | R-201 | Read master.db read-only through the engine on Mac and Windows, with rekordbox open. | M | `dj_status` returns counts on both OS with rekordbox running. | Built | v0.1 |
-| R-202 | Read from a snapshot copy of master.db, never the live file. | M | Live file never opened for read; snapshot path logged. | Built | v0.1 |
+| R-202 | Read from a snapshot copy of master.db, never the live file. | M | Live file never opened for read; snapshot path logged. | Built (snapshot in dj status, dj library; other dry-runs read live, Q-18) | v0.1 |
 | R-203 | Mac port: process check without `tasklist.exe`, DB discovery under `~/Library/Pioneer/rekordbox`, path handling, Claude Desktop config path on macOS. | M | Tests green on `macos-latest` and `windows-latest`; live `dj_status` on one Mac when a Mac tester appears. | Built | v0.1 |
-| R-204 | One track/tree model fed by two readers: XML export and master.db. Fields: track metadata, playlist tree, smart playlists, ratings, colours, comments, date added; My Tags, play counts, history where the source has them. | M | Field list documented per reader; fixtures for each. | Built | v0.1 |
+| R-204 | One track/tree model fed by two readers: XML export and master.db. Fields: track metadata, playlist tree, smart playlists, ratings, colours, comments, date added; My Tags, play counts, history where the source has them. | M | Field list documented per reader; fixtures for each. | Built (play history deferred, Q-13) | v0.1 |
 | R-205 | Direct master.db writes (`dj tree --apply`, `dj apply --apply`, `dj copy --apply`) stay Windows-only power mode behind an explicit flag. | M | Flag absent → command refuses with a one-line reason. | Built | v0.1 |
 
 ### E3 Analysis (`dj-profile`, `dj-structure`, `dj-taste`)
@@ -121,7 +121,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
 | R-701 | Interactive session that sharpens the taste profile: one short question per turn, A/B picks from the DJ's own tracks, naming of lanes, vetoes. | M | A session updates ≥ 1 `taste/` file with dated entries. | Built | v0.1 |
-| R-702 | `taste/vetoes.md` (never pair / never propose) and `taste/feedback.md` (what worked at a gig), honoured by Crate me and proposals. | M | A vetoed track never appears in a crate. | Built | v0.1 |
+| R-702 | `taste/vetoes.md` (never pair / never propose) and `taste/feedback.md` (what worked at a gig), honoured by Crate me and proposals. | M | A vetoed track never appears in a crate. | Built (vetoes; feedback.md not read, Q-19) | v0.1 |
 | R-703 | ≤ 10 minutes per session; progress stated. | M | Transcript check. | Built | v0.1 |
 
 ### E8 Spotify sync + shopping list
@@ -129,8 +129,8 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
 | R-801 | Guided Spotify setup for a new DJ: Premium check, create their own app, scopes, `.env` — numbered steps per C-06. | M | Dijok completes it without Anton; `dj pull` works. | Built | v0.1 |
-| R-802 | Inbox loop for any DJ: `pull → match → plan → yes → apply → log → wishlist`; links and crate paths in the DJ's `dj-library/links.yaml`. | M | Tests pass with repo paths removed; live run on Anton's library. | Built | v0.1 |
-| R-803 | Shopping list: missing tracks → `wishlist/<crate>.shopping.md` with Beatport / Bandcamp links, label, BPM / key. | M | File produced for one crate. | Built | v0.1 |
+| R-802 | Inbox loop for any DJ: `pull → match → plan → yes → apply → log → wishlist`; links and crate paths in the DJ's `dj-library/links.yaml`. | M | Tests pass with repo paths removed; live run on Anton's library. | Built (apply is Windows power mode, Q-22) | v0.1 |
+| R-803 | Shopping list: missing tracks → `wishlist/<crate>.shopping.md` with Beatport / Bandcamp links, label, BPM / key. | M | File produced for one crate. | Built (BPM / key shown as -, W-25) | v0.1 |
 | R-804 | `spotify.py` audited against the Feb 2026 endpoint changes (`/items`, batch removal, search limit 10, removed fields). | M | Audit note; failing calls fixed; tests updated. | Built | v0.1 |
 | R-805 | `dj build` (tracklist → Spotify) and `dj push` available to any DJ with their own app. | M | Live run by Anton. | Built | v0.1 |
 
@@ -141,7 +141,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-901 | Scaffold: `README.md`, `library.yaml`, `exports/`, `profile/`, `structure/`, `taste/`, `crates/`, `reports/`, `proposals/`, `wishlist/`, `links.yaml`, `log.md`. Text only. | M | Created by `dj-start`; documented in README. | Built | v0.1 |
 | R-902 | `library.yaml`: device, rekordbox version, dates, chosen structure, schema version. | M | Schema test. | Built | v0.1 |
 | R-903 | `structure/current-tree.yaml` and `proposals/*.yaml` share one tree schema (today's `bases.yaml` shape). | M | One loader for both. | Built | v0.1 |
-| R-904 | The tool, not Claude, appends `log.md` lines (date, action, counts, file). | M | Every writing command appends. | Built | v0.1 |
+| R-904 | The tool, not Claude, appends `log.md` lines (date, action, counts, file). | M | Every writing command appends. | Built (exceptions: plan.md W-22) | v0.1 |
 | R-905 | Folder is git-initialisable; nothing machine-specific outside `library.yaml`. | M | `git init` + commit works; no absolute paths elsewhere. | Built | v0.1 |
 
 ### E10 Voice and ADHD UX
@@ -157,7 +157,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
 | R-1101 | Read tools and write tools are separate MCP tools; write tools default to "ask every time". | M | Tool list shows the split; install steps set permissions. | Built | v0.1 |
-| R-1102 | Every write has a preview tool; the write tool refuses without a plan or preview id. | M | Test per writer. | Built | v0.1 |
+| R-1102 | Every write has a preview tool; the write tool refuses without a plan or preview id. | M | Test per writer. | Built (text-file writers per D-20, Q-23) | v0.1 |
 | R-1103 | Power-mode DB writes: rekordbox-closed check, verified backup, one commit, rollback on error, undo where possible. | M | Existing tests kept green. | Built | v0.1 |
 | R-1104 | Tests for every component that writes to rekordbox, Spotify or audio files, including the XML writer. | M | CI enforces. | Agreed | v0.1 |
 | R-1105 | A real gate blocks writes without a yes: in Cowork, tool permission "ask every time" + XML import by the DJ; in Claude Code, additionally the plugin PreToolUse hook (C-10). | M | Hook test in Claude Code; permissions step in onboarding. | Built | v0.1 |
@@ -167,12 +167,12 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
 | R-1201 | Semantic versioning; `CHANGELOG.md`; tags on release (consent gate). | M | v0.1.0 tag after Anton's yes. | Agreed | v0.1 |
-| R-1202 | Conventional commits; one branch and one PR per change. | M | Git history shows it. | Agreed | v0.1 |
-| R-1203 | CI on every PR: tests on `windows-latest`, `macos-latest`, `ubuntu-latest`; `claude plugin validate ./plugin --strict`; ruff; secret scan. | M | Green CI on the first PR. | Agreed | v0.1 |
-| R-1204 | `README`, `CONTRIBUTING`, `LICENSE` (Apache-2.0, D-12), `examples/.env.example`, `examples/*.example.yaml`. | M | A stranger installs from README. | Agreed | v0.1 |
+| R-1202 | Conventional commits; one branch and one PR per change. | M | Git history shows it. | Built | v0.1 |
+| R-1203 | CI on every PR: tests on `windows-latest`, `macos-latest`, `ubuntu-latest`; `claude plugin validate ./plugin --strict`; ruff; secret scan. | M | Green CI on the first PR. | Built | v0.1 |
+| R-1204 | `README`, `CONTRIBUTING`, `LICENSE` (Apache-2.0, D-12), `examples/.env.example`, `examples/*.example.yaml`. | M | A stranger installs from README. | Built | v0.1 |
 | R-1205 | Issues are the backlog; plan.md "Later" items become issues. | M | Issues created on first push. | Agreed | v0.1 |
-| R-1206 | Personal data removed: STATE.md, log.md, CRATES.md, links.yaml, tidy.yaml, bases.yaml, tree.yaml, tracklists/, wishlist/, Claude outputs/, settings.local.json ignored in place; "Anton" out of code, tool descriptions, skills, tests, README; paths parameterised. | M | `git grep -il anton -- src tests plugin README.md CONTRIBUTING.md examples` finds nothing. | Agreed | v0.1 |
-| R-1207 | Plugin layout: `plugin/.claude-plugin/plugin.json`, repo-root `.claude-plugin/marketplace.json` (source `./plugin`), `plugin/skills/`, `plugin/.mcp.json`, `plugin/hooks/hooks.json`; no `bin/` (Cowork refuses it). | M | `claude plugin validate ./plugin --strict` passes. | Agreed | v0.1 |
+| R-1206 | Personal data removed: STATE.md, log.md, CRATES.md, links.yaml, tidy.yaml, bases.yaml, tree.yaml, tracklists/, wishlist/, Claude outputs/, settings.local.json ignored in place; "Anton" out of code, tool descriptions, skills, tests, README; paths parameterised. | M | `git grep -il anton -- src tests plugin README.md CONTRIBUTING.md examples` finds nothing. | Built | v0.1 |
+| R-1207 | Plugin layout: `plugin/.claude-plugin/plugin.json`, repo-root `.claude-plugin/marketplace.json` (source `./plugin`), `plugin/skills/`, `plugin/.mcp.json`, `plugin/hooks/hooks.json`; no `bin/` (Cowork refuses it). | M | `claude plugin validate ./plugin --strict` passes. | Built | v0.1 |
 
 ### E13 Platforms
 
