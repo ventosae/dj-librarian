@@ -14,6 +14,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - `dj-profile` skill: measured profile (`profile/stats.md`, `profile/facts.json`: size, formats, bitrates, eras, timeline, field use, duplicates, the 5 stats that matter); `dj library profile` (W-14).
 - `dj-structure` skill: tree depth and width, naming, sizes, overlap (Jaccard), orphans, empty playlists, dumps, smart vs plain (`structure/analysis.md`, `graph.json`, `facts.json`) and the current tree as code (`structure/current-tree.yaml`, `treeschema.from_library`); `dj library structure` (W-15).
 - `dj-taste` skill: labels and artists, clusters, BPM lanes, keys, co-occurrence, top-rated and most-played, anchors, the DJ's own words; `taste/*.md` are appended and refined across sessions, never regenerated without asking (`dj.taste_files`, incl. vetoes and feedback parsers); `dj library taste` (W-16).
+- `dj-report` skill: 2-3 restructure proposals (bases, facets, gig-first) picked from the DJ's patterns (`structure/proposals.yaml`), and the one-file HTML report (`reports/<date>-library.html`: who you are, how it's built, three ways to rebuild it, one next action; no external requests). `dj library report`, `dj library analyze` and the MCP tool `dj_library_analyze` (W-17).
 
 ### Changed
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.

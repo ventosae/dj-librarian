@@ -26,6 +26,7 @@ Rules this module keeps:
 from __future__ import annotations
 
 import os
+import re
 import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from pathlib import Path
@@ -167,12 +168,31 @@ def folder_state(root: Path) -> dict[str, Any] | None:
     except LibraryError:
         latest = None
     reports = LibraryFolder(root).reports
-    found = sorted(reports.glob("*-library.html")) if reports.is_dir() else []
+    found = newest_report(reports.iterdir()) if reports.is_dir() else None
     return {
         "device": meta.get("device"),
         "latest_export": latest,
-        "latest_report": libfolder.relative(root, found[-1]) if found else None,
+        "latest_report": libfolder.relative(root, found) if found else None,
     }
+
+
+_REPORT_NAME = re.compile(r"^(\d{4}-\d{2}-\d{2})-library(?:-([1-9]\d*))?\.html$")
+
+
+def newest_report(paths: Iterable[Path]) -> Path | None:
+    """The newest dj-report file: `<date>-library.html`, or `<date>-library-N.html` for the Nth
+    report of that day (dj.report writes create-only). Latest date first, then the highest N
+    (`-10` after `-2`). Other files are ignored."""
+    best: tuple[str, int] | None = None
+    found = None
+    for path in paths:
+        m = _REPORT_NAME.match(path.name)
+        if m is None:
+            continue
+        key = (m.group(1), int(m.group(2) or 1))
+        if best is None or key > best:
+            best, found = key, path
+    return found
 
 
 # -- find-xml ------------------------------------------------------------------------------

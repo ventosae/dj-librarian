@@ -36,8 +36,9 @@ server = MCPServer(
         "Tools for the DJ's rekordbox library via the dj CLI. rekordbox is the truth; you only "
         "propose. Read STATE.md and the dj-sync skill first. Always call the preview tool and "
         "show the DJ the result before any *_apply / *_write tool, and only call those after their "
-        "explicit OK. exit_code 2 = rekordbox is open: ask them to close it, then retry the same "
-        "call. Never ask for a way around a refusal. The dj_tidy_* tools work on the audio files "
+        "explicit OK. exit_code 2 = refused: the `hint` says why. Usually rekordbox is open: ask "
+        "them to close it, then retry the same call; a library folder that is not set up needs "
+        "dj-start first. Never ask for a way around a refusal. The dj_tidy_* tools work on the audio files "
         "(tags, names), never on master.db: after dj_tidy_apply they must Reload Tag in rekordbox."
     ),
 )
@@ -154,8 +155,28 @@ def run_dj(options: list[str], positionals: tuple[str, ...] = (), as_json: bool 
     if stderr:
         out["stderr"] = stderr[-15:]
     if done.returncode == 2:
-        out["hint"] = "rekordbox is open. Ask the DJ to close it, then call this tool again."
+        out["hint"] = refusal_hint(stderr)
     return json.dumps(out, indent=2, ensure_ascii=False)
+
+
+REKORDBOX_OPEN = "rekordbox is open. Ask the DJ to close it, then call this tool again."
+NO_LIBRARY = (
+    "The dj-library folder is not set up (no valid library.yaml). This is not rekordbox: calling "
+    "this tool again will not help. Set the folder up with dj-start first."
+)
+REFUSED_OTHER = "Refused, see stderr. This is not rekordbox: calling this tool again will not help."
+
+
+def refusal_hint(stderr: list[str]) -> str:
+    """What exit code 2 means for this run. The `dj library` commands print `REFUSED <reason>`
+    when the library folder is not one they write into; the rekordbox process check prints
+    `STOP ...`. Only the latter is solved by closing rekordbox and retrying."""
+    refused = next((line for line in stderr if line.startswith("REFUSED")), None)
+    if refused is None:
+        return REKORDBOX_OPEN
+    if "library.yaml" in refused:
+        return NO_LIBRARY
+    return REFUSED_OTHER
 
 
 def guarded(func: Any) -> Any:
@@ -203,6 +224,25 @@ def dj_library_inspect(xml: str = "") -> str:
     if xml:
         return run_dj(["library", "inspect"], (library_file(xml, (".xml",)),))
     return run_dj(["library", "inspect"])
+
+
+ANALYZE_SOURCES = ("xml", "db")
+
+
+@server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
+@guarded
+def dj_library_analyze(source: str = "xml") -> str:
+    """Analyse the DJ's library in one go and render the HTML report: reads the library once
+    (source "xml" = the latest export in the dj-library folder; "db" = a read-only snapshot of
+    master.db), then writes profile/, structure/ (incl. proposals.yaml with 2-3 restructure
+    proposals), taste/ and reports/<date>-library.html, plus log.md lines. Text files in the
+    configured dj-library folder only; rekordbox, Spotify and audio files are never written.
+    Returns counts first, the report path, the proposals (trigger, cost) and any failed step.
+    It always rebuilds structure/proposals.yaml (an edited copy is kept first): after renaming a
+    proposal, render with the dj-report script instead. exit_code 2 = refused, see `hint`."""
+    if source not in ANALYZE_SOURCES:
+        raise ToolInputError(f"source must be one of {', '.join(ANALYZE_SOURCES)}, got {source!r}.")
+    return run_dj(["library", "analyze", "--source", source])
 
 
 @server.tool(annotations=SPOTIFY_READ)

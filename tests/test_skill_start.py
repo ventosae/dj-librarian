@@ -4,7 +4,7 @@ R-101 device first, only that OS after (the device given last wins); R-103 scaff
 library.yaml (device, rekordbox version, date); R-104 the XML export is the first input, 3-step
 card; R-105 step counter and time estimate on every reply; R-904 one log.md line per change.
 R-104's acceptance ("analysis + report run on the XML alone") is the end-to-end test below: it
-runs the step 4 scripts as SKILL.md names them and is skipped until W-14..W-17 land them.
+runs the step 4 scripts as SKILL.md names them, with the engine packages blocked (W-17).
 R-106: W-13 delivers the text constraints (3 DJ moves, no question in steps 4-5, replies under
 5 lines); its acceptance, the transcript of the test session, is W-28's. R-102 (engine after the
 report) and R-107 (optional Project template) are pointed at here, built later.
@@ -376,6 +376,23 @@ def test_find_xml_reports_a_set_up_folder(run, lib):
     code, out = run("find-xml", "--library", lib)
     assert out["library"]["latest_report"] == f"reports/{DAY}-library.html"
 
+    for name in (f"{DAY}-library-2.html", f"{DAY}-library-10.html", "2026-09-01-library-30.html", "notes.html"):
+        (lib / "reports" / name).write_text("<html></html>\n", encoding="utf-8")  # dj-report's -N names
+    code, out = run("find-xml", "--library", lib)
+    assert out["library"]["latest_report"] == f"reports/{DAY}-library-10.html"  # -10 after -2
+
+
+@pytest.mark.parametrize(("names", "want"), [
+    ([], None),
+    (["2026-10-20-library.html", "2026-10-20-library-2.html"], "2026-10-20-library-2.html"),
+    (["2026-10-20-library-9.html", "2026-10-20-library-10.html"], "2026-10-20-library-10.html"),
+    (["2026-10-21-library.html", "2026-10-20-library-7.html"], "2026-10-21-library.html"),
+    (["2026-10-20-library-0.html", "x-library.html", "2026-10-20-library.htm"], None),
+])  # fmt: skip
+def test_newest_report(names, want):
+    found = onboarding.newest_report(Path("reports") / n for n in names)
+    assert (found.name if found else None) == want
+
 
 def test_find_xml_reaches_max_depth(run, lib):
     assert onboarding.MAX_DEPTH == 3
@@ -653,32 +670,56 @@ def test_the_script_is_thin():
 STEP4_SCRIPT = re.compile(r"`python3 (\.\./dj-[\w-]+/scripts/[\w-]+\.py) --library <folder>`")
 
 
+def _run_script_blocked(path: Path, *args: str) -> tuple[int, dict]:
+    """Run a skill script as Cowork's sandbox would: pyrekordbox, rapidfuzz, httpx, typer and
+    mcp cannot be imported. Returns (exit code, its one JSON object); fails if one leaked in."""
+    argv = [str(path), *map(str, args)]
+    done = run_blocked(f"""
+        import json, runpy
+        sys.argv = {argv!r}
+        code = 0
+        try:
+            runpy.run_path({str(path)!r}, run_name="__main__")
+        except SystemExit as exc:
+            code = exc.code or 0
+        leaked = [n for n in {BLOCKED!r} if sys.modules.get(n) is not None]
+        print(json.dumps({{"code": code, "leaked": leaked}}))
+    """)
+    assert done.returncode == 0, done.stderr
+    *out, status = done.stdout.splitlines()
+    status = json.loads(status)
+    assert status["leaked"] == [], (path.name, status)
+    assert len(out) == 1, (path.name, done.stdout, done.stderr)
+    return status["code"], json.loads(out[0])
+
+
 def test_analysis_and_report_run_on_the_xml_alone(tmp_path):
     """R-104: init on the synthetic export, then every step 4 script exactly as SKILL.md names it,
-    each with --library only: the HTML report exists. No master.db, no engine, no network.
-    Skipped until W-14..W-17 land the four scripts."""
+    each with --library only and the engine packages blocked: the HTML report exists, with its
+    four sections and the proposals. No master.db, no engine, no network."""
     scripts = STEP4_SCRIPT.findall(_step(4))
     assert [Path(s).parts[1] for s in scripts] == ["dj-profile", "dj-structure", "dj-taste", "dj-report"]
-    missing = [s for s in scripts if not (SKILL_DIR / s).is_file()]
-    if missing:
-        pytest.skip(f"R-104 acceptance waits for the step 4 scripts (W-14..W-17): {', '.join(missing)}")
 
     lib = tmp_path / "dj-library"
     lib.mkdir()
     fx.write_xml(lib / "collection.xml")
-    done = subprocess.run(
-        [sys.executable, str(SCRIPT), "init", "--library", str(lib), "--device", "mac"],
-        cwd=tmp_path, capture_output=True, text=True, encoding="utf-8", timeout=120,
-    )  # fmt: skip
-    assert done.returncode == 0 and _one_json(done.stdout, done.stderr)["counts"] == fx.EXPECTED_COUNTS
+    code, out = _run_script_blocked(SCRIPT, "init", "--library", lib, "--device", "mac")
+    assert code == 0 and out["counts"] == fx.EXPECTED_COUNTS, out
+    results = {}
     for script in scripts:
-        done = subprocess.run(
-            [sys.executable, str((SKILL_DIR / script).resolve()), "--library", str(lib)],
-            cwd=tmp_path, capture_output=True, text=True, encoding="utf-8", timeout=300,
-        )  # fmt: skip
-        assert done.returncode == 0, (script, done.stdout, done.stderr)
-        _one_json(done.stdout, done.stderr)
-    assert len(list((lib / "reports").glob("*-library.html"))) == 1
+        code, out = _run_script_blocked((SKILL_DIR / script).resolve(), "--library", lib)
+        assert code == 0 and out["ok"] is True, (script, out)
+        results[Path(script).parts[1]] = out
+    reports = list((lib / "reports").glob("*-library.html"))
+    assert len(reports) == 1
+    assert results["dj-report"]["report"] == f"reports/{reports[0].name}"
+    page = reports[0].read_text(encoding="utf-8")
+    for section in ("who", "structure", "proposals", "next"):
+        assert f'<section id="{section}">' in page
+    assert "http://" not in page and "https://" not in page
+    triggers = [p["trigger"] for p in results["dj-report"]["proposals"]]
+    assert 2 <= len(triggers) <= 3 and all(t in page for t in triggers)
+    assert (lib / "structure" / "proposals.yaml").is_file()
 
 
 # -- SKILL.md ----------------------------------------------------------------------------------

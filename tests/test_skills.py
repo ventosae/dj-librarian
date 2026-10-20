@@ -3,9 +3,9 @@
 R-1001 (voice.md, every skill references it, no book text: C-08) and R-1002 (adhd.md with the 10
 rules and attribution: C-09, the pre-send checklist in each SKILL.md).
 
-R-1003 is not met here. Its acceptance is a spot check on 3 real outputs (a report, an MD file, a
-chat reply) and none exists at this commit; `test_r1003_spot_check_on_real_output` names the item
-that supplies each one. "Both checklists" = the one pre-send block: its Voice line covers voice.md,
+R-1003's acceptance is a spot check on 3 real outputs (a report, an MD file, a chat reply). The
+report is checked by `test_r1003_spot_check_on_the_report` (W-17);
+`test_r1003_spot_check_on_real_output` names the item that supplies each of the other two. "Both checklists" = the one pre-send block: its Voice line covers voice.md,
 the other lines cover adhd.md. The mechanical checks live in tests/reply_checks.py.
 """
 
@@ -279,7 +279,6 @@ def test_text_check_on_an_md_file():
 # output, and that item replaces the skip with text_problems / reply_problems on the real output.
 
 R1003_OUTPUTS = (
-    pytest.param("the dj-report HTML", "W-17", id="report"),
     pytest.param("a generated MD file (dj-profile)", "W-14", id="md-file"),
     pytest.param("a chat reply from the test session, without personal data", "W-28", id="chat-reply"),
 )
@@ -288,3 +287,30 @@ R1003_OUTPUTS = (
 @pytest.mark.parametrize(("output", "item"), R1003_OUTPUTS)
 def test_r1003_spot_check_on_real_output(output, item):
     pytest.skip(f"R-1003 carry-over: {output} does not exist until {item}")
+
+
+def test_r1003_spot_check_on_the_report(tmp_path):
+    """R-1003, report slot (W-17): a real dj-report HTML, the synthetic library through the whole
+    chain (profile, structure, taste, proposals, render). The words of each of its four sections
+    pass the mechanical checklist: no pleasantry first, no list over 5, no word from the Avoid
+    column of voice.md. The rest of the checklist (first person, numbers from the tool) is the
+    report code itself: every number in it comes from the facts files."""
+    from datetime import date
+
+    import xml_fixtures as fx
+    from reply_checks import report_sections
+
+    from dj import libfolder
+    from dj.analysis import run_all
+
+    day = date(2026, 10, 20)
+    root = tmp_path / "dj-library"
+    libfolder.scaffold(root, device="mac", today=day)
+    libfolder.import_export(root, fx.write_xml(tmp_path / "collection.xml"), today=day)
+    result = run_all.analyze(root, today=day)
+    sections = report_sections((root / result["report"]).read_text(encoding="utf-8"))
+    assert list(sections) == ["who", "structure", "proposals", "next"]
+    for name, text in sections.items():
+        assert text.split("\n")[0].startswith("# "), name  # each section has its heading ...
+        assert not text.split("\n")[1].startswith(("# ", "- ")), name  # ... and then its point
+        assert text_problems(text) == [], (name, text_problems(text))

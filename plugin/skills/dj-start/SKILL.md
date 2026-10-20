@@ -178,9 +178,10 @@ rest. No question in this step and no other chat until step 5 (R-106, NFR-07).
 
 ### Step 5: Report (P5)
 
-Deliver `reports/<date>-library.html` as a file card, with one line. Step 6 goes out in the same
-reply, right under that line, so the reply ends with one action under 2 minutes and the DJ never
-has to write to see it.
+Deliver the file the report script's JSON names under `report` as a file card, with one line:
+`reports/<date>-library.html`, or `-2`, `-3` ... when a report was already written that day.
+Never guess the name. Step 6 goes out in the same reply, right under that line, so the reply ends
+with one action under 2 minutes and the DJ never has to write to see it.
 
 ```text
 Step 5 of 6 · about 5 minutes to read. Your report: reports/<date>-library.html

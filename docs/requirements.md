@@ -56,7 +56,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-101 | Ask the DJ's device (Mac / Windows) first, as chips, and branch every later step on it. | M | First reply asks device; later steps show only that OS. | Built | v0.1 |
 | R-102 | Engine install (MCP on the DJ's machine) is offered **after** the first report, when a feature needs it; numbered steps per OS, ≤ 10 min; `dj_status` as the proof. | M | Dijok completes it without Anton; `dj_status` answers. | Agreed | v0.1 |
 | R-103 | Guide the DJ to connect a `dj-library/` folder in Cowork and scaffold it (R-901). | M | Scaffold exists; `library.yaml` records device, rekordbox version, date. | Built | v0.1 |
-| R-104 | **First-contact input is the rekordbox XML export** (File → Export Collection in xml format), guided by a 3-step card, dropped into the connected folder. | M | Analysis + report run on the XML alone. | Agreed | v0.1 |
+| R-104 | **First-contact input is the rekordbox XML export** (File → Export Collection in xml format), guided by a 3-step card, dropped into the connected folder. | M | Analysis + report run on the XML alone. | Built | v0.1 |
 | R-105 | Onboarding states time estimates and progress ("Step 2 of 6") on every turn. | M | Every onboarding reply has both. | Built | v0.1 |
 | R-106 | Super short start: ≤ 3 DJ actions before the work phase; zero questions during the work phase; chat under 5 lines until the report (NFR-07). | M | Transcript of the Dijok session. | Agreed | v0.1 |
 | R-107 | Cowork Project template (`templates/project/instructions.md`) the DJ can paste into a new Project: voice, ADHD rules, safety, folder conventions. Optional; nothing essential depends on it. | M | Template exists; the flow works without it. | Agreed | v0.1 |
@@ -89,13 +89,13 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
-| R-401 | One self-contained HTML file `reports/<date>-library.html`, opens offline, opens in Cowork's side panel. | M | No external requests; renders from the folder. | Agreed | v0.1 |
-| R-402 | Section 1: DJ profile narrative + the 5 stats that matter. | M | Present; lists capped at 5. | Agreed | v0.1 |
-| R-403 | Section 2: small graph of the current structure (tree) and playlist overlap, with what it reveals (dumps, duplicates, orphans). | M | Graph renders from `structure/` data. | Agreed | v0.1 |
+| R-401 | One self-contained HTML file `reports/<date>-library.html`, opens offline, opens in Cowork's side panel. | M | No external requests; renders from the folder. | Built | v0.1 |
+| R-402 | Section 1: DJ profile narrative + the 5 stats that matter. | M | Present; lists capped at 5. | Built | v0.1 |
+| R-403 | Section 2: small graph of the current structure (tree) and playlist overlap, with what it reveals (dumps, duplicates, orphans). | M | Graph renders from `structure/` data. | Built | v0.1 |
 | R-404 | Section 3: two or three named restructure proposals; each: name in the DJ's vocabulary, one-line principle, sketch tree, where existing playlists land, cost in minutes, trigger prompt (e.g. "Build me the African Bass Telepathy structure"). | M | Six parts each; trigger prompt works with `dj-build`. | Agreed | v0.1 |
-| R-405 | Proposal families: Bases (genre base → inbox / crates / sets), Facets (5–8 shallow genre buckets + My Tag Role / Body / Vibe / Status + gig crates), Gig-first (crates per residency or event + archive). The DJ's patterns pick which and how named. | M | Picking rules documented in the skill. | Proposed | v0.1 |
-| R-406 | Section 4: one next action under two minutes. | M | Present. | Agreed | v0.1 |
-| R-407 | Report written in the voice (R-1001) and passes the ADHD rules (R-1002). | M | Checklists pass. | Agreed | v0.1 |
+| R-405 | Proposal families: Bases (genre base → inbox / crates / sets), Facets (5–8 shallow genre buckets + My Tag Role / Body / Vibe / Status + gig crates), Gig-first (crates per residency or event + archive). The DJ's patterns pick which and how named. | M | Picking rules documented in the skill. | Built | v0.1 |
+| R-406 | Section 4: one next action under two minutes. | M | Present. | Built | v0.1 |
+| R-407 | Report written in the voice (R-1001) and passes the ADHD rules (R-1002). | M | Checklists pass. | Built | v0.1 |
 
 ### E5 Build a structure (`dj-build`)
 

@@ -75,6 +75,30 @@ def test_exit_code_2_tells_the_agent_to_wait_not_to_work_around(monkeypatch):
     assert "close it" in answer["hint"] and answer["stderr"] == ["STOP rekordbox.exe is running."]
 
 
+NOT_SET_UP = ("REFUSED plain is not a dj-library folder (no library.yaml). Set it up with dj-start first. "
+              "Nothing was written.")  # fmt: skip
+
+
+def test_exit_code_2_from_a_folder_not_set_up_is_not_rekordbox(monkeypatch):
+    """`dj library analyze` refuses a folder without library.yaml with exit 2: closing rekordbox
+    and retrying cannot fix that, so the hint must not say so."""
+    monkeypatch.setattr(m.subprocess, "run", lambda cmd, **k: SimpleNamespace(returncode=2, stdout="", stderr=NOT_SET_UP))
+    answer = json.loads(m.dj_library_analyze())
+    assert (answer["ok"], answer["exit_code"]) == (False, 2)
+    assert answer["hint"] == m.NO_LIBRARY and "close it" not in answer["hint"] and "dj-start" in answer["hint"]
+
+
+@pytest.mark.parametrize(("stderr", "hint"), [
+    (["STOP rekordbox.exe is running."], "rekordbox is open"),
+    ([], "rekordbox is open"),
+    ([NOT_SET_UP], "not set up"),
+    (["INFO reading", "REFUSED plain: library.yaml is not valid (device). Run dj-start on the folder first."], "not set up"),
+    (["REFUSED C:\\ is a whole drive, not a library folder. Nothing was written."], "Refused, see stderr"),
+])  # fmt: skip
+def test_refusal_hint_names_the_cause(stderr, hint):
+    assert hint in m.refusal_hint(stderr)
+
+
 def test_timeout_is_reported(monkeypatch):
     def slow(cmd, **k):
         raise m.subprocess.TimeoutExpired(cmd, 1)
@@ -90,11 +114,11 @@ def test_tool_list_and_which_ones_are_read_only():
         "dj_copy_preview", "dj_push_preview", "dj_build_preview", "dj_tree_apply", "dj_apply_write",
         "dj_copy_apply", "dj_push_apply", "dj_build_apply",
         "dj_tidy_audit", "dj_tidy_dupes", "dj_tidy_plan", "dj_tidy_apply_preview", "dj_tidy_apply", "dj_tidy_undo",
-        "dj_library_inspect",
+        "dj_library_inspect", "dj_library_analyze",
     }
     writers = {n for n, t in tools.items() if not t.annotations.read_only_hint}
     assert writers == {"dj_plan", "dj_tree_apply", "dj_apply_write", "dj_copy_apply", "dj_push_apply",
-                       "dj_build_apply", "dj_tidy_plan", "dj_tidy_apply", "dj_tidy_undo"}
+                       "dj_build_apply", "dj_tidy_plan", "dj_tidy_apply", "dj_tidy_undo", "dj_library_analyze"}
     assert not any(t.annotations.destructive_hint for t in tools.values())
     assert "file" in tools["dj_tree_apply"].input_schema["properties"]  # schema survives @guarded
 

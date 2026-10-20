@@ -22,7 +22,7 @@ Goal: one experienced DJ (Mac or Windows, Cowork) exports an XML, gets the HTML 
 | W-14 | PR: `dj-profile` (scripts + SKILL.md) | R-301, 302, 311, 312, 341 | Built 20 Oct |
 | W-15 | PR: `dj-structure` | R-321, 322 | Built 20 Oct |
 | W-16 | PR: `dj-taste` | R-331, 332 | Built 20 Oct |
-| W-17 | PR: `dj-report` HTML (dataviz pass) | R-401–407 | Pending |
+| W-17 | PR: `dj-report` HTML (dataviz pass) | R-401–407 | Built 20 Oct |
 | W-18 | PR: `dj-build` yaml → rekordbox XML + import card + log line | R-501–505, R-904 | Pending — plan mode |
 | W-19 | PR: `shared/voice.md` + `shared/adhd.md` + checklists in every skill | R-1001–1003 | Built 20 Oct |
 | W-20 | PR: Mac port + CI on macos-latest | R-203, R-1302 | Pending |
@@ -60,7 +60,7 @@ Goal: one experienced DJ (Mac or Windows, Cowork) exports an XML, gets the HTML 
 | Q-12 | `plugin.json` `repository` and the README clone/marketplace lines use `OWNER` as a placeholder. Fill in at first push. | W-27 |
 | Q-13 | master.db play history (`DjmdHistory`) is not read; R-204's "history where the source has them" is deferred. `play_count` covers most-played. Add history sessions when a feature needs them. | later |
 | Q-14 | rekordbox stores no member rows for smart playlists; the db reader returns smart playlists without `track_ids`, and `orphans()` ignores smart membership. Computing members from the rules (pyrekordbox `get_playlist_contents`) is open. | later |
-| Q-15 | R-1003: spot-check three real outputs (the HTML report, one MD file, one chat reply) against both checklists. | W-17 (report), W-28 (chat) |
+| Q-15 | R-1003: spot-check three real outputs (the HTML report, one MD file, one chat reply) against both checklists. The report check is automated (W-17); one MD file and one chat reply remain. | W-28 |
 
 ## Later (one line each → issues after first push)
 
@@ -83,3 +83,4 @@ The contract is `docs/prompts/plans/v0.1-interfaces.md`. Each item lists here wh
 - **W-14.** `dj.analysis.common` adds `library_folder()` (resolves `--library`, refuses a drive root or the home folder), `resolve_xml()` (a relative `--xml` is looked up in the library first) and `dup_key(artist, title, remixer)` (a remix named only in the Remixer field is not a duplicate of its original). R-312's acceptance ("Dijok says it sounds like him") is live (A-05); the skill gives Claude the habits.md template and the no-invented-numbers rule.
 - **W-15.** Dumps = more than 300 entries, or more than half the collection, or more than 25% of it and more than twice the median size of the other non-empty playlists. `overlap.contained` lists pairs where one playlist sits inside another; naming patterns ignore a leading number or date. Duplicate sibling names get a deterministic suffix (`Name (2)`) in `current-tree.yaml` and are listed as `naming.duplicates_renamed`; a proposal's `from` must use the real name. `current-tree.yaml` is regenerated each run, but if the DJ edited it, their file is first kept as `structure/current-tree.edited-<date>.yaml` (create-only).
 - **W-16.** Each `taste/*.md` has a `## Now` summary (at most 5 lines, regenerated each run) and an append-only `## Log` of dated, keyed entries (never rewritten; hand-written lines kept). A run adds at most 5 Log lines per file. `--rebuild` first keeps the old files in a dated backup folder. The CLI exits 2 (refused) when `--library` is not a library folder.
+- **W-17.** Proposals score each family 0-100 from the DJ's patterns and propose every family above 0, at least 2, at most 3. Every `from` is a real path; smart playlists and playlists without a unique path "stay where they are". A dump lands in an inbox (a whole-playlist copy cannot split it; the cost counts 2 minutes per dump to split by hand). The My Tag axes are named in the facets principle only (the XML cannot set My Tags). `structure/proposals.yaml` is strict: a rename changes `name` and `trigger` together, then re-run `render` (CLI `--render-only`). Reports are create-only: `reports/<date>-library.html`, then `-library-2.html`. `analyze` logs one line per step and renders with whatever succeeded. R-404 is Built with W-18 (its trigger must work with dj-build). The R-1003 report slot is a real test now; the MD-file and chat slots stay open (Q-15).

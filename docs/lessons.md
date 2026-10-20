@@ -26,6 +26,7 @@ Operating knowledge that is not a rule. Rules live in `CLAUDE.md`. Add a dated l
 - The XML `Colour` hex → colour name map (0xFF007F Pink … 0x660099 Purple) comes from community docs of the format; unverified. If the DJ renamed colours in rekordbox, master.db shows the new names and the two readers disagree on `colour`.
 - Unverified: whether rekordbox can copy My Tags into the comment field on export; if it does, they arrive in `comment`, not `my_tags`.
 - `pyrekordbox.rbxml.decode_path` drops the leading `/` of macOS paths (`file://localhost/Users/...` → `Users/...`) and turns them into backslash paths on Windows; `dj.readers.common.posix_location` keeps `/Users/...`, `//nas/share/...` and `D:/...` as POSIX strings on every OS.
+- 2026-10-20 A restructure proposal names an existing playlist by its path "Folder/Playlist" (`from`). A playlist with a same-name sibling, a "/" in its name or a blank name cannot be named that way, so dj-report lists it as "stays where it is". How often real libraries hold such names is not yet known.
 - 2026-10-20 `pyrekordbox.rbxml.encode_path` writes `\\host\share\a.mp3` as `file://localhost///host/share/a.mp3` and `/Users/x/a.mp3` as `file://localhost//Users/x/a.mp3` (one slash too many). `posix_location` reads three or more slashes as a share, and exactly two as a share unless the first folder is `Users` or `Volumes` (macOS). `location_url` writes shares with three slashes. How rekordbox itself writes a network share in its export is not yet checked.
 
 ## Audio files (`dj tidy`)
@@ -60,6 +61,8 @@ Operating knowledge that is not a rule. Rules live in `CLAUDE.md`. Add a dated l
 - A bare filename rejected with "does not exist" was misread as a connection drop. Resolve bare names under their folder and show an example in the tool description.
 - Eight parallel research subagents hit a monthly spend limit mid-task. Bound fan-out.
 - A 1.56M-token chat was compacted; `STATE.md` + `log.md` carried a clean resume. File-based state works. The tool, not Claude, should write the log lines.
+- 2026-10-20 Headless Edge or Chrome (`--headless=new --screenshot`) lays a page out about 500 px wide whatever `--window-size` says. To see the HTML report at phone width, load it in a 360 px `<iframe>` (with `--allow-file-access-from-files`) and screenshot that.
+- 2026-10-20 Exit code 2 has two causes: the rekordbox process check (stderr `STOP ...`) and a `dj library` command refusing a folder that is not a set-up dj-library (stderr `REFUSED ...`). An agent told "2 = rekordbox is open" retries the second one forever. `mcp_server.refusal_hint` tells them apart by that prefix.
 - The real write gate was the per-tool "ask every time" permission, not the skill text. "Yes" was often implicit ("It's on", "Create playlists"). Gates belong in tools and hooks.
 
 ## Environment (uv, Windows)

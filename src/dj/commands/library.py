@@ -1,7 +1,7 @@
 """`dj library ...`: the library model (XML export or master.db snapshot) and its analysis.
 
-Nothing here writes to rekordbox: `inspect` only reads; `profile`, `structure` and `taste`
-write text files in the library folder (R-341).
+Nothing here writes to rekordbox: `inspect` only reads; `profile`, `structure`, `taste`,
+`report` and `analyze` write text files in the library folder (R-341).
 """
 
 from __future__ import annotations
@@ -16,10 +16,12 @@ from typing import Any, Iterator
 import typer
 
 from dj import libfolder
+from dj import report as report_mod
 from dj.analysis import profile as profile_analysis
+from dj.analysis import run_all
 from dj.analysis import structure as structure_analysis
 from dj.analysis import taste as taste_analysis
-from dj.analysis.common import parse_day
+from dj.analysis.common import NotALibraryFolder, parse_day
 from dj.libfolder import configured_root
 from dj.model import Library, LibraryError, PlaylistNode
 from dj.readers.xml import XML_FIELDS_MISSING, XML_NOTES, read_xml
@@ -276,3 +278,97 @@ def _added_lines(added: dict[str, list[str]]) -> list[str]:
         if len(new) > SHOWN_LINES:
             lines.append(f"  ... {len(new) - SHOWN_LINES} more in {path}")
     return lines
+
+
+# -- report and analyze (R-401 ... R-407) ------------------------------------------------------
+
+
+def _proposal_lines(proposals: list[dict[str, Any]]) -> list[str]:
+    return [f"  {p['trigger']} (about {p['cost_minutes']} minutes, {p['family']})" for p in proposals]
+
+
+@library_app.command("report")
+def report_cmd(
+    library: str = typer.Option(None, "--library", help="The dj-library folder. Default: the configured one."),
+    today: str = typer.Option(None, "--today", help="Date of the report, YYYY-MM-DD. Default: today."),
+    render_only: bool = typer.Option(
+        False, "--render-only",
+        help="Only render the HTML report from the folder's files; structure/proposals.yaml stays as "
+             "it is (use it after renaming a proposal).",
+    ),  # fmt: skip
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Build 2 or 3 restructure proposals into structure/proposals.yaml and render the HTML report
+    reports/<date>-library.html from the files in the library folder. One log.md line.
+    --render-only skips the proposals step, so a renamed proposal shows as written.
+
+    R-401..R-406. Reads the latest export and the folder's files; never writes to rekordbox.
+    A second report on the same day is <date>-library-2.html: `report` names the file written."""
+    try:
+        root = library or configured_root()
+        if render_only:
+            result = report_mod.run_render(root, today=parse_day(today))
+        else:
+            result = report_mod.run_report(root, today=parse_day(today))
+    except NotALibraryFolder as exc:
+        typer.echo(f"REFUSED {exc}", err=True)
+        raise typer.Exit(EXIT_REFUSED)
+    except (LibraryError, TreeSchemaError, OSError, ValueError) as exc:
+        typer.echo(f"ERROR {exc}", err=True)
+        raise typer.Exit(EXIT_ERROR)
+    if as_json:
+        typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+    if render_only:
+        lines = [f"report: {result['report']} ({result['counts']['proposals']} proposals from "
+                 "structure/proposals.yaml)", f"wrote {result['report']}"]  # fmt: skip
+    else:
+        lines = [f"report: {result['report']} ({result['counts']['proposals']} proposals from {result['source']})"]
+        lines += _proposal_lines(result["proposals"])
+        lines += [f"wrote {path}" for path in result["written"]]
+        lines += [f"kept your edited copy {path}" for path in result["kept"]]
+    lines += ["log: " + result["log"], "", "Nothing was written to rekordbox."]
+    typer.echo("\n".join(lines))
+
+
+@library_app.command("analyze")
+def analyze_cmd(
+    library: str = typer.Option(None, "--library", help="The dj-library folder. Default: the configured one."),
+    source: str = typer.Option("xml", "--source", help="xml: the latest export (or --xml); db: a master.db snapshot."),
+    xml: str = typer.Option(None, "--xml", help="Read this collection XML instead of the latest export."),
+    today: str = typer.Option(None, "--today", help="Date written into the files, YYYY-MM-DD. Default: today."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Read the library once, then profile, structure, taste, proposals and the HTML report.
+
+    Writes text files in the library folder only, one log.md line per step. --source db reads a
+    snapshot copy of master.db (read-only). Never writes to rekordbox, Spotify or audio files.
+    Exit 1 when a step failed (the rest still ran; `failed` names it)."""
+    with _reader_log():
+        try:
+            root = library or configured_root()
+            result = run_all.analyze(root, source=source, xml=xml, today=parse_day(today))
+        except NotALibraryFolder as exc:
+            typer.echo(f"REFUSED {exc}", err=True)
+            raise typer.Exit(EXIT_REFUSED)
+        except (LibraryError, TreeSchemaError, OSError, ValueError) as exc:
+            typer.echo(f"ERROR {exc}", err=True)
+            raise typer.Exit(EXIT_ERROR)
+    if as_json:
+        typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        c = result["counts"]
+        lines = [
+            f"analyze: read {result['read']} ({c['tracks']} tracks, {c['playlists']} playlists, {c['folders']} folders)",
+            f"report: {result['report'] or 'not rendered'}",
+            *_proposal_lines(result["proposals"]),
+            f"wrote {c['files']} files:",
+            *[f"  {path}" for path in result["written"]],
+            *[f"kept your edited copy {path}" for path in result["kept"]],
+            *[f"FAILED {f['step']}: {f['error']}" for f in result["failed"]],
+            "",
+            "Nothing was written to rekordbox.",
+        ]
+        typer.echo("\n".join(lines))
+    if result["failed"]:
+        raise typer.Exit(EXIT_ERROR)
