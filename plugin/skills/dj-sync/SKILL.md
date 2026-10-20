@@ -1,6 +1,6 @@
 ---
 name: dj-sync
-description: Process a Spotify inbox playlist into a rekordbox crate with the dj CLI — pull, match, plan, get the DJ's OK, apply, log. Also copies a rekordbox playlist to Spotify (dj push). Use whenever the DJ mentions syncing, their inbox, a crate, what's missing, the wishlist or shopping list, ambiguous matches, pushing a playlist to Spotify, or asks about the state of their playlists, even if they never say "sync".
+description: Process a Spotify inbox playlist into a rekordbox crate with the dj CLI — pull, match, plan, get the DJ's OK, apply, log. Also copies a rekordbox playlist to Spotify (dj push). Use whenever the DJ mentions syncing, their Spotify inbox, the inbox crate (a Spotify playlist synced into a crate), what's missing, the wishlist or shopping list, ambiguous matches, pushing a playlist to Spotify, or asks about the state of their playlists, even if they never say "sync". A crate for a night or a gig ("crate me 50 for Saturday") is dj-crate, not this skill.
 ---
 
 # dj-sync

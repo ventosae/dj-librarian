@@ -34,6 +34,7 @@ Windows power mode on top: they also need `power_mode=true` (R-205).
 | `dj_tidy_dupes` | Duplicate report; never deletes. |
 | `dj_tidy_apply_preview` | Dry-run of a tidy plan; returns a `preview_id`. |
 | `dj_tidy_undo_preview` | Dry-run of a tidy undo; returns a `preview_id`. |
+| `dj_crate_preview` | Dry-run of a crate from a spec; returns a `preview_id`. |
 
 ## Library-text tools: Allow or Ask
 
@@ -52,6 +53,7 @@ rekordbox, Spotify or audio files.
 | Tool | Writes to | Its preview |
 |---|---|---|
 | `dj_structure_write` | `proposals/<slug>.xml`, a rekordbox XML you import | `dj_structure_preview` |
+| `dj_crate_write` | `proposals/crate-<slug>.xml` (a rekordbox XML you import) and `crates/<slug>.md` | `dj_crate_preview` |
 | `dj_tree_apply` | rekordbox master.db (power mode, Windows) | `dj_tree_preview` |
 | `dj_apply_write` | rekordbox master.db (power mode, Windows) | `dj_apply_preview` |
 | `dj_copy_apply` | rekordbox master.db (power mode, Windows) | `dj_copy_preview` |
@@ -80,6 +82,7 @@ write tool's name.
   "permissions": {
     "ask": [
       "mcp__plugin_dj-librarian_dj-librarian__dj_structure_write",
+      "mcp__plugin_dj-librarian_dj-librarian__dj_crate_write",
       "mcp__plugin_dj-librarian_dj-librarian__dj_tree_apply",
       "mcp__plugin_dj-librarian_dj-librarian__dj_apply_write",
       "mcp__plugin_dj-librarian_dj-librarian__dj_copy_apply",

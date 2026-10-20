@@ -1,8 +1,9 @@
 """`dj library ...`: the library model (XML export or master.db snapshot) and its analysis.
 
 Nothing here writes to rekordbox: `inspect` only reads; `profile`, `structure`, `taste`,
-`report` and `analyze` write text files in the library folder (R-341); `build` writes a
-rekordbox XML the DJ imports, only with the id of a preview the DJ said yes to (R-501..R-505).
+`report` and `analyze` write text files in the library folder (R-341); `build` and `crate`
+write a rekordbox XML the DJ imports, only with the id of a preview the DJ said yes to
+(R-501..R-505, R-601..R-604).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from typing import Any, Iterator
 import typer
 
 from dj import build_structure, libfolder
+from dj import crate as crate_mod
 from dj import report as report_mod
 from dj.analysis import profile as profile_analysis
 from dj.analysis import run_all
@@ -448,6 +450,8 @@ def _preview_lines(data: dict[str, Any], rows: list[Any], slug: str) -> list[str
             lines.append(f"  ... {data['lands_more']} more")
     if data["unplaced"]:
         lines += ["", f"{data['unplaced']} track(s) have no file location and stay out of the XML."]
+    if data.get("vetoed"):
+        lines += ["", f"{data['vetoed']} vetoed track(s) (taste/vetoes.md) stay out of the XML."]
     lines += [f"WARNING {w}" for w in data["warnings"]]
     lines += ["", "Nothing written yet."]
     if data["blocked"]:
@@ -510,5 +514,97 @@ def build(
     except GateError as exc:
         _refuse(str(exc))
     except (build_structure.BuildError, TreeSchemaError, LibraryError, OSError) as exc:
+        _fail(str(exc))
+    typer.echo(json.dumps(data, indent=2, ensure_ascii=False) if as_json else "\n".join(text))
+
+
+# -- dj library crate (R-601..R-604, R-702) ------------------------------------------------
+
+
+def _pick_line(n: int, pick: dict[str, Any], spare: bool = False) -> str:
+    tier = f"[{pick['tier']}] " if spare else ""
+    key = f", {pick['key']}" if pick["key"] else ""
+    return f"  {n:>2}. {tier}{pick['track']} ({pick['bpm']} BPM{key}): {pick['reason']}"
+
+
+def _crate_preview_lines(found: crate_mod.CratePreview) -> list[str]:
+    data = found.to_dict(limit=len(found.picks))  # a terminal shows every pick
+    c = data["counts"]
+    lines = [
+        f"crate:       {data['name']} ({data['crate']}), {c['picks']} picks + {c['spares']} spares, "
+        f"curve {data['curve']}",
+        f"spec:        {data['spec']} ({data['filters']})",
+        f"tracks from: {data['export']}",
+        f"taste from:  {data['taste']}",
+        f"counts:      {c['candidates']} candidates, {c['vetoed']} vetoed, {c['never_pair']} never-pair, "
+        f"{c['duplicates']} duplicates, {c['tracks']} tracks",
+        f"playlists:   {', '.join(data['playlists'])}",
+        "",
+        "picks:",
+        *[_pick_line(p["n"], p) for p in data["picks"]],
+        "spares:",
+        *[_pick_line(p["n"], p, spare=True) for p in data["spares"]],
+    ]
+    lines += [f"WARNING {w}" for w in data["warnings"]]
+    lines += ["", "Nothing written yet."]
+    if data["blocked"]:
+        lines.append(f"BLOCKED {data['blocked']}")
+    else:
+        lines.append(f"preview id:  {data['preview_id']}")
+        lines.append(
+            f"to write:    dj library crate {data['crate']} --apply --preview-id {data['preview_id']} "
+            "(only after the DJ said yes)"
+        )
+    return lines
+
+
+def _crate_apply_lines(data: dict[str, Any]) -> list[str]:
+    c = data["counts"]
+    lines = [
+        f"Wrote {data['written']} ({c['picks']} picks, {c['spares']} spares). rekordbox untouched until you import it.",
+    ]
+    if data["record"]:
+        lines.append(f"Crate record: {data['record']}")
+    lines.append(f"Import in rekordbox ({data['device']}):")
+    lines += [f"  {n}. {step}" for n, step in enumerate(data["import_steps"], 1)]
+    lines.append(f"log.md: {data['log_line']}")
+    lines += [f"WARNING {w}" for w in data["warnings"]]
+    return lines
+
+
+@library_app.command("crate")
+def crate_cmd(
+    spec: str = typer.Argument(..., help="The crate's slug, or the path of crates/<slug>.spec.yaml."),
+    library: str = typer.Option(None, "--library", help="The dj-library folder. Default: the configured one."),
+    apply: bool = typer.Option(False, "--apply", help="Write proposals/crate-<slug>.xml. Needs --preview-id."),
+    preview_id: str = typer.Option(None, "--preview-id", help="The id the preview printed, after the DJ's yes."),
+    today: str = typer.Option(None, "--today", help="Date written into crates/<slug>.md (YYYY-MM-DD)."),
+    picks_limit: int = typer.Option(crate_mod.PICKS_LIMIT, "--picks-limit", min=0,
+                                    help="Picks listed in the preview JSON; 0 = all (the MCP tool pages them)."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Preview a crate from crates/<slug>.spec.yaml (picks with a reason each, spares by energy),
+    or with --apply and the preview id write proposals/crate-<slug>.xml and crates/<slug>.md
+    for the DJ to import. Never opens master.db."""
+    if apply and not (preview_id or "").strip():
+        _refuse("--apply needs --preview-id: run the preview, show it, write only after a yes.")
+    try:
+        day = date.fromisoformat(today) if today else None
+    except ValueError:
+        _fail(f"--today: expected YYYY-MM-DD, got {today!r}")
+    try:
+        root = Path(library) if library else libfolder.configured_root()
+        if not root.is_dir():
+            _fail(f"{root} is not a folder. Scaffold the dj-library folder first (dj-start).")
+        if apply:
+            data = crate_mod.apply(root, spec, (preview_id or "").strip(), today=day).to_dict()
+            text = _crate_apply_lines(data)
+        else:
+            found = crate_mod.preview(root, spec, today=day)
+            data = found.to_dict(picks_limit)
+            text = _crate_preview_lines(found)
+    except GateError as exc:
+        _refuse(str(exc))
+    except (crate_mod.CrateError, build_structure.BuildError, LibraryError, OSError) as exc:
         _fail(str(exc))
     typer.echo(json.dumps(data, indent=2, ensure_ascii=False) if as_json else "\n".join(text))

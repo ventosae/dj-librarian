@@ -169,6 +169,7 @@ PAGED = {  # tool -> (call, the CLI's list keys)
     "dj_tidy_apply_preview": (lambda **kw: m.dj_tidy_apply_preview("p.plan.json", **kw), ("items",)),
     "dj_tidy_undo_preview": (lambda **kw: m.dj_tidy_undo_preview("p.plan.json", **kw), ("items",)),
     "dj_structure_preview": (lambda **kw: m.dj_structure_preview("lanes", **kw), ("rows",)),
+    "dj_crate_preview": (lambda **kw: m.dj_crate_preview("saturday", **kw), ("picks", "spares")),
 }
 
 

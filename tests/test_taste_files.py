@@ -411,6 +411,28 @@ def test_read_vetoes(tmp_path):
     assert read_vetoes(tmp_path / "missing.md") == Vetoes()
 
 
+def test_vetoes_with_copies_cover_every_copy_of_a_vetoed_song():
+    from types import SimpleNamespace as T
+
+    tracks = [
+        T(id="8", artist="Marlo Venn", title="Hallway Light", remixer=""),
+        T(id="22", artist="Marlo  Venn", title="Hallway Light (Original Mix)", remixer=""),  # a copy
+        T(id="30", artist="Marlo Venn", title="Hallway Light", remixer="Dub Atelier"),  # a remix: not a copy
+        T(id="17", artist="Grid Saint", title="Pressure Vessel", remixer=""),
+        T(id="23", artist="Grid Saint", title="Pressure Vessel", remixer=""),
+        T(id="1", artist="Okoro Lane", title="Sunday Sermon", remixer=""),
+        T(id="40", artist="", title="Untitled", remixer=""),  # no key: a copy of nothing
+        T(id="41", artist="", title="Untitled", remixer=""),
+    ]
+    vetoes = Vetoes(frozenset({"22", "40"}), frozenset({frozenset({"1", "17"})}))
+    wide = vetoes.with_copies(tracks)
+    assert wide.never_propose == frozenset({"8", "22", "40"})
+    assert wide.never_pair == frozenset({frozenset({"1", "17"}), frozenset({"1", "23"})})
+    assert wide.blocks("8") and not wide.blocks("30") and not wide.blocks("41")
+    assert wide.blocks_pair("23", "1") and not wide.blocks_pair("17", "23")
+    assert Vetoes().with_copies(tracks) == Vetoes() and vetoes.with_copies([]) == vetoes
+
+
 def test_vetoes_written_through_append_entries_read_back(tmp_path):
     path = tmp_path / "vetoes.md"
     append_entries(path, "Vetoes", [Entry("veto:16", "never propose: Kestrel Unit - Ferrous"),

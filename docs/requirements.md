@@ -111,17 +111,17 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
-| R-601 | From a brief (event or vibe; size chips 30 / 50 / 70), select tracks from the DJ's own library. | M | Exactly N owned tracks, one-line reason each. | Agreed | v0.1 |
-| R-602 | Claude turns the brief into a structured spec; code selects and orders from `taste/` (lanes, anchors, co-occurrence, vetoes) and rekordbox fields (BPM, key, rating, My Tags); Claude writes the reasons. | M | Selection reproducible from the spec. | Proposed | v0.1 |
-| R-603 | Preview → yes → `proposals/crate-<name>.xml` for import (R-502) + `crates/<name>.md`. | M | Files produced; rekordbox imports the playlist. | Agreed | v0.1 |
-| R-604 | Spares: +20% tracks across energy levels, marked as spares. | M | Spares listed separately. | Proposed | v0.1 |
+| R-601 | From a brief (event or vibe; size chips 30 / 50 / 70), select tracks from the DJ's own library. | M | Exactly N owned tracks, one-line reason each. | Built | v0.1 |
+| R-602 | Claude turns the brief into a structured spec; code selects and orders from `taste/` (lanes, anchors, co-occurrence, vetoes) and rekordbox fields (BPM, key, rating, My Tags); Claude writes the reasons. | M | Selection reproducible from the spec. | Built | v0.1 |
+| R-603 | Preview → yes → `proposals/crate-<name>.xml` for import (R-502) + `crates/<name>.md`. | M | Files produced; rekordbox imports the playlist. | Built | v0.1 |
+| R-604 | Spares: +20% tracks across energy levels, marked as spares. | M | Spares listed separately. | Built | v0.1 |
 
 ### E7 Style Barber
 
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
 | R-701 | Interactive session that sharpens the taste profile: one short question per turn, A/B picks from the DJ's own tracks, naming of lanes, vetoes. | M | A session updates ≥ 1 `taste/` file with dated entries. | Agreed | v0.1 |
-| R-702 | `taste/vetoes.md` (never pair / never propose) and `taste/feedback.md` (what worked at a gig), honoured by Crate me and proposals. | M | A vetoed track never appears in a crate. | Proposed | v0.1 |
+| R-702 | `taste/vetoes.md` (never pair / never propose) and `taste/feedback.md` (what worked at a gig), honoured by Crate me and proposals. | M | A vetoed track never appears in a crate. | Built | v0.1 |
 | R-703 | ≤ 10 minutes per session; progress stated. | M | Transcript check. | Agreed | v0.1 |
 
 ### E8 Spotify sync + shopping list

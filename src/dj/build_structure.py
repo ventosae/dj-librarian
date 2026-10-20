@@ -22,7 +22,10 @@ again. A node that exists is spelled as it exists (rekordbox's own name), also i
 the import card. A CONFLICT, nothing to CREATE, or a build already written for exactly this
 content blocks the build: no preview id is issued and `apply` refuses. The XML holds only the
 CREATE nodes and their ancestor folders; playlists carry the tracks of their `from` playlists
-(R-503); smart playlists are MANUAL (XML cannot carry rules).
+(R-503); smart playlists are MANUAL (XML cannot carry rules). Tracks the DJ vetoed in
+`taste/vetoes.md` ("never propose", R-702), and every copy of them (same artist and title), are
+left out of those playlists; the preview counts them (`vetoed`) and the build's log line names
+how many.
 
 The digest the gate checks = the canonical proposal YAML + the current tree YAML + the export
 (its path and tree) + the track ids of every playlist the XML will hold. Any change between
@@ -51,6 +54,7 @@ from dj.gate import Gate, GateError, require_id
 from dj.libfolder import LibraryFolder, LibraryFolderError
 from dj.model import Library, LibraryError
 from dj.readers.xml import read_xml
+from dj.taste_files import read_vetoes
 from dj.treeschema import (
     CONFLICT,
     CREATE,
@@ -86,6 +90,7 @@ __all__ = [
 KIND = "build"  # the gate kind
 CURRENT_TREE = "structure/current-tree.yaml"
 PROPOSALS_FILE = "structure/proposals.yaml"
+VETOES_FILE = "taste/vetoes.md"
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 TRIGGER = re.compile(r"^build\s+me\s+the\s+(.+?)\s+structure[.!]?$", re.IGNORECASE)
 QUOTES = "\"'`“”‘’«»"
@@ -306,6 +311,17 @@ def _library(folder: LibraryFolder) -> tuple[Library, str]:
         raise BuildError(str(exc)) from exc
 
 
+def _vetoed(folder: LibraryFolder, lib: Library) -> frozenset[str]:
+    """The track ids `taste/vetoes.md` says never to propose (R-702), with every copy of each in
+    `lib` (a veto names the song: `Vetoes.with_copies`); none when the file is missing."""
+    try:
+        return read_vetoes(folder.root / VETOES_FILE).with_copies(lib.tracks.values()).never_propose
+    except LibraryError as exc:
+        raise BuildError(f"{VETOES_FILE}: {exc}") from exc
+    except OSError as exc:
+        raise BuildError(f"{VETOES_FILE}: cannot read it ({exc.strerror or exc}).") from exc
+
+
 def _only(rows: Iterable[DiffRow]) -> set[tuple[str, ...]]:
     """The CREATE nodes and every ancestor folder above them."""
     out: set[tuple[str, ...]] = set()
@@ -414,17 +430,25 @@ def _blocked(rows: tuple[DiffRow, ...], yaml_rel: str) -> str | None:
     return None
 
 
-def _state(slug: str, doc: TreeDoc, current: TreeDoc, lib: Library, export: str) -> _State:
+def _state(
+    slug: str,
+    doc: TreeDoc,
+    current: TreeDoc,
+    lib: Library,
+    export: str,
+    vetoed: frozenset[str] = frozenset(),
+) -> _State:
     exported = _export_tree(lib, current)
     stale = _stale(doc, current, exported, export)
     spelled = TreeDoc(_spelled(doc.nodes, exported.nodes), doc.meta)
     rows = tuple(treeschema.diff(spelled, exported))  # the same rows as against current, or stale
-    plan = plan_xml(spelled, lib, only=_only(rows))  # BuildError for an unknown `from`
+    plan = plan_xml(spelled, lib, only=_only(rows), vetoed=vetoed)  # BuildError for an unknown `from`
     lands = []
     for row in rows:
         if row.op == CREATE and row.kind == "playlist":
             for source in row.fill_from:
-                n = len(tracks_from(lib, [source], "/".join(row.path)))
+                ids = tracks_from(lib, [source], "/".join(row.path))
+                n = sum(tid not in vetoed for tid in ids)
                 lands.append({"from": source, "to": "/".join(row.path), "tracks": n})
     counts = {
         "create": sum(r.op == CREATE for r in rows),
@@ -475,6 +499,7 @@ class BuildPreview:
     export: str = ""  # the export the tracks were read from (relative)
     unplaced: tuple[str, ...] = ()  # track ids without a file location, left out
     warnings: tuple[str, ...] = ()
+    vetoed: tuple[str, ...] = ()  # track ids taste/vetoes.md says never to propose, left out (R-702)
 
     def to_dict(self, folder: LibraryFolder | str | Path, limit: int = ROWS_LIMIT) -> dict[str, Any]:
         rows, rows_more = _capped([_row_dict(r) for r in self.rows], limit)
@@ -494,6 +519,7 @@ class BuildPreview:
             "lands": lands,
             "lands_more": lands_more,
             "unplaced": len(self.unplaced),
+            "vetoed": len(self.vetoed),
             "warnings": list(self.warnings),
         }
 
@@ -554,7 +580,7 @@ def preview(
         created = libfolder.write_new_text(found.yaml_path, text)
     doc = _load_proposal(found.yaml_path, folder)  # the file wins, also over what we just wrote
 
-    state = _state(found.slug, doc, current, lib, export)
+    state = _state(found.slug, doc, current, lib, export, _vetoed(folder, lib))
     preview_id, blocked = None, state.blocked
     if blocked is None:
         gate = Gate(folder.cache)
@@ -576,6 +602,7 @@ def preview(
         export=export,
         unplaced=state.plan.unplaced,
         warnings=found.warnings,
+        vetoed=state.plan.vetoed,
     )
 
 
@@ -719,7 +746,7 @@ def apply(
     if not found.exists:
         raise BuildError(f"proposals/{found.slug}.yaml is missing: run the preview first.")
     lib, export = _library(folder)
-    state = _state(found.slug, found.doc, current, lib, export)
+    state = _state(found.slug, found.doc, current, lib, export, _vetoed(folder, lib))
     if state.blocked:
         raise BuildError(state.blocked + " Nothing was written.")
     gate = Gate(folder.cache)
@@ -731,6 +758,8 @@ def apply(
     # The XML is written: from here on the build is done, and a failure below is a warning.
     xml_file = folder.relative(xml_path)
     counts = {k: state.counts[k] for k in ("create", "skip", "manual", "tracks")}
+    if state.plan.vetoed:
+        counts["vetoed"] = len(state.plan.vetoed)
     warnings = list(found.warnings)
     try:
         gate.consume(preview_id, now=now, written=xml_file)

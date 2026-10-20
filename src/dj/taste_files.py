@@ -1,7 +1,7 @@
 """Taste files: Markdown the tool, Claude and the DJ append to across sessions (R-332).
 
-Door 1 core: stdlib only (+ `dj.libfolder` for the atomic write), so skill scripts run it in
-Cowork's sandbox.
+Door 1 core: stdlib only (+ `dj.libfolder` for the atomic write, `dj.analysis.common.dup_key`
+for the copies of a vetoed track), so skill scripts run it in Cowork's sandbox.
 
 Layout of a taste file (`taste/lanes.md`, `labels-artists.md`, `anchors.md`, `vocabulary.md`)::
 
@@ -54,7 +54,9 @@ work without writing, so a caller with several files can check them all before i
 The key carries the track ids; the text is for people. The date and the leading `- ` are
 optional. The latest line for a key (in canonical form) decides: to lift a veto, append a line
 with the same key whose text does not start with `never propose:` / `never pair:` (for example
-`- [2026-11-01] lifted: Kestrel Unit - Ferrous <!-- key:veto:16 -->`).
+`- [2026-11-01] lifted: Kestrel Unit - Ferrous <!-- key:veto:16 -->`). A veto names the song:
+`Vetoes.with_copies(tracks)` extends it to every copy (same artist and title) in the library,
+and Crate me (`dj.crate.select`) and dj-build (`dj.build_structure`) apply vetoes that way.
 
 `taste/feedback.md` holds what the DJ said about picks, one dated line each, the key optional:
 
@@ -67,8 +69,9 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Iterable, NamedTuple, Sequence
+from typing import Any, Iterable, NamedTuple, Sequence
 
+from dj.analysis.common import dup_key
 from dj.libfolder import write_text
 from dj.model import LibraryError
 
@@ -129,6 +132,34 @@ class Vetoes:
 
     def blocks_pair(self, a: str, b: str) -> bool:
         return frozenset((str(a), str(b))) in self.never_pair
+
+    def with_copies(self, tracks: Iterable[Any]) -> Vetoes:
+        """These vetoes for every copy too (R-702). A copy is a track with the same non-empty
+        `dj.analysis.common.dup_key` (artist and title; a remix named only in the Remixer field
+        is another track), so the song the DJ vetoed by name stays out whichever file holds it:
+        "never propose" holds for each copy of a vetoed track, and "never pair" between every
+        copy of one side and every copy of the other. `tracks`: the library's tracks (anything
+        with `id`, `artist`, `title` and `remixer`)."""
+        groups: dict[str, list[str]] = {}
+        key_of: dict[str, str] = {}
+        for t in tracks:
+            key = dup_key(t.artist, t.title, t.remixer)
+            if key:
+                groups.setdefault(key, []).append(str(t.id))
+                key_of[str(t.id)] = key
+
+        def copies(tid: str) -> set[str]:
+            return {tid, *groups.get(key_of.get(tid, ""), ())}
+
+        propose = {c for tid in self.never_propose for c in copies(tid)}
+        pairs: set[frozenset[str]] = set()
+        for pair in self.never_pair:
+            if len(pair) != 2:  # read_vetoes never makes one; keep a hand-made one as it is
+                pairs.add(pair)
+                continue
+            a, b = sorted(pair)
+            pairs.update(frozenset((x, y)) for x in copies(a) for y in copies(b) if x != y)
+        return Vetoes(frozenset(propose), frozenset(pairs))
 
 
 def canonical_key(key: str) -> str:

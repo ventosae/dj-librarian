@@ -10,7 +10,7 @@ changes when the DJ drags the playlists in, never before. master.db is never ope
 
 **Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
 
-**Requirements:** R-501, R-502, R-503, R-504, R-505, R-904.
+**Requirements:** R-501, R-502, R-503, R-504, R-505, R-702, R-904.
 
 ## How to run things
 
@@ -34,6 +34,9 @@ Run the preview. Show one card, built from the result:
 2. Where existing playlists land (`lands`: from -> to, track count). Up to 5.
 3. `MANUAL` rows: smart playlists the XML cannot carry; the DJ makes them by hand with the rules shown.
 4. The counts line, then exactly: "Nothing written yet."
+
+`vetoed` above 0: that many tracks `taste/vetoes.md` says never to propose, each with every copy
+of it, stay out of the new playlists (R-702). Say the number in one line.
 
 If `blocked` is set, there is no preview id. Say why in one line and offer Change or Stop only:
 

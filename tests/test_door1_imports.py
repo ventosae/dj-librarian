@@ -30,6 +30,7 @@ DOOR1_MODULES = [
     "dj.analysis.proposals",
     "dj.report",
     "dj.analysis.run_all",
+    "dj.crate",
     "dj.write_gate",
     "dj.activity_log",
 ]

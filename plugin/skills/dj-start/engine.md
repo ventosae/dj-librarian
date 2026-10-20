@@ -25,7 +25,7 @@ Mac:
 Step 1 of 2 · about 10 minutes. Install the engine in three moves, then I check it works:
 1. Install uv: open Terminal, paste curl -LsSf https://astral.sh/uv/install.sh | sh and press Return. Close Terminal and open it again.
 2. Get the engine: download the dj-librarian repo (git clone, or Code > Download ZIP and unzip it), cd into that folder in Terminal and run uv sync, then uv run dj library use <your dj-library folder>. Turn on the dj-librarian plugin from that folder (Claude Code: claude plugin marketplace add ./ then claude plugin install dj-librarian@dj-librarian; Cowork: Customize > Plugins) and restart Claude.
-3. In the dj-librarian connector's tool permissions, set every write tool to Ask every time: dj_tree_apply, dj_apply_write, dj_copy_apply, dj_push_apply, dj_build_apply, dj_tidy_apply, dj_tidy_undo, dj_structure_write. Read tools can stay on Allow.
+3. In the dj-librarian connector's tool permissions, set every write tool to Ask every time: dj_tree_apply, dj_apply_write, dj_copy_apply, dj_push_apply, dj_build_apply, dj_tidy_apply, dj_tidy_undo, dj_structure_write, dj_crate_write. Read tools can stay on Allow.
 Say done when Claude is back (under a minute).
 ```
 
@@ -35,7 +35,7 @@ Windows:
 Step 1 of 2 · about 10 minutes. Install the engine in three moves, then I check it works:
 1. Install uv: open PowerShell, paste powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex" and press Enter. Close PowerShell and open it again.
 2. Get the engine: download the dj-librarian repo (git clone, or Code > Download ZIP and unzip it), cd into that folder in PowerShell and run uv sync, then uv run dj library use <your dj-library folder>. Turn on the dj-librarian plugin from that folder (Claude Code: claude plugin marketplace add ./ then claude plugin install dj-librarian@dj-librarian; Cowork: Customize > Plugins) and restart Claude.
-3. In the dj-librarian connector's tool permissions, set every write tool to Ask every time: dj_tree_apply, dj_apply_write, dj_copy_apply, dj_push_apply, dj_build_apply, dj_tidy_apply, dj_tidy_undo, dj_structure_write. Read tools can stay on Allow.
+3. In the dj-librarian connector's tool permissions, set every write tool to Ask every time: dj_tree_apply, dj_apply_write, dj_copy_apply, dj_push_apply, dj_build_apply, dj_tidy_apply, dj_tidy_undo, dj_structure_write, dj_crate_write. Read tools can stay on Allow.
 Say done when Claude is back (under a minute).
 ```
 

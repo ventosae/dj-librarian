@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -804,6 +805,61 @@ def dj_structure_write(proposal: str, preview_id: str) -> str:
     root = str(library_root())
     options = ["library", "build", "--library", root, "--apply", "--preview-id", pid]
     return run_dj(options, (_proposal(proposal),))
+
+
+# -- Crate me: a crate from the DJ's own library -> rekordbox XML (R-601..R-604, R-702) ------
+
+CRATE_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _crate_spec(spec: str) -> str:
+    """A crate slug as it is, or the path of a spec file, which must be a .yaml inside the
+    dj-library folder or the repo (the CLI then insists on crates/<slug>.spec.yaml)."""
+    text = spec.strip() if isinstance(spec, str) else ""
+    if not text:
+        raise ToolInputError("Name the crate: its slug, or the path of crates/<slug>.spec.yaml.")
+    if CRATE_SLUG.match(text):
+        return text
+    return library_file(text, (".yaml",))
+
+
+@server.tool(annotations=READ)
+@guarded
+def dj_crate_preview(spec: str, page: int = 1, page_size: int = PAGE_SIZE) -> str:
+    """Preview a crate from the DJ's own library: `spec` = the slug of crates/<slug>.spec.yaml
+    in the dj-library folder (or that path). Returns counts first, the picks in order with a
+    one-line reason each and the spares by energy tier, in pages (`paging`; pages 2+ are cut from
+    page 1's run), and a preview_id on every page. Writes nothing but the preview record: no XML, no crates/*.md, rekordbox
+    and master.db untouched. Show the DJ the result and ask "Write the crate XML?" before
+    dj_crate_write. A `blocked` result has no preview_id (a playlist of that name exists in the
+    DJ's Crates folder, or this exact crate was written already)."""
+    page, page_size = page_args(page, page_size)
+    root = str(library_root())
+    options = ["library", "crate", "--library", root, "--picks-limit", "0"]  # every pick: the pages bound it
+    return run_paged(options, (_crate_spec(spec),), keys=("picks", "spares"), page=page, page_size=page_size,
+                     more={"picks": "picks_more"})
+
+
+@server.tool(annotations=WRITE)
+@guarded
+def dj_crate_write(spec: str, preview_id: str) -> str:
+    """WRITES proposals/crate-<slug>.xml (a rekordbox XML the DJ imports by hand: folder Crates
+    with the playlist and its spares) and crates/<slug>.md (the crate record), and appends one
+    log.md line. Needs the preview_id from dj_crate_preview and the DJ's explicit yes to that
+    preview. Refuses without one, after any change since the preview, or when the id was already
+    used. Never overwrites a file (a taken name becomes -2). `warnings`: the XML is written; tell
+    the DJ each one."""
+    pid = (preview_id or "").strip() if isinstance(preview_id, str) else ""
+    if not pid:
+        raise ToolInputError(
+            "No preview_id. Call dj_crate_preview, show the DJ the result, and call this only after "
+            "their explicit yes."
+        )
+    if not valid_id(pid):
+        raise ToolInputError(f"{preview_id!r} is not a preview id (12 hex digits from dj_crate_preview).")
+    root = str(library_root())
+    options = ["library", "crate", "--library", root, "--apply", "--preview-id", pid]
+    return run_dj(options, (_crate_spec(spec),))
 
 
 # -- dj tidy: audio files, never master.db -------------------------------------------------

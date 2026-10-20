@@ -33,8 +33,8 @@ PREFIXES = ("mcp__plugin_dj-librarian_dj-librarian__", "mcp__dj-librarian__")
 # Every tool that writes to rekordbox, Spotify, audio files or a rekordbox XML, by name; W-23's
 # dj_crate_write is covered by the same name pattern before it exists.
 WRITE_TOOLS = {"dj_tree_apply", "dj_apply_write", "dj_copy_apply", "dj_push_apply", "dj_build_apply",
-               "dj_tidy_apply", "dj_tidy_undo", "dj_structure_write"}  # fmt: skip
-FUTURE_WRITE_TOOLS = {"dj_crate_write"}
+               "dj_tidy_apply", "dj_tidy_undo", "dj_structure_write", "dj_crate_write"}  # fmt: skip
+FUTURE_WRITE_TOOLS: set[str] = set()  # dj_crate_write landed with W-23
 PID = "0123456789ab"
 
 

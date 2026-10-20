@@ -580,6 +580,7 @@ OTHER_TOOLS = {
     "dj_tidy_apply": lambda pid: m.dj_tidy_apply("p.plan.json", preview_id=pid),
     "dj_tidy_undo": lambda pid: m.dj_tidy_undo("p.plan.json", preview_id=pid),
     "dj_structure_write": lambda pid: m.dj_structure_write("lanes", preview_id=pid),
+    "dj_crate_write": lambda pid: m.dj_crate_write("saturday", preview_id=pid),
 }
 ALL_TOOLS = {**{n: functools.partial(f, power_mode=True) for n, f in DB_TOOLS.items()}, **OTHER_TOOLS}
 PREVIEWS = {
@@ -591,6 +592,7 @@ PREVIEWS = {
     "dj_tidy_apply_preview": lambda: m.dj_tidy_apply_preview("p.plan.json"),
     "dj_tidy_undo_preview": lambda: m.dj_tidy_undo_preview("p.plan.json"),
     "dj_structure_preview": lambda: m.dj_structure_preview("lanes"),
+    "dj_crate_preview": lambda: m.dj_crate_preview("saturday"),
 }
 
 

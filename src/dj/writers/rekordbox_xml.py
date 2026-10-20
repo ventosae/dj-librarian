@@ -28,6 +28,11 @@ Rules:
 - A track without a file location cannot be imported: left out (`XmlPlan.unplaced`).
 - `only` (a set of node paths) limits the tree to those nodes; callers pass the CREATE nodes and
   their ancestor folders.
+- `vetoed` (library ids, from `taste/vetoes.md` "never propose") are left out of every playlist
+  a `from` fills (R-702); `XmlPlan.vetoed` lists the ones that were left out.
+- `plan_lists` / `build_lists_xml` take explicit track lists instead of a tree (Crate me): each
+  playlist path with its ids in order; the folders on the paths are made once, in order. The
+  COLLECTION / TRACK encoding is the same.
 - `write_xml` never replaces a file: a taken name becomes `<name>-2.xml`, `-3` ...
 """
 
@@ -79,6 +84,7 @@ class XmlPlan:
     track_ids: dict[str, int]  # library id -> TrackID written
     manual: tuple[NodePath, ...] = ()  # smart playlists left out
     unplaced: tuple[str, ...] = ()  # library ids left out: no file location
+    vetoed: tuple[str, ...] = ()  # library ids left out: "never propose" in taste/vetoes.md
 
     def walk(self) -> Iterator[PlannedNode]:
         def visit(nodes: Sequence[PlannedNode]) -> Iterator[PlannedNode]:
@@ -137,13 +143,20 @@ def _paths(only: Iterable[NodePath | str] | None) -> set[NodePath] | None:
 
 
 def plan_xml(
-    doc: TreeDoc | Sequence[TreeNode], lib: Library, *, only: Iterable[NodePath | str] | None = None
+    doc: TreeDoc | Sequence[TreeNode],
+    lib: Library,
+    *,
+    only: Iterable[NodePath | str] | None = None,
+    vetoed: Iterable[str] = (),
 ) -> XmlPlan:
-    """The nodes and tracks the XML will hold. `only`: node paths (tuples, or "A/B" text)."""
+    """The nodes and tracks the XML will hold. `only`: node paths (tuples, or "A/B" text).
+    `vetoed`: library ids no playlist may hold (R-702), left out and listed in `XmlPlan.vetoed`."""
     wanted = _paths(only)
+    banned = {str(tid) for tid in vetoed}
     nodes = doc.nodes if isinstance(doc, TreeDoc) else tuple(doc)
     manual: list[NodePath] = []
     unplaced: list[str] = []
+    left_out: list[str] = []
 
     def plan(level: Sequence[TreeNode], prefix: NodePath) -> tuple[PlannedNode, ...]:
         out = []
@@ -159,7 +172,10 @@ def plan_xml(
                 continue
             ids = []
             for tid in tracks_from(lib, node.fill_from, "/".join(path)):
-                if lib.tracks[tid].location:
+                if tid in banned:
+                    if tid not in left_out:
+                        left_out.append(tid)
+                elif lib.tracks[tid].location:
                     ids.append(tid)
                 elif tid not in unplaced:
                     unplaced.append(tid)
@@ -167,6 +183,18 @@ def plan_xml(
         return tuple(out)
 
     planned = plan(nodes, ())
+    return _finish(planned, lib, manual=manual, unplaced=unplaced, vetoed=left_out)
+
+
+def _finish(
+    planned: tuple[PlannedNode, ...],
+    lib: Library,
+    *,
+    manual: Sequence[NodePath] = (),
+    unplaced: Sequence[str] = (),
+    vetoed: Sequence[str] = (),
+) -> XmlPlan:
+    """The plan for planned nodes: COLLECTION in order of first reference, TrackIDs mapped."""
     mapping = track_id_map(lib)
     order: dict[str, None] = {}
     for node in XmlPlan(planned, (), {}).walk():
@@ -179,7 +207,58 @@ def plan_xml(
         track_ids={tid: mapping[tid] for tid in order},
         manual=tuple(manual),
         unplaced=tuple(unplaced),
+        vetoed=tuple(vetoed),
     )
+
+
+def plan_lists(playlists: Iterable[tuple[Sequence[str], Sequence[str]]], lib: Library) -> XmlPlan:
+    """Explicit track lists -> the plan. Each item: (playlist path, library ids in order).
+
+    The folders on the paths are made once each, in order of first appearance; a playlist keeps
+    its ids in the order given, each once (the first wins). An id the library lacks, an empty
+    name, a path given twice, or a name used as a folder and as a playlist -> BuildError. A
+    track without a file location is left out (`XmlPlan.unplaced`)."""
+    top: list[dict] = []
+    unplaced: list[str] = []
+    for path, ids in playlists:
+        parts = tuple(str(p) for p in path)
+        where = "/".join(parts)
+        if not parts or any(not p.strip() for p in parts):
+            raise BuildError(f"playlist path {where!r}: every name must be non-empty")
+        level, prefix = top, ()
+        for name in parts[:-1]:
+            prefix += (name,)
+            node = next((n for n in level if n["name"] == name), None)
+            if node is None:
+                node = {"kind": "folder", "name": name, "path": prefix, "children": []}
+                level.append(node)
+            elif node["kind"] != "folder":
+                raise BuildError(f"{'/'.join(prefix)} is a playlist and a folder in {where!r}")
+            level = node["children"]
+        if any(n["name"] == parts[-1] for n in level):
+            raise BuildError(f"{where} is given twice")
+        kept: list[str] = []
+        for tid in (str(t) for t in ids):
+            if tid not in lib.tracks:
+                raise BuildError(f"{where}: track {tid} is not in the library")
+            if tid in kept:
+                continue
+            if lib.tracks[tid].location:
+                kept.append(tid)
+            elif tid not in unplaced:
+                unplaced.append(tid)
+        level.append({"kind": "playlist", "name": parts[-1], "path": parts, "ids": tuple(kept)})
+
+    def freeze(level: list[dict]) -> tuple[PlannedNode, ...]:
+        out = []
+        for n in level:
+            if n["kind"] == "folder":
+                out.append(PlannedNode("folder", n["name"], n["path"], children=freeze(n["children"])))
+            else:
+                out.append(PlannedNode("playlist", n["name"], n["path"], track_ids=n["ids"]))
+        return tuple(out)
+
+    return _finish(freeze(top), lib, unplaced=unplaced)
 
 
 # -- rendering -----------------------------------------------------------------------------
@@ -265,6 +344,13 @@ def build_xml(
 ) -> str:
     """The rekordbox XML text for `doc` (see the module docstring). Writes nothing."""
     return render(plan_xml(doc, lib, only=only), product_version=product_version)
+
+
+def build_lists_xml(
+    playlists: Iterable[tuple[Sequence[str], Sequence[str]]], lib: Library, *, product_version: str
+) -> str:
+    """The rekordbox XML text for explicit track lists (`plan_lists`). Writes nothing."""
+    return render(plan_lists(playlists, lib), product_version=product_version)
 
 
 # -- writing -------------------------------------------------------------------------------
