@@ -11,9 +11,9 @@ from typing import Any
 
 import typer
 
+from dj import activity_log, intake, library, safety, spotify, write_gate
 from dj import analyze as analyze_mod
 from dj import build as build_mod
-from dj import intake, library, safety, spotify, write_gate
 from dj import playlist_copy as copy_mod
 from dj import push as push_mod
 from dj import tree as tree_mod
@@ -94,6 +94,74 @@ def _used(preview_id: str, written: str) -> None:
 
 def _changed_since_preview() -> GateError:
     return GateError("The plan changed since the preview. Nothing written; preview again and show the DJ.")
+
+
+def _log(action: str, counts: dict[str, int], file: str | Path | None = None) -> str | None:
+    """R-904: the tool, not Claude, appends the log.md line of a write that is done (one per run
+    that wrote something; never for a dry-run or a refusal). Returns the line; a line that could
+    not be written is a warning on stderr, the write itself stands."""
+    logged = activity_log.log_write(action, counts, file)
+    if logged.warning:
+        typer.echo(f"WARNING {logged.warning}", err=True)
+    return logged.line
+
+
+def _logged(line: str | None) -> list[str]:
+    """The text output's line naming the log.md line that was appended."""
+    return [f"log.md: {line}"] if line else []
+
+
+def _log_interrupted(action: str, exc: Exception) -> None:
+    """R-904 for a write stopped by an error after it began writing (push.PushInterrupted,
+    tidy plan.Interrupted): one line with what was written by then, named on stderr. The error
+    stays the run's failure. Any other error wrote nothing and logs nothing."""
+    if isinstance(exc, push_mod.PushInterrupted):
+        counts = ({"playlists created": 1} if exc.created else {}) | {"added": exc.added, "not added": exc.left}
+        file = None
+    elif isinstance(exc, tidy_plan.Interrupted):
+        r = exc.result
+        done = r.applied if isinstance(r, tidy_plan.ApplyResult) else r.restored
+        if not (done or r.failed):
+            return
+        word = "written" if isinstance(r, tidy_plan.ApplyResult) else "restored"
+        counts, file = {word: len(done), "failed": len(r.failed)}, r.undo_path
+    else:
+        return
+    for line in _logged(_log(f"{action}, stopped by an error", counts, file)):
+        typer.echo(line, err=True)
+
+
+def _log_committed(action: str, added: int) -> None:
+    """R-904 for a master.db write whose commit is done when the report after it fails."""
+    if added:
+        for line in _logged(_log(f"{action}, stopped by an error", {"added": added})):
+            typer.echo(line, err=True)
+
+
+_KIND_PLURAL = {"folder": "folders", "playlist": "playlists", "smart": "smart playlists"}
+_STATUS_WORD = {intake.IN_CRATE: "in crate", intake.PROPOSE: "proposed", intake.AMBIGUOUS: "ambiguous",
+                intake.MISSING: "missing", intake.DECLINED: "declined"}  # fmt: skip
+
+
+def _tree_log_counts(changes: list[dict[str, Any]], created: int) -> dict[str, int]:
+    """`dj tree --apply`'s log counts: the created nodes per kind."""
+    by_kind: dict[str, int] = {}
+    for change in changes:
+        key = _KIND_PLURAL.get(change["kind"], str(change["kind"]))
+        by_kind[key] = by_kind.get(key, 0) + 1
+    return by_kind if sum(by_kind.values()) == created else {"created": created}
+
+
+def _tidy_target(target: Any) -> str:
+    """A tidy plan's target in a log line, never an absolute path (R-905): the crate path, the
+    music folder's own name, or the whole collection."""
+    if not isinstance(target, dict):
+        return "plan"
+    if target.get("kind") == tidy_scan.FOLDER:
+        return f"folder {Path(str(target.get('value') or '')).name}".strip()
+    if target.get("kind") == tidy_scan.ALL:
+        return "the whole collection"
+    return str(target.get("value") or target.get("slug") or "plan")
 
 
 @app.callback()
@@ -309,6 +377,9 @@ def tree(
         _fail(exc)
     _used(preview_id, f"{created} node(s) in master.db")
     typer.echo(f"APPLIED. Created {created} node(s) in one commit. Backup in backups/.")
+    if created:
+        for line in _logged(_log("tree", _tree_log_counts(changes, created), file)):
+            typer.echo(line)
 
     typer.echo("")
     typer.echo("final tree:")
@@ -368,9 +439,14 @@ def push(
                 payload["applied"] = True
                 _used(preview_id, f"Spotify playlist {spotify_name}")
                 payload["report"] = str(push_mod.write_report(spotify_name, payload))
+                res = payload["result"]
+                payload["log"] = _log(f"push {playlist} to Spotify", {
+                    "added": res["added"], "already there": res["already_there"], "missing": totals["MISSING"],
+                }, payload["report"])  # fmt: skip
     except GateError as exc:
         _refused(exc)
     except (push_mod.PushError, spotify.SpotifyError) as exc:
+        _log_interrupted(f"push {playlist} to Spotify", exc)
         typer.echo(f"ERROR {exc}", err=True)
         raise typer.Exit(EXIT_ERROR)
 
@@ -388,6 +464,8 @@ def push(
                    f"already there {res['already_there']}.")
         typer.echo(res["playlist"]["url"])
         typer.echo(f"report: {payload['report']}")
+        for line in _logged(payload.get("log")):
+            typer.echo(line)
     elif apply:
         typer.echo("Nothing to add. Nothing written.")
     else:
@@ -448,9 +526,14 @@ def build(
                 payload["applied"] = True
                 _used(preview_id, f"Spotify playlist {name}")
                 payload["report"] = str(push_mod.write_report(name, payload, kind="build"))
+                res = payload["result"]
+                payload["log"] = _log(f"build Spotify playlist {name}", {
+                    "added": res["added"], "already there": res["already_there"], "missing": totals["MISSING"],
+                }, payload["report"])  # fmt: skip
     except GateError as exc:
         _refused(exc)
     except (build_mod.BuildError, push_mod.PushError, spotify.SpotifyError) as exc:
+        _log_interrupted(f"build Spotify playlist {name}", exc)
         typer.echo(f"ERROR {exc}", err=True)
         raise typer.Exit(EXIT_ERROR)
 
@@ -470,6 +553,8 @@ def build(
                    f"already there {res['already_there']}.")
         typer.echo(res["playlist"]["url"])
         typer.echo(f"report: {payload['report']}")
+        for line in _logged(payload.get("log")):
+            typer.echo(line)
     elif apply:
         typer.echo("Nothing to add. Nothing written.")
     else:
@@ -570,9 +655,11 @@ def plan(
         wish_path = intake.write_wishlist(lnk, items, paths)
     except INTAKE_ERRORS as exc:
         _fail(exc)
-    payload = {"plan": str(plan_path), "wishlist": str(wish_path), "counts": intake.counts(items)}
+    totals = intake.counts(items)
+    line = _log(f"plan {lnk.crate}", {_STATUS_WORD.get(s, s.lower()): n for s, n in totals.items()}, plan_path)
+    payload = {"plan": str(plan_path), "wishlist": str(wish_path), "counts": totals, "log": line}
     _out(as_json, payload, [f"plan:     {plan_path}", f"wishlist: {wish_path}",
-                            "Set decision (yes/no) and, for AMBIGUOUS, pick. Then: dj apply <plan>"])
+                            "Set decision (yes/no) and, for AMBIGUOUS, pick. Then: dj apply <plan>", *_logged(line)])
 
 
 @app.command(name="apply")
@@ -620,10 +707,17 @@ def apply_plan(
                         raise _changed_since_preview()
                     added = intake.add_to_crate(db, plan_data)
                 _used(preview_id, f"{len(added)} track(s) to {plan_data['crate']}")
-            report = intake.record(plan_data, plan_file, added, paths)
-            payload |= {"applied": True, "added": len(added), "report": str(report)}
+            try:
+                report = intake.record(plan_data, plan_file, added, paths)
+            except Exception:  # master.db is committed: log what it holds, the error stays the failure
+                _log_committed(f"apply {plan_data['crate']}", len(added))
+                raise
+            line = _log(f"apply {plan_data['crate']}", {"added": len(added), "no": len(by["no"]),
+                                                        "pending": len(by["pending"])}, report)  # fmt: skip
+            payload |= {"applied": True, "added": len(added), "report": str(report), "log": line}
             lines.append(f"APPLIED. Added {len(added)} track(s) to '{plan_data['crate']}'.")
             lines.append(f"report: {report}")
+            lines += _logged(line)
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
@@ -690,12 +784,19 @@ def copy_playlist(
                         raise _changed_since_preview()
                     done = copy_mod.apply(db, source, target)
                 _used(preview_id, f"{len(done.adds)} track(s) to {target}")
-                report = copy_mod.write_report(done)
+                try:
+                    report = copy_mod.write_report(done)
+                except Exception:  # master.db is committed: log what it holds, the error stays the failure
+                    _log_committed(f"copy {source} to {target}", len(done.adds))
+                    raise
+                line = _log(f"copy {source} to {target}", {"added": len(done.adds),
+                                                           "skipped": done.counts()[copy_mod.SKIP]}, report)  # fmt: skip
                 payload = done.as_dict() | {"applied": True, "added": len(done.adds),
-                                            "report": str(report)}
+                                            "report": str(report), "log": line}
                 lines.append(f"APPLIED. Added {len(done.adds)} track(s) to '{target}'. "
                              "Backup in backups/.")
                 lines.append(f"report: {report}")
+                lines += _logged(line)
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
@@ -832,9 +933,13 @@ def audit(
     if brief:
         payload.pop("items", None)
         payload.pop("duplicates", None)
-    if written:
+    if written:  # R-904: the reports are a write; --no-report writes nothing and logs nothing
         payload["reports"] = [str(p) for p in written]
         lines += [f"report: {written[1]}", f"json:   {written[0]}"]
+        payload["log"] = _log(f"tidy audit {_tidy_target(target.as_dict())}", {
+            "files": c["items"], "errors": c["error"], "warnings": c["warn"], "dupe groups": c["duplicate_groups"],
+        }, written[1])  # fmt: skip
+        lines += _logged(payload["log"])
     lines.append("No file was changed. Next: dj tidy plan <same target>.")
     _out(as_json, payload, lines)
 
@@ -903,8 +1008,12 @@ def tidy_plan_cmd(
             skipped[item["skip_reason"]] = skipped.get(item["skip_reason"], 0) + 1
     lines += [""] + [f"  {n:4}  {reason}" for reason, n in sorted(skipped.items())]
     lines += [f"plan: {path}", "Set decision yes/no per item, then: dj tidy apply <plan> (dry-run, prints a preview id); after a yes: --apply --preview-id <id>."]
+    line = _log(f"tidy plan {_tidy_target(target.as_dict())}",
+                {"files": c["items"], "with proposals": c["with_changes"], "renames": c["renames"]}, path)
+    lines += _logged(line)
     _out(as_json, {"plan": str(path), "counts": c, "target": target.as_dict(),
-                   "items": [i for i in plan["items"] if i["changes"] or i["rename"]], "skipped": skipped}, lines)
+                   "items": [i for i in plan["items"] if i["changes"] or i["rename"]], "skipped": skipped,
+                   "log": line}, lines)
 
 
 def _refuse_if_rekordbox_runs() -> None:
@@ -935,6 +1044,8 @@ def tidy_apply(
 
     The dry-run prints a preview id; --apply needs it (R-1102)."""
     recorded = None
+    log_line = None
+    target = "plan"
     try:
         cfg = tidy_config.load_config(config)
         plan = tidy_plan.load_plan(plan_file)
@@ -949,14 +1060,21 @@ def tidy_apply(
             recorded = write_gate.record("tidy-apply", gate_args, changes)
         else:
             write_gate.check(preview_id, "tidy-apply", gate_args, changes)
+            target = _tidy_target(plan.get("target"))  # before apply_plan updates the plan dict
             result = tidy_plan.apply_plan(plan, Path(plan_file), cfg, intake.Paths(), strict=strict, dry_run=False)
             if result.applied:  # only a write uses the id up: a run where every item failed can be retried
                 _used(preview_id, str(result.undo_path))
+            if result.applied or result.failed:  # a failed item has an undo record and may be half-written
+                log_line = _log(f"tidy apply {target}", {"written": len(result.applied), "failed": len(result.failed),
+                                                         "cannot run": len(result.skipped)}, result.undo_path)  # fmt: skip
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
     except GateError as exc:
         _refused(exc)
+    except tidy_plan.Interrupted as exc:  # files were written before the error: log them, then fail
+        _log_interrupted(f"tidy apply {target}", exc)
+        _fail(exc)
     except (*TIDY_ERRORS, safety.SafetyError) as exc:
         _fail(exc)
     verb = "WROTE   " if apply else "WOULD   "
@@ -978,7 +1096,8 @@ def tidy_apply(
             lines.append(f"Renamed files rekordbox knows: Relocate each one, checklist {result.relocate_path}")
         if result.report_path:
             lines.append(f"report: {result.report_path}")
-    payload = result.as_dict() | (_preview_keys(recorded) if not apply else {})
+        lines += _logged(log_line)
+    payload = result.as_dict() | (_preview_keys(recorded) if not apply else {"log": log_line})
     _out(as_json, payload, lines)
     if result.failed or (strict and result.skipped):
         raise typer.Exit(EXIT_ERROR)
@@ -1010,6 +1129,8 @@ def tidy_undo(
 
     The dry-run prints a preview id; --apply needs it (R-1102)."""
     recorded = None
+    log_line = None
+    target = "plan"
     try:
         cfg = tidy_config.load_config(config)
         plan = tidy_plan.load_plan(plan_file)
@@ -1024,14 +1145,21 @@ def tidy_undo(
             recorded = write_gate.record("tidy-undo", gate_args, changes)
         else:
             write_gate.check(preview_id, "tidy-undo", gate_args, changes)
+            target = _tidy_target(plan.get("target"))
             result = tidy_plan.undo_plan(plan, Path(plan_file), cfg, intake.Paths(), dry_run=False, force=force)
             if result.restored:  # only a write uses the id up: a run where every item failed can be retried
                 _used(preview_id, str(result.undo_path))
+            if result.restored or result.failed:  # a failed restore may have renamed the file back already
+                log_line = _log(f"tidy undo {target}", {"restored": len(result.restored), "failed": len(result.failed),
+                                                        "skipped": len(result.skipped)}, result.undo_path)  # fmt: skip
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
     except GateError as exc:
         _refused(exc)
+    except tidy_plan.Interrupted as exc:  # files were restored before the error: log them, then fail
+        _log_interrupted(f"tidy undo {target}", exc)
+        _fail(exc)
     except (*TIDY_ERRORS, safety.SafetyError) as exc:
         _fail(exc)
     verb = "RESTORED" if apply else "WOULD   "
@@ -1044,7 +1172,8 @@ def tidy_undo(
         lines += recorded.lines() + [_to_write(recorded.preview_id)]
     else:
         lines.append("UNDONE. In rekordbox: select these tracks -> Reload Tag.")
-    _out(as_json, result.as_dict() | (_preview_keys(recorded) if not apply else {}), lines)
+        lines += _logged(log_line)
+    _out(as_json, result.as_dict() | (_preview_keys(recorded) if not apply else {"log": log_line}), lines)
     if result.failed:
         raise typer.Exit(EXIT_ERROR)
 

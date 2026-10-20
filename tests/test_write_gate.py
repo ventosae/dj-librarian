@@ -48,11 +48,13 @@ def run(*args):
     return runner.invoke(cli.app, [str(a) for a in args])
 
 
-def refused(result) -> str:
-    """The one REFUSED line of a refused write (exit 1)."""
+def refused(result, *, quiet: bool = True) -> str:
+    """The one REFUSED line of a refused write (exit 1). `quiet`: a gate refusal comes before the
+    plan is printed, so stdout is empty too (a refusal from inside the write session may follow it)."""
     assert result.exit_code == cli.EXIT_ERROR, result.output
     lines = [line for line in result.stderr.splitlines() if line.strip()]
     assert len(lines) == 1 and lines[0].startswith("REFUSED "), result.stderr
+    assert not quiet or result.stdout.strip() == "", result.stdout
     return lines[0]
 
 
@@ -257,7 +259,8 @@ def test_a_change_after_the_check_is_caught_inside_the_write_session(job, rb, mo
         return recorded_backup(path, dest)
 
     monkeypatch.setattr(safety, "backup", backup_then_change)
-    assert "The plan changed since the preview" in refused(run(*job.dry, *gated(pid, "--power-mode")))
+    result = run(*job.dry, *gated(pid, "--power-mode"))
+    assert "The plan changed since the preview" in refused(result, quiet=False)  # after the gate: the plan is out
     assert job.db.commits == 0 and job.db.rollbacks >= 1 and not job.written() and not used(pid)
 
 
@@ -371,6 +374,24 @@ def test_the_same_push_after_the_dj_deleted_the_playlist_writes_again_with_a_new
     assert data["applied"] is True and data["result"]["created"] is True and data["result"]["added"] == 2
     assert len(spot.api.created) == 2 and used(again)
     assert dry_run_id(sjob.dry) not in (pid, again)  # previewed after its write once more: another id
+
+
+def test_the_same_push_after_the_dj_removed_its_tracks_on_spotify_adds_them_back(sjob, spot):
+    """The DJ kept the Spotify playlist but removed its tracks: the same dry-run gives a fresh id
+    that adds them back to that playlist (no second playlist). The used id stays refused."""
+    pid = dry_run_id(sjob.dry)
+    assert run(*sjob.dry, *gated(pid)).exit_code == 0
+    for uris in spot.api.playlists.values():
+        uris.clear()  # the DJ removed every track on Spotify
+    again = dry_run_id(sjob.dry)
+    assert again != pid and not used(again) and used(pid)
+    text = run(*sjob.dry)
+    assert text.exit_code == 0, text.output
+    assert text.stdout.splitlines()[-1].endswith(f"--apply --preview-id {again}")
+    assert "already used" in refused(run(*sjob.dry, *gated(pid)))
+    data = json.loads(run(*sjob.dry, *gated(again), "--json").stdout)
+    assert data["applied"] is True and data["result"]["created"] is False and data["result"]["added"] == 2
+    assert len(spot.api.created) == 1 and used(again)
 
 
 def test_push_preview_arguments_must_match_the_write(spot):

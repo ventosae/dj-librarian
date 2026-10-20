@@ -6,6 +6,10 @@ dry-run by default, verified backup, refusal while rekordbox runs, add only.
 
 Read tools and write tools are separate on purpose: in Claude Desktop, read tools can be
 set to "always allow" while every write keeps asking for approval.
+
+Results stay under the tool-result limit (NFR-03): a list that grows with the library comes back
+one page at a time, counts first (`paginate`). A bare file name resolves under the tool's folder
+(NFR-05): "set.txt" -> tracklists/set.txt, "x.plan.json" -> plans/x.plan.json.
 """
 
 from __future__ import annotations
@@ -14,8 +18,12 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
+from collections import Counter
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping, Sequence
 
 from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
@@ -44,26 +52,66 @@ server = MCPServer(
         "dj_structure_write). exit_code 2 = refused: the `hint` says why. Usually rekordbox is open: ask "
         "them to close it, then retry the same call; a library folder that is not set up needs "
         "dj-start first. Never ask for a way around a refusal. The dj_tidy_* tools work on the audio files "
-        "(tags, names), never on master.db: after dj_tidy_apply they must Reload Tag in rekordbox."
+        "(tags, names), never on master.db: after dj_tidy_apply they must Reload Tag in rekordbox. "
+        "Results put counts first; a long list comes in pages (`paging` per list: page, pages, total): "
+        "call the same tool with the same arguments and page=2 for more. Pages 2+ are cut from page 1's "
+        "run (kept 10 minutes, `run_at`), so every page has the same preview_id; a different preview_id "
+        "means the plan changed: show the DJ the new preview. A bare file name resolves under its folder "
+        "(set.txt -> tracklists/set.txt, x.plan.json -> plans/x.plan.json). log.md lines are written by "
+        "the tools; read log.md, never write it."
     ),
 )
+
+# NFR-05: the folder a tool looks in for a bare file name ("set.txt" -> tracklists/set.txt).
+# Passed per tool (repo_file / library_file `folder=`), so a tool can point at another folder
+# (the library's plans/ once plans live there) without touching the lookup.
+TRACKLISTS = "tracklists"
+PLANS = "plans"
+EXPORTS = "exports"
+
+# NFR-03: pages of a list that grows with the library (see `paginate`).
+PAGE_SIZE = 50  # the default items per page
+PAGE_SIZE_MAX = 200
+PAGE_MAX = 100_000
+# Characters of list items in one result (compact JSON), shared by its paged lists (`shares`). A
+# page holds at most page_size items and stops early at this budget, so one result stays well under
+# 20 000 characters (the counts, the preview id and the envelope are small).
+PAGE_BUDGET = 12_000
+# Page 2 onwards of a read tool is cut from the run page 1 made (`run_paged`), while that run is
+# this young: no second Spotify search or file scan, the same list and the same preview_id.
+RUN_KEEP_S = 600
+RUN_KEEP = 8  # runs kept at most; the oldest goes first
 
 
 class ToolInputError(ValueError):
     pass
 
 
-def repo_file(path: str, suffixes: tuple[str, ...]) -> str:
-    """A file argument must be an existing file inside the repo, of an expected type."""
+def repo_file(path: str, suffixes: tuple[str, ...], folder: str | None = None) -> str:
+    """A file argument must be an existing file inside the repo, of an expected type.
+
+    A relative path is taken from the repo root; when no file is there and the tool has a default
+    `folder`, it is looked up in that folder too (NFR-05: "set.txt" -> tracklists/set.txt). An
+    existing exact path wins. Not found -> an error that says where it looked."""
+    root = REPO_ROOT.resolve()
     candidate = Path(path)
-    full = (candidate if candidate.is_absolute() else REPO_ROOT / candidate).resolve()
-    if not full.is_relative_to(REPO_ROOT.resolve()):
+    full = (candidate if candidate.is_absolute() else root / candidate).resolve()
+    if not full.is_relative_to(root):
         raise ToolInputError(f"{path!r} is outside the dj-librarian folder.")
     if full.suffix.lower() not in suffixes:
         raise ToolInputError(f"{path!r}: expected one of {', '.join(suffixes)}.")
-    if not full.is_file():
-        raise ToolInputError(f"{path!r} does not exist.")
-    return str(full)
+    options = [full]
+    if folder and not candidate.is_absolute():
+        in_folder = (root / folder / candidate).resolve()
+        if in_folder.is_relative_to(root):
+            options.append(in_folder)
+    for option in options:  # the type again per place: a link in the folder may point at another file
+        if option.is_file() and option.suffix.lower() in suffixes:
+            return str(option)
+    if candidate.is_absolute():
+        raise ToolInputError(f"{path!r} not found: no file at that path.")
+    where = f"{folder}/ and the repo root" if len(options) > 1 else "the repo root"
+    raise ToolInputError(f"{path!r} not found: looked in {where}.")
 
 
 def library_root() -> Path:
@@ -76,21 +124,30 @@ def library_root() -> Path:
         raise ToolInputError(str(exc)) from exc
 
 
-def library_file(path: str, suffixes: tuple[str, ...]) -> str:
+def library_file(path: str, suffixes: tuple[str, ...], folder: str | None = None) -> str:
     """Like repo_file, but a file inside the configured library folder is accepted too.
-    A relative path is looked up in the library folder first, then in the repo."""
+    A relative path is looked up in the library folder first, then in the repo; with a default
+    `folder`, then in that folder of each (NFR-05: "x.xml" -> exports/x.xml). An existing exact
+    path wins."""
     roots = [library_root().resolve(), REPO_ROOT.resolve()]
     candidate = Path(path)
-    options = [candidate] if candidate.is_absolute() else [root / candidate for root in roots]
-    inside = [p.resolve() for p in options if any(p.resolve().is_relative_to(r) for r in roots)]
+    exact = [candidate] if candidate.is_absolute() else [root / candidate for root in roots]
+    inside = [p.resolve() for p in exact if any(p.resolve().is_relative_to(r) for r in roots)]
     if not inside:
         raise ToolInputError(f"{path!r} is outside the dj-library folder and the dj-librarian folder.")
     if Path(path).suffix.lower() not in suffixes:
         raise ToolInputError(f"{path!r}: expected one of {', '.join(suffixes)}.")
+    if folder and not candidate.is_absolute():
+        in_folder = [(root / folder / candidate).resolve() for root in roots]
+        inside += [p for p in in_folder if any(p.is_relative_to(r) for r in roots)]
     for full in inside:
         if full.is_file() and full.suffix.lower() in suffixes:
             return str(full)
-    raise ToolInputError(f"{path!r} does not exist (looked in {', '.join(str(r) for r in roots)}).")
+    if candidate.is_absolute():
+        raise ToolInputError(f"{path!r} not found: no file at that path.")
+    places = " and ".join(str(r) for r in roots)
+    where = f"{folder}/ and the top of {places}" if folder else places
+    raise ToolInputError(f"{path!r} not found: looked in {where}.")
 
 
 def music_folder(path: str) -> str:
@@ -150,6 +207,66 @@ def host_env() -> dict[str, str]:
 
 def run_dj(options: list[str], positionals: tuple[str, ...] = (), as_json: bool = True) -> str:
     """Run `python -m dj.cli <options> [--json] -- <positionals>` and wrap the outcome."""
+    return json.dumps(run_dj_data(options, positionals, as_json), indent=2, ensure_ascii=False)
+
+
+def run_paged(options: list[str], positionals: tuple[str, ...] = (), *, keys: Sequence[str], page: int = 1,
+              page_size: int = PAGE_SIZE, rest_in: str | None = None, more: Mapping[str, str] | None = None,
+              view: Callable[[dict[str, Any]], dict[str, Any]] | None = None) -> str:
+    """run_dj, with the lists named by `keys` cut to one page (NFR-03, see `paginate`). Compact
+    JSON: the result is sized for the tool-result limit. `view` reshapes the CLI result first.
+
+    A read tool's page 1 always runs the command. A later page comes from the run kept for the
+    same command line when it is younger than RUN_KEEP_S (else the command runs again): every page
+    is cut from one list, with one preview_id, and Spotify is not searched or the files scanned
+    again. `run_at` says when that run happened. A tool whose call writes (`rest_in` set) is never
+    kept: it is called once and returns its first page."""
+    command = (*options, "--", *positionals)
+    reads = rest_in is None
+    kept = RUNS.get(command) if reads and page > 1 else None
+    out = kept if kept is not None else run_dj_data(options, positionals)
+    if reads and kept is None and out.get("ok") and isinstance(out.get("result"), dict):
+        out["run_at"] = datetime.now().isoformat(timespec="seconds")
+        RUNS.put(command, out)
+    out = dict(out)  # the kept run stays whole; only this answer is cut to a page
+    if isinstance(out.get("result"), dict):
+        result = view(out["result"]) if view else out["result"]
+        out["result"] = paginate(result, keys, page, page_size, rest_in=rest_in, more=more)
+    return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
+
+
+class Runs:
+    """The last RUN_KEEP successful read runs per command line, each for RUN_KEEP_S seconds."""
+
+    def __init__(self) -> None:
+        self._runs: dict[tuple[str, ...], tuple[float, dict[str, Any]]] = {}
+        self._lock = threading.Lock()
+
+    def get(self, command: tuple[str, ...]) -> dict[str, Any] | None:
+        with self._lock:
+            found = self._runs.get(command)
+            if found is None or time.monotonic() - found[0] >= RUN_KEEP_S:
+                self._runs.pop(command, None)
+                return None
+            return found[1]
+
+    def put(self, command: tuple[str, ...], out: dict[str, Any]) -> None:
+        with self._lock:
+            self._runs.pop(command, None)
+            self._runs[command] = (time.monotonic(), out)
+            while len(self._runs) > RUN_KEEP:
+                self._runs.pop(next(iter(self._runs)))
+
+    def clear(self) -> None:
+        with self._lock:
+            self._runs.clear()
+
+
+RUNS = Runs()
+
+
+def run_dj_data(options: list[str], positionals: tuple[str, ...] = (), as_json: bool = True) -> dict[str, Any]:
+    """The outcome of one `dj` run: {ok, exit_code, result | output, stderr, hint}."""
     cmd = [sys.executable, "-m", "dj.cli", *options]
     if as_json:
         cmd.append("--json")
@@ -162,7 +279,7 @@ def run_dj(options: list[str], positionals: tuple[str, ...] = (), as_json: bool 
             errors="replace", stdin=subprocess.DEVNULL, timeout=TIMEOUT_S,
         )  # fmt: skip
     except subprocess.TimeoutExpired:
-        return json.dumps({"ok": False, "exit_code": None, "error": f"timed out after {TIMEOUT_S}s"})
+        return {"ok": False, "exit_code": None, "error": f"timed out after {TIMEOUT_S}s"}
 
     out: dict[str, Any] = {"ok": done.returncode == 0, "exit_code": done.returncode}
     try:
@@ -175,7 +292,171 @@ def run_dj(options: list[str], positionals: tuple[str, ...] = (), as_json: bool 
         out["stderr"] = stderr[-15:]
     if done.returncode == 2:
         out["hint"] = refusal_hint(stderr)
-    return json.dumps(out, indent=2, ensure_ascii=False)
+    return out
+
+
+# -- pages (NFR-03) --------------------------------------------------------------------------
+
+
+def page_args(page: Any, page_size: Any) -> tuple[int, int]:
+    """page >= 1, 1 <= page_size <= PAGE_SIZE_MAX, whole numbers; else ToolInputError before any run."""
+    for name, value, high in (("page", page, PAGE_MAX), ("page_size", page_size, PAGE_SIZE_MAX)):
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= high:
+            raise ToolInputError(f"{name} must be a whole number from 1 to {high}, got {value!r}.")
+    return page, page_size
+
+
+def _chars(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str))
+
+
+def page_bounds(items: Sequence[Any], page_size: int, budget: int = PAGE_BUDGET) -> list[tuple[int, int]]:
+    """(start, end) of every page of `items`, in order: at most `page_size` items each, and a page
+    ends early before the item that would take it over `budget` characters (a single item bigger
+    than the budget gets a page of its own). Deterministic: the same list and page_size always give
+    the same pages, so page 2 starts where page 1 ended."""
+    bounds: list[tuple[int, int]] = []
+    start = used = 0
+    for i, item in enumerate(items):
+        size = _chars(item) + 1  # the comma
+        if i > start and (i - start >= page_size or used + size > budget):
+            bounds.append((start, i))
+            start, used = i, 0
+        used += size
+    if start < len(items):
+        bounds.append((start, len(items)))
+    return bounds
+
+
+def _page_need(items: Sequence[Any], page_size: int) -> int:
+    """Characters of the biggest page of `items` when only page_size cuts them."""
+    sizes = [_chars(item) + 1 for item in items]
+    return max((sum(sizes[i:i + page_size]) for i in range(0, len(sizes), page_size)), default=0)
+
+
+def shares(result: Mapping[str, Any], lists: Sequence[str], page_size: int, budget: int = PAGE_BUDGET) -> dict[str, int]:
+    """Each paged list's part of the character budget. A list whose pages fit in an even share
+    gets what they need; what it leaves goes to the bigger lists, evenly (a short `links` does not
+    halve `tree`). The same result and page_size always give the same shares."""
+    need = {key: _page_need(result[key], page_size) for key in lists}
+    out: dict[str, int] = {}
+    left, pending = budget, sorted(lists, key=lambda key: need[key])
+    while pending and need[pending[0]] <= left // len(pending):
+        key = pending.pop(0)
+        out[key] = need[key]
+        left -= need[key]
+    for key in pending:
+        out[key] = max(1, left // len(pending))
+    return out
+
+
+def paginate(result: Mapping[str, Any], keys: Sequence[str], page: int = 1, page_size: int = PAGE_SIZE,
+             budget: int = PAGE_BUDGET, rest_in: str | None = None,
+             more: Mapping[str, str] | None = None) -> dict[str, Any]:
+    """One page of a CLI result (NFR-03): every count / summary key is kept, `counts` first; each
+    list named in `keys` is cut to page `page`; `paging` says per list {page, pages, page_size,
+    total, from, to} (from/to: 1-based positions shown, null on an empty page). A page beyond the
+    end gives an empty list with the totals. Keys that are not lists in `result` are left alone; a
+    result without any of them comes back unchanged. `rest_in` (for tools whose call writes and so
+    cannot be called again for page 2) names the result key holding the file with the full list.
+    `more` maps a list the CLI already capped to the key counting what it left out: that list's
+    `total` counts those too, and `listed` says how many the pages reach."""
+    lists = [k for k in keys if isinstance(result.get(k), list)]
+    if not lists:
+        return dict(result)
+    share = shares(result, lists, page_size, budget)
+    out: dict[str, Any] = {k: result[k] for k in ("counts",) if k in result}
+    out |= {k: v for k, v in result.items() if k not in lists and k != "counts"}
+    paging: dict[str, dict[str, Any]] = {}
+    pages: dict[str, list[Any]] = {}
+    for key in lists:
+        items = result[key]
+        bounds = page_bounds(items, page_size, share[key])
+        start, end = bounds[page - 1] if page <= len(bounds) else (len(items), len(items))
+        pages[key] = items[start:end]
+        paging[key] = {"page": page, "pages": max(1, len(bounds)), "page_size": page_size, "total": len(items),
+                       "from": start + 1 if end > start else None, "to": end if end > start else None}  # fmt: skip
+        unlisted = result.get((more or {}).get(key, ""))
+        if isinstance(unlisted, int) and not isinstance(unlisted, bool) and unlisted > 0:
+            paging[key] |= {"total": len(items) + unlisted, "listed": len(items)}
+        if rest_in and len(bounds) > 1:
+            paging[key]["rest_in"] = result.get(rest_in)
+    return out | {"paging": paging} | pages
+
+
+# -- dj status: the nested tree as rows (NFR-03) -----------------------------------------------
+
+
+def status_rows(nodes: Any, smart_xml: bool = False, parent: str = "") -> list[dict[str, Any]]:
+    """`dj status --json`'s nested `tree` as one row per node, depth first: {path, kind} plus
+    `tracks` (playlists), `children` (folders, the direct ones) and, only when asked, `smart_xml`.
+    A row is small whatever the folder holds, so one big folder pages like any other list."""
+    rows: list[dict[str, Any]] = []
+    for node in nodes if isinstance(nodes, list) else []:
+        if not isinstance(node, dict):
+            continue
+        path = f"{parent}/{node.get('name')}" if parent else str(node.get("name"))
+        children = node.get("children")
+        row: dict[str, Any] = {"path": path, "kind": node.get("kind")}
+        if "tracks" in node:
+            row["tracks"] = node["tracks"]
+        if isinstance(children, list):
+            row["children"] = len(children)
+        if smart_xml and "smart_xml" in node:
+            row["smart_xml"] = node["smart_xml"]
+        rows.append(row)
+        rows += status_rows(children, smart_xml, path)
+    return rows
+
+
+def status_view(result: dict[str, Any], smart_xml: bool = False) -> dict[str, Any]:
+    """dj_status's result: `tree` as rows (`status_rows`) and the counts first (tracks, folders,
+    playlists, smart, links)."""
+    if not isinstance(result.get("tree"), list):
+        return result
+    rows = status_rows(result["tree"], smart_xml)
+    kinds = Counter(row["kind"] for row in rows)
+    counts: dict[str, Any] = {"tracks": result["tracks"]} if isinstance(result.get("tracks"), int) else {}
+    counts |= {"folders": kinds["folder"], "playlists": kinds["playlist"], "smart": kinds["smart"]}
+    if isinstance(result.get("links"), list):
+        counts["links"] = len(result["links"])
+    if isinstance(result.get("counts"), dict):
+        counts |= result["counts"]
+    return result | {"counts": counts, "tree": rows}
+
+
+# -- text results (NFR-03) -----------------------------------------------------------------------
+
+
+def short_tree_output(text: str, budget: int = PAGE_BUDGET) -> str:
+    """dj_tree_apply's text within `budget` characters: `dj tree --apply` prints one line per
+    planned node, the summary (counts, APPLIED, the log.md line) and then the whole final tree.
+    A longer text keeps the summary; the node lines are cut to what fits and the final tree is
+    left out (dj_status pages it). A short text comes back as it is."""
+    if len(text) <= budget:
+        return text
+    head, cut, tree = text.partition("\nfinal tree:")
+    lines = head.split("\n")
+    blank = lines.index("") if "" in lines else len(lines)
+    actions, summary = lines[:blank], lines[blank:]
+    used = sum(len(line) + 1 for line in summary) + 300
+    kept: list[str] = []
+    for line in actions:
+        if used + len(line) + 1 > budget:
+            break
+        kept.append(line)
+        used += len(line) + 1
+    out = kept + ([f"... {len(actions) - len(kept)} more node line(s), as dj_tree_preview showed them"]
+                  if len(kept) < len(actions) else [])  # fmt: skip
+    out += summary
+    if cut:
+        out.append(f"final tree: {len(tree.splitlines()) - 1} line(s) left out; dj_status pages the tree.")
+    return "\n".join(out)
+
+
+# A tool whose call writes cannot be called again for page 2 (its preview id is used up): its
+# lists come back as their first page, and `rest_in` names the file that holds all of them.
+WRITTEN_LISTS: dict[str, Any] = {"keys": ("adds", "rows", "items", "skipped_lines"), "rest_in": "report"}
 
 
 REKORDBOX_OPEN = "rekordbox is open. Ask the DJ to close it, then call this tool again."
@@ -243,33 +524,47 @@ def power_mode_arg(power_mode: Any) -> None:
 
 
 @server.tool(annotations=READ)
-def dj_status() -> str:
-    """Library overview: track count, the full playlist tree, whether rekordbox is running,
-    and per link in links.yaml the counts by status, last pull and last apply. Read-only."""
-    return run_dj(["status"])
+@guarded
+def dj_status(page: int = 1, page_size: int = PAGE_SIZE, smart_xml: bool = False) -> str:
+    """Library overview: counts first (tracks, folders, playlists, smart, links), whether
+    rekordbox is running, the playlist tree as one row per node, depth first (`tree`: path like
+    "house_base/0_INBOX", kind, tracks, children) and per link in links.yaml (`links`) the counts
+    by status, last pull and last apply. Read-only. `tree` and `links` come in pages (`paging`):
+    page=2 for the next, cut from page 1's run. smart_xml=true adds each smart playlist's raw rule
+    XML to its row."""
+    page, page_size = page_args(page, page_size)
+    return run_paged(["status"], keys=("tree", "links"), page=page, page_size=page_size,
+                     view=lambda result: status_view(result, smart_xml is True))
 
 
 @server.tool(annotations=READ)
 @guarded
-def dj_tree_preview(file: str = "tree.yaml") -> str:
-    """Dry-run of a tree file (e.g. bases.yaml): one action per node - CREATE, SKIP, HOLD,
-    CONFLICT - and a preview_id (null when there is a CONFLICT). Writes nothing. `file` is a
-    .yaml path inside the repo. Show the DJ the result; dj_tree_apply needs this preview_id."""
-    return run_dj(["tree", "--file", repo_file(file, (".yaml", ".yml"))])
+def dj_tree_preview(file: str = "tree.yaml", page: int = 1, page_size: int = PAGE_SIZE) -> str:
+    """Dry-run of a tree file (e.g. bases.yaml): counts and one action per node - CREATE, SKIP,
+    HOLD, CONFLICT - and a preview_id (null when there is a CONFLICT). Writes nothing. `file` is a
+    .yaml path inside the repo (e.g. "bases.yaml"). The `actions` come in pages (`paging`; the
+    preview_id is on every page). Show the DJ the result; dj_tree_apply needs this preview_id."""
+    page, page_size = page_args(page, page_size)
+    return run_paged(["tree", "--file", repo_file(file, (".yaml", ".yml"))], keys=("actions",), page=page,
+                     page_size=page_size)
 
 
 @server.tool(annotations=READ)
 @guarded
-def dj_library_inspect(xml: str = "") -> str:
+def dj_library_inspect(xml: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> str:
     """Library summary from one model: source, counts (tracks, folders, playlists, smart,
     orphans, entries; complete), a sample of the top of the playlist tree (at most 30 nodes and
-    10 child names each; `tree_more` / `more_children` count the rest), which fields the source
-    lacks, and notes. `xml` = a rekordbox collection XML inside the dj-library folder or the repo
-    (e.g. exports/2026-10-20-collection.xml); empty = a read-only snapshot of master.db
-    (`snapshot_path` = the copy that was read). Writes nothing."""
-    if xml:
-        return run_dj(["library", "inspect"], (library_file(xml, (".xml",)),))
-    return run_dj(["library", "inspect"])
+    10 child names each; `tree_more` / `more_children` count the rest; the sample comes in pages,
+    `paging`: its `total` counts every top-level node, `listed` the ones in the sample), which
+    fields the source lacks, and notes. `xml` = a rekordbox collection XML inside the dj-library
+    folder or the repo; a bare name is looked up in exports/ (e.g.
+    "2026-10-20-collection.xml" -> exports/2026-10-20-collection.xml); empty = a read-only
+    snapshot of master.db (`snapshot_path` = the copy that was read). Writes nothing. The whole
+    tree: dj_status."""
+    page, page_size = page_args(page, page_size)
+    positionals = (library_file(xml, (".xml",), folder=EXPORTS),) if xml else ()
+    return run_paged(["library", "inspect"], positionals, keys=("tree",), page=page, page_size=page_size,
+                     more={"tree": "tree_more"})
 
 
 ANALYZE_SOURCES = ("xml", "db")
@@ -301,57 +596,82 @@ def dj_pull(link: str = "", all_links: bool = False) -> str:
 
 
 @server.tool(annotations=READ)
-def dj_match(link: str) -> str:
-    """Match the last pull of a link against the library: IN_CRATE, PROPOSE, AMBIGUOUS
-    (with up to 3 local candidates each), MISSING, DECLINED. Writes nothing."""
-    return run_dj(["match"], (link,))
+@guarded
+def dj_match(link: str, page: int = 1, page_size: int = PAGE_SIZE) -> str:
+    """Match the last pull of a link against the library: counts first, then the `items`:
+    IN_CRATE, PROPOSE, AMBIGUOUS (with up to 3 local candidates each), MISSING, DECLINED.
+    Writes nothing. `items` come in pages (`paging`): page=2 for the next."""
+    page, page_size = page_args(page, page_size)
+    return run_paged(["match"], (link,), keys=("items",), page=page, page_size=page_size)
 
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
 def dj_plan(link: str) -> str:
     """Write plans/<date>-<crate>.plan.json and wishlist/<crate>.md (files in the repo only,
-    rekordbox untouched). Returns the paths. Then edit the plan: decision yes|no, and for
-    AMBIGUOUS a pick (rb_content_id from its candidates)."""
+    rekordbox untouched) and one log.md line. Returns the paths, the counts and the log line.
+    Then edit the plan: decision yes|no, and for AMBIGUOUS a pick (rb_content_id from its
+    candidates)."""
     return run_dj(["plan"], (link,))
 
 
 @server.tool(annotations=READ)
 @guarded
-def dj_apply_preview(plan_file: str) -> str:
-    """Dry-run of a plan: which `decision: yes` tracks would be added to the crate, and a
-    preview_id. Writes nothing. Show the DJ the result; dj_apply_write needs this preview_id."""
-    return run_dj(["apply"], (repo_file(plan_file, (".json",)),))
+def dj_apply_preview(plan_file: str, page: int = 1, page_size: int = PAGE_SIZE) -> str:
+    """Dry-run of a plan: the counts (would_add, yes, no, pending), which `decision: yes` tracks
+    would be added to the crate (`adds`, in pages: `paging`), and a preview_id (on every page).
+    Writes nothing. `plan_file` = a plan in plans/; a bare name is looked up there
+    ("2026-10-20-house.plan.json" -> plans/2026-10-20-house.plan.json). Show the DJ the result;
+    dj_apply_write needs this preview_id."""
+    page, page_size = page_args(page, page_size)
+    return run_paged(["apply"], (repo_file(plan_file, (".json",), folder=PLANS),), keys=("adds",), page=page,
+                     page_size=page_size)
 
 
 @server.tool(annotations=READ)
-def dj_copy_preview(source: str, target: str) -> str:
-    """Dry-run: which tracks of rekordbox playlist `source` would be appended to `target`, and a
-    preview_id. Writes nothing. Show the DJ the result; dj_copy_apply needs this preview_id."""
-    return run_dj(["copy"], (source, target))
+@guarded
+def dj_copy_preview(source: str, target: str, page: int = 1, page_size: int = PAGE_SIZE) -> str:
+    """Dry-run: counts and which tracks of rekordbox playlist `source` would be appended to
+    `target` (`rows`, in pages: `paging`), and a preview_id (on every page). Writes nothing. Show
+    the DJ the result; dj_copy_apply needs this preview_id."""
+    page, page_size = page_args(page, page_size)
+    return run_paged(["copy"], (source, target), keys=("rows",), page=page, page_size=page_size)
 
 
 @server.tool(annotations=SPOTIFY_READ)
 @guarded
-def dj_build_preview(file: str, name: str = "", include_ambiguous: bool = False) -> str:
-    """Dry-run: match every 'Artist - Title' line of a tracklist file (tracklists/<name>.txt
-    in the repo) on Spotify: MATCH, AMBIGUOUS, MISSING, and a preview_id. rekordbox untouched,
-    writes nothing. Pass the same `name` and `include_ambiguous` you will pass to
-    dj_build_apply: its preview_id is for exactly these arguments."""
+def dj_build_preview(file: str, name: str = "", include_ambiguous: bool = False, page: int = 1,
+                     page_size: int = PAGE_SIZE) -> str:
+    """Dry-run: match every 'Artist - Title' line of a tracklist file on Spotify: counts (MATCH,
+    AMBIGUOUS, MISSING), the matches (`items`) and the lines without ' - ' (`skipped_lines`), both
+    in pages (`paging`), and a preview_id (on every page). rekordbox untouched, writes nothing.
+    Page 1 searches Spotify; pages 2+ are cut from that run (10 minutes), so the preview_id stays
+    the same: a different one means the matches changed, show the DJ again. `file` = a tracklist
+    in tracklists/; a bare name is looked up there ("set.txt" -> tracklists/set.txt). Pass the
+    same `name` and `include_ambiguous` you will pass to dj_build_apply: its preview_id is for
+    exactly these arguments."""
+    page, page_size = page_args(page, page_size)
     options = ["build"] + (["--name", name] if name else [])
     if include_ambiguous:
         options.append("--include-ambiguous")
-    return run_dj(options, (repo_file(file, (".txt", ".md")),))
+    return run_paged(options, (repo_file(file, (".txt", ".md"), folder=TRACKLISTS),), keys=("items", "skipped_lines"),
+                     page=page, page_size=page_size)
 
 
 @server.tool(annotations=SPOTIFY_READ)
-def dj_push_preview(playlist: str, name: str = "", include_ambiguous: bool = False) -> str:
-    """Dry-run: match a rekordbox playlist on Spotify (MATCH, AMBIGUOUS, MISSING), and a
-    preview_id. Writes nothing. Pass the same `name` and `include_ambiguous` you will pass to
-    dj_push_apply: its preview_id is for exactly these arguments."""
+@guarded
+def dj_push_preview(playlist: str, name: str = "", include_ambiguous: bool = False, page: int = 1,
+                    page_size: int = PAGE_SIZE) -> str:
+    """Dry-run: match a rekordbox playlist on Spotify: counts (MATCH, AMBIGUOUS, MISSING), the
+    matches (`items`, in pages: `paging`) and a preview_id (on every page). Writes nothing. Page 1
+    searches Spotify; pages 2+ are cut from that run (10 minutes), so the preview_id stays the
+    same: a different one means the matches changed, show the DJ again. Pass the same `name` and
+    `include_ambiguous` you will pass to dj_push_apply: its preview_id is for exactly these
+    arguments."""
+    page, page_size = page_args(page, page_size)
     options = ["push"] + (["--name", name] if name else [])
     if include_ambiguous:
         options.append("--include-ambiguous")
-    return run_dj(options, (playlist,))
+    return run_paged(options, (playlist,), keys=("items",), page=page, page_size=page_size)
 
 
 # -- writes: only after the DJ's explicit OK ----------------------------------------------
@@ -366,11 +686,15 @@ def dj_tree_apply(preview_id: str, file: str = "tree.yaml", power_mode: bool = F
     default write path is an XML the DJ imports (dj_structure_preview / dj_structure_write).
     Call dj_tree_preview, show the DJ the result, ask, and only after their explicit yes pass its
     preview_id (same `file`). Refused without it, after any change since the preview, or with a
-    used id."""
+    used id. Appends one log.md line itself. A long text keeps the summary (counts, APPLIED, the
+    log.md line) and leaves the final tree out: dj_status pages it."""
     power_mode_arg(power_mode)
     pid = preview_id_arg(preview_id, "dj_tree_preview")
     options = ["tree", "--file", repo_file(file, (".yaml", ".yml")), "--apply", "--power-mode", "--preview-id", pid]
-    return run_dj(options, as_json=False)
+    out = run_dj_data(options, as_json=False)
+    if isinstance(out.get("output"), str):
+        out["output"] = short_tree_output(out["output"])
+    return json.dumps(out, indent=2, ensure_ascii=False)
 
 
 @server.tool(annotations=WRITE)
@@ -381,10 +705,14 @@ def dj_apply_write(plan_file: str, preview_id: str, power_mode: bool = False) ->
     state/match_cache.json, state/declined.json and writes a report. Windows power mode (R-205):
     needs power_mode=true, else refused; the default write path is an XML the DJ imports
     (dj_structure_preview / dj_structure_write). Call dj_apply_preview, show the DJ the result,
-    ask, and only after their explicit yes pass its preview_id."""
+    ask, and only after their explicit yes pass its preview_id (same `plan_file`; a bare name is
+    looked up in plans/: "2026-10-20-house.plan.json" -> plans/2026-10-20-house.plan.json).
+    Appends one log.md line itself. A long list comes back as its first page;
+    `paging.<list>.rest_in` names the report with all of it."""
     power_mode_arg(power_mode)
     pid = preview_id_arg(preview_id, "dj_apply_preview")
-    return run_dj(["apply", "--apply", "--power-mode", "--preview-id", pid], (repo_file(plan_file, (".json",)),))
+    plan = repo_file(plan_file, (".json",), folder=PLANS)
+    return run_paged(["apply", "--apply", "--power-mode", "--preview-id", pid], (plan,), **WRITTEN_LISTS)
 
 
 @server.tool(annotations=WRITE)
@@ -395,24 +723,26 @@ def dj_copy_apply(source: str, target: str, preview_id: str, power_mode: bool = 
     Windows power mode (R-205): needs power_mode=true, else refused; the default write path is an
     XML the DJ imports (dj_structure_preview / dj_structure_write). Call dj_copy_preview, show
     the DJ the result, ask, and only after their explicit yes pass its preview_id (same source
-    and target)."""
+    and target). Appends one log.md line itself. A long list comes back as its first page;
+    `paging.<list>.rest_in` names the report with all of it."""
     power_mode_arg(power_mode)
     pid = preview_id_arg(preview_id, "dj_copy_preview")
-    return run_dj(["copy", "--apply", "--power-mode", "--preview-id", pid], (source, target))
+    return run_paged(["copy", "--apply", "--power-mode", "--preview-id", pid], (source, target), **WRITTEN_LISTS)
 
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
 @guarded
 def dj_build_apply(file: str, preview_id: str, name: str = "", include_ambiguous: bool = False) -> str:
     """WRITES to Spotify: create (once) a private playlist from a tracklist file and add the
-    MATCH tracks. Only ever adds. Call dj_build_preview with the same file, name and
-    include_ambiguous, show the DJ the result, ask, and only after their explicit yes pass its
-    preview_id."""
+    MATCH tracks. Only ever adds. Call dj_build_preview with the same file ("set.txt" ->
+    tracklists/set.txt), name and include_ambiguous, show the DJ the result, ask, and only after
+    their explicit yes pass its preview_id. Appends one log.md line itself. A long list comes back
+    as its first page; `paging.<list>.rest_in` names the report with all of it."""
     pid = preview_id_arg(preview_id, "dj_build_preview")
     options = ["build", "--apply", "--preview-id", pid] + (["--name", name] if name else [])
     if include_ambiguous:
         options.append("--include-ambiguous")
-    return run_dj(options, (repo_file(file, (".txt", ".md")),))
+    return run_paged(options, (repo_file(file, (".txt", ".md"), folder=TRACKLISTS),), **WRITTEN_LISTS)
 
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
@@ -421,14 +751,16 @@ def dj_push_apply(playlist: str, preview_id: str, name: str = "", include_ambigu
     """WRITES to Spotify: create (once) a private playlist for a rekordbox playlist and add
     the MATCH tracks. Only ever adds. `include_ambiguous` only if the DJ checked the links.
     Call dj_push_preview with the same playlist, name and include_ambiguous, show the DJ the
-    result, ask, and only after their explicit yes pass its preview_id."""
+    result, ask, and only after their explicit yes pass its preview_id. Appends one log.md line
+    itself. A long list comes back as its first page; `paging.<list>.rest_in` names the report with
+    all of it."""
     pid = preview_id_arg(preview_id, "dj_push_preview")
     options = ["push", "--apply", "--preview-id", pid]
     if name:
         options += ["--name", name]
     if include_ambiguous:
         options.append("--include-ambiguous")
-    return run_dj(options, (playlist,))
+    return run_paged(options, (playlist,), **WRITTEN_LISTS)
 
 
 # -- dj-build: a proposal -> rekordbox XML the DJ imports (R-501..R-505) -------------------
@@ -442,17 +774,21 @@ def _proposal(proposal: str) -> str:
 
 @server.tool(annotations=LIBRARY_TEXT)
 @guarded
-def dj_structure_preview(proposal: str) -> str:
-    """Preview a structure proposal from the dj-library folder: CREATE / SKIP / CONFLICT /
-    MANUAL per node against structure/current-tree.yaml, where existing playlists land, counts,
-    and a preview_id. `proposal` = its slug, its name, or "Build me the <name> structure".
+def dj_structure_preview(proposal: str, page: int = 1, page_size: int = PAGE_SIZE) -> str:
+    """Preview a structure proposal from the dj-library folder: counts, CREATE / SKIP / CONFLICT /
+    MANUAL per node against structure/current-tree.yaml (`rows`, every node, in pages: `paging`;
+    pages 2+ are cut from page 1's run), where existing playlists land, and a preview_id (on every
+    page). `proposal` = its slug, its name, or "Build me the <name> structure".
     Writes only proposals/<slug>.yaml (if missing; an existing one is the DJ's and is read as
     it is) and the preview record. No XML, rekordbox and master.db untouched. Show the DJ the
     result and ask "Write the XML?" before dj_structure_write. A `blocked` result has no
     preview_id (a conflict, nothing to create, current-tree.yaml older than the export, or this
     exact build already written)."""
+    page, page_size = page_args(page, page_size)
     root = str(library_root())
-    return run_dj(["library", "build", "--library", root], (_proposal(proposal),))
+    options = ["library", "build", "--library", root, "--rows-limit", "0"]  # every row: the pages bound it
+    return run_paged(options, (_proposal(proposal),), keys=("rows",), page=page, page_size=page_size,
+                     more={"rows": "rows_more"})
 
 
 @server.tool(annotations=WRITE)
@@ -476,27 +812,35 @@ def dj_structure_write(proposal: str, preview_id: str) -> str:
 @server.tool(annotations=READ)
 @guarded
 def dj_tidy_audit(crate: str = "", folder: str = "", all_tracks: bool = False, profiles: str = "",
-                  brief: bool = True) -> str:
+                  brief: bool = True, page: int = 1, page_size: int = PAGE_SIZE) -> str:
     """Read-only hygiene audit of the audio files behind a rekordbox crate (path like
     house_base/0_INBOX), a music folder inside tidy.yaml roots, or the whole collection:
     missing/odd tags, artwork, file names, CDJ playability per profile, duplicates. Writes
-    reports/tidy/<date>-<target>.audit.md + .json and returns the counts (brief) or everything.
-    `profiles` = comma-separated tidy.yaml profile names. Works while rekordbox is open."""
+    reports/tidy/<date>-<target>.audit.md + .json and one log.md line, and returns the counts
+    (brief) or everything (brief=false: `items` and `duplicates` in pages, `paging`; page=2 for
+    the next). Page 1 scans the files; pages 2+ are cut from that scan (10 minutes) and scan and
+    log nothing. `profiles` = comma-separated tidy.yaml profile names. Works while rekordbox is
+    open."""
+    page, page_size = page_args(page, page_size)
     options, positionals = tidy_target(crate, folder, all_tracks)
     for name in [p.strip() for p in profiles.split(",") if p.strip()]:
         options += ["--profile", name]
     if brief:
         options.append("--brief")
-    return run_dj(["tidy", "audit", *options], positionals)
+    return run_paged(["tidy", "audit", *options], positionals, keys=("items", "duplicates"), page=page,
+                     page_size=page_size)
 
 
 @server.tool(annotations=READ)
 @guarded
-def dj_tidy_dupes(crate: str = "", folder: str = "", all_tracks: bool = False) -> str:
+def dj_tidy_dupes(crate: str = "", folder: str = "", all_tracks: bool = False, page: int = 1,
+                  page_size: int = PAGE_SIZE) -> str:
     """Read-only duplicate report (exact bytes, or same artist/title/version within 2 s) with a
-    suggested keeper per group. Never deletes or moves: the DJ decides, rekordbox deletes."""
+    suggested keeper per group (`groups`, in pages: `paging`; page=2 for the next). Never deletes
+    or moves: the DJ decides, rekordbox deletes."""
+    page, page_size = page_args(page, page_size)
     options, positionals = tidy_target(crate, folder, all_tracks)
-    return run_dj(["tidy", "dupes", *options], positionals)
+    return run_paged(["tidy", "dupes", *options], positionals, keys=("groups",), page=page, page_size=page_size)
 
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
@@ -504,26 +848,32 @@ def dj_tidy_dupes(crate: str = "", folder: str = "", all_tracks: bool = False) -
 def dj_tidy_plan(crate: str = "", folder: str = "", all_tracks: bool = False, rename: bool = False,
                  rename_imported: bool = False, art: str = "local") -> str:
     """Write plans/<date>-tidy-<target>.plan.json (a repo file; no audio file, no rekordbox
-    change): tag values parsed from the file names for EMPTY tags only, plus local cover art.
-    `rename` also plans renames of files rekordbox does not know; `rename_imported` renames
-    known files too (needs the DJ's explicit words; Relocate in rekordbox afterwards). Then set
-    decision yes|no per item."""
+    change) and one log.md line: tag values parsed from the file names for EMPTY tags only, plus
+    local cover art. `rename` also plans renames of files rekordbox does not know;
+    `rename_imported` renames known files too (needs the DJ's explicit words; Relocate in rekordbox
+    afterwards). Then set decision yes|no per item. A long `items` list comes back as its first
+    page; `paging.items.rest_in` names the plan file with all of them."""
     options, positionals = tidy_target(crate, folder, all_tracks)
     if rename:
         options.append("--rename")
     if rename_imported:
         options.append("--rename-imported")
     options += ["--art", art if art in ("local", "none") else "local"]
-    return run_dj(["tidy", "plan", *options], positionals)
+    return run_paged(["tidy", "plan", *options], positionals, keys=("items",), rest_in="plan")
 
 
 @server.tool(annotations=READ)
 @guarded
-def dj_tidy_apply_preview(plan_file: str, strict: bool = False) -> str:
-    """Dry-run of a tidy plan: which `decision: yes` items would be written, which cannot run and
-    why, and a preview_id. Writes nothing. Pass the same `strict` you will pass to dj_tidy_apply."""
+def dj_tidy_apply_preview(plan_file: str, strict: bool = False, page: int = 1, page_size: int = PAGE_SIZE) -> str:
+    """Dry-run of a tidy plan: counts, which `decision: yes` items would be written and which
+    cannot run and why (`items`, in pages: `paging`), and a preview_id (on every page). Writes
+    nothing. `plan_file` = a plan in plans/; a bare name is looked up there
+    ("2026-10-20-tidy-all.plan.json" -> plans/2026-10-20-tidy-all.plan.json). Pass the same
+    `strict` you will pass to dj_tidy_apply."""
+    page, page_size = page_args(page, page_size)
     options = ["tidy", "apply"] + (["--strict"] if strict else [])
-    return run_dj(options, (repo_file(plan_file, (".json",)),))
+    return run_paged(options, (repo_file(plan_file, (".json",), folder=PLANS),), keys=("items",), page=page,
+                     page_size=page_size)
 
 
 @server.tool(annotations=WRITE)
@@ -533,18 +883,26 @@ def dj_tidy_apply(plan_file: str, preview_id: str, strict: bool = False) -> str:
     Undo record first, temp + atomic replace per file, exit_code 2 while rekordbox is open.
     master.db untouched: afterwards the DJ selects the tracks in rekordbox -> Reload Tag.
     Call dj_tidy_apply_preview, show the DJ the result, ask, and only after their explicit yes
-    pass its preview_id."""
+    pass its preview_id (same `plan_file`; a bare name is looked up in plans/:
+    "2026-10-20-tidy-all.plan.json" -> plans/2026-10-20-tidy-all.plan.json). Appends one log.md
+    line itself. A long `items` list comes back as its first page; `paging.items.rest_in` names the
+    report with all of them."""
     pid = preview_id_arg(preview_id, "dj_tidy_apply_preview")
     options = ["tidy", "apply", "--apply", "--preview-id", pid] + (["--strict"] if strict else [])
-    return run_dj(options, (repo_file(plan_file, (".json",)),))
+    return run_paged(options, (repo_file(plan_file, (".json",), folder=PLANS),), keys=("items",), rest_in="report")
 
 
 @server.tool(annotations=READ)
 @guarded
-def dj_tidy_undo_preview(plan_file: str) -> str:
-    """Dry-run of undoing a tidy plan's apply: which files would get their tags and names back,
-    which are skipped and why, and a preview_id. Writes nothing. dj_tidy_undo needs this preview_id."""
-    return run_dj(["tidy", "undo"], (repo_file(plan_file, (".json",)),))
+def dj_tidy_undo_preview(plan_file: str, page: int = 1, page_size: int = PAGE_SIZE) -> str:
+    """Dry-run of undoing a tidy plan's apply: counts, which files would get their tags and names
+    back and which are skipped and why (`items`, in pages: `paging`), and a preview_id (on every
+    page). Writes nothing. `plan_file` = a plan in plans/; a bare name is looked up there
+    ("2026-10-20-tidy-all.plan.json" -> plans/2026-10-20-tidy-all.plan.json). dj_tidy_undo needs
+    this preview_id."""
+    page, page_size = page_args(page, page_size)
+    return run_paged(["tidy", "undo"], (repo_file(plan_file, (".json",), folder=PLANS),), keys=("items",),
+                     page=page, page_size=page_size)
 
 
 @server.tool(annotations=WRITE)
@@ -553,9 +911,13 @@ def dj_tidy_undo(plan_file: str, preview_id: str) -> str:
     """WRITES AUDIO FILES: restores the tags and names a tidy plan's apply changed, from
     state/tidy/<plan>.undo.json, newest first. exit_code 2 while rekordbox is open. Then Reload Tag.
     Call dj_tidy_undo_preview, show the DJ the result, ask, and only after their explicit yes
-    pass its preview_id."""
+    pass its preview_id (same `plan_file`; a bare name is looked up in plans/:
+    "2026-10-20-tidy-all.plan.json" -> plans/2026-10-20-tidy-all.plan.json). Appends one log.md
+    line itself. A long `items` list comes back as its first page; `paging.items.rest_in` names the
+    undo record with all of them."""
     pid = preview_id_arg(preview_id, "dj_tidy_undo_preview")
-    return run_dj(["tidy", "undo", "--apply", "--preview-id", pid], (repo_file(plan_file, (".json",)),))
+    return run_paged(["tidy", "undo", "--apply", "--preview-id", pid], (repo_file(plan_file, (".json",), folder=PLANS),),
+                     keys=("items",), rest_in="undo")
 
 
 def main() -> None:

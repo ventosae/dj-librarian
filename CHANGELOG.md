@@ -19,6 +19,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - `tests/test_e2e_chain.py`: one test runs export, start, profile, structure, taste, report and build through the skill scripts (W-18).
 - macOS port: rekordbox process check with `pgrep`, master.db discovery under `~/Library/Pioneer/rekordbox`, MCP environment per OS, Claude Desktop config path per OS in the README; master.db writes stay Windows-only (W-20).
 - Write gate everywhere (W-21): every dry-run of `dj tree`, `dj apply`, `dj copy`, `dj push`, `dj build`, `dj tidy apply`, `dj tidy undo` returns a preview id, and `--apply` refuses without that id (or after the plan changed); master.db writes also need `--power-mode` (Windows only). MCP write tools require `preview_id`. A Claude Code PreToolUse hook (`plugin/hooks/`) denies write tools without one. Engine install card (`dj-start/engine.md`), `dj library use`, `docs/permissions.md`.
+- MCP results stay under the tool-result limit: counts first, lists paged (`page`, `page_size`) on every preview and read tool; a bare file name resolves under its folder (`tracklists/`, `plans/`, `exports/`); every writing command appends its own `log.md` line (`dj.activity_log`), and the skills only read the log (W-22).
 
 ### Changed
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.

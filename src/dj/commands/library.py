@@ -481,6 +481,10 @@ def build(
     apply: bool = typer.Option(False, "--apply", help="Write proposals/<slug>.xml. Needs --preview-id."),
     preview_id: str = typer.Option(None, "--preview-id", help="The id the preview printed, after the DJ's yes."),
     today: str = typer.Option(None, "--today", help="Date for new files and library.yaml (YYYY-MM-DD)."),
+    rows_limit: int = typer.Option(
+        build_structure.ROWS_LIMIT, "--rows-limit", min=0,
+        help="Rows in the preview's --json; the rest are counted in rows_more. 0 = every row (the MCP tool pages them).",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
     """Preview a proposal (CREATE / SKIP / CONFLICT / MANUAL per node), or with --apply and the
@@ -501,7 +505,7 @@ def build(
             text = _apply_lines(data)
         else:
             found = build_structure.preview(root, proposal, today=day)
-            data = found.to_dict(root)
+            data = found.to_dict(root, limit=rows_limit or len(found.rows))
             text = _preview_lines(data, list(found.rows), found.slug)
     except GateError as exc:
         _refuse(str(exc))

@@ -10,7 +10,7 @@ touches master.db: `dj tidy` reads it read-only and writes to file tags only aft
 
 **Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
 
-**Requirements:** R-1102, R-1104, R-1303, C-01.
+**Requirements:** R-904, R-1102, R-1104, R-1303, NFR-03, NFR-05, C-01.
 
 ## How to run things
 **In Cowork / Claude Desktop: use the `dj-librarian` MCP tools.**
@@ -26,7 +26,15 @@ touches master.db: `dj tidy` reads it read-only and writes to file tags only aft
 A target is exactly one of: a crate path (`house_base/0_INBOX`), `all_tracks`, or a folder
 inside the `roots:` of `tidy.yaml`. `dj_tidy_audit` returns the counts
 (`brief`); read the `.md` report it names for the details. Every tool returns
-`{ok, exit_code, result | output, stderr}`. `exit_code: 2` = rekordbox is open: ask them to
+`{ok, exit_code, result | output, stderr}`, counts first. A long list comes in pages: `paging`
+says per list `page`, `pages` and `total`; call the same tool with the same arguments and `page=2`
+for more. Pages 2+ are cut from page 1's run (kept 10 minutes, `run_at`): no second scan, no
+second log line, and a preview's `preview_id` is the same on every page. A different `preview_id`
+means the plan changed: show the DJ the new preview before any write.
+`dj_tidy_plan`, `dj_tidy_apply` and `dj_tidy_undo` write, so they return the first page only and
+`paging.items.rest_in` names the file with the rest (the plan, the report, the undo record). The plan
+tools' `plan_file` may be a bare name: it is looked up in `plans/`
+(`2026-10-20-tidy-all.plan.json`). `exit_code: 2` = rekordbox is open: ask them to
 close it, call again. Never hand them a shell command when a tool exists.
 
 The write gate (R-1102): `dj_tidy_apply_preview` and `dj_tidy_undo_preview` return a
@@ -61,7 +69,8 @@ command with `--apply --preview-id <id>`.
    renamed imported files, point at the Relocate checklist in `reports/` and say each track
    shows `!` until relocated (cues and playlists survive).
 8. Run the audit again to confirm the findings cleared. Update STATE.md (hygiene line, latest
-   report path) and append one line to log.md.
+   report path). The tool already appended the log.md line (`log` in the result); never write
+   log.md yourself.
 
 ## Undo
 `dj_tidy_undo_preview(plan)` is the dry-run: what would be restored, and a `preview_id`. After the
@@ -81,8 +90,18 @@ DJ's yes, `dj_tidy_undo(plan, preview_id)` restores tags and names from
 - Never open, print or commit .env or .cache/.
 
 ## Log line
-YYYY-MM-DD tidy <target> -> N files tagged, N art embedded, N renamed, N failed; undo state/tidy/<plan>.undo.json
-YYYY-MM-DD tidy audit <target> -> N files, N errors, N warnings, N dupe groups; reports/tidy/<file>.md
+The tool writes log.md, never you (R-904). `dj_tidy_audit` (it writes its reports),
+`dj_tidy_plan`, `dj_tidy_apply` and `dj_tidy_undo` each append one line when they wrote
+something; a dry-run or a refusal adds none. The line comes back as `log` in the result. An apply
+or undo stopped by an error after it began writing still logs what it did (`, stopped by an
+error`), named on stderr. To report what happened, read log.md: in the dj-library folder once it
+is set up, else at the top of the repo. `log: null` with `WARNING log.md line not written` in
+stderr: the write is done; tell the DJ in one line what held log.md. Lines look like:
+
+    YYYY-MM-DD HH:MM tidy audit <target> -> N files, N errors, N warnings, N dupe groups; reports/tidy/<file>.audit.md
+    YYYY-MM-DD HH:MM tidy plan <target> -> N files, N with proposals, N renames; plans/<plan>.plan.json
+    YYYY-MM-DD HH:MM tidy apply <target> -> N written, N failed, N cannot run; state/tidy/<plan>.undo.json
+    YYYY-MM-DD HH:MM tidy undo <target> -> N restored, N failed, N skipped; state/tidy/<plan>.undo.json
 
 ## Pre-send checklist
 

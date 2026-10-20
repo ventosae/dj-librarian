@@ -31,6 +31,7 @@ DOOR1_MODULES = [
     "dj.report",
     "dj.analysis.run_all",
     "dj.write_gate",
+    "dj.activity_log",
 ]
 
 

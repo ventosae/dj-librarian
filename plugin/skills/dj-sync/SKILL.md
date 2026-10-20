@@ -9,7 +9,7 @@ rekordbox is the truth. Spotify playlists are candidates. You only propose.
 
 **Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
 
-**Requirements:** R-802, R-803, R-1101, R-1102, R-205, C-02.
+**Requirements:** R-802, R-803, R-904, R-1101, R-1102, R-205, NFR-03, NFR-05, C-02.
 
 ## How to run things
 **In Cowork / Claude Desktop (you cannot run local programs): use the `dj-librarian` MCP tools.**
@@ -26,7 +26,14 @@ rekordbox is the truth. Spotify playlists are candidates. You only propose.
 | `dj push P` / `--apply` | `dj_push_preview(playlist)` / `dj_push_apply(playlist, preview_id)` |
 
 Every tool returns `{ok, exit_code, result | output, stderr}`. File arguments are paths
-inside the repo (`bases.yaml`, `plans/....plan.json`).
+inside the repo (`bases.yaml`, `plans/....plan.json`); a bare name is looked up in its folder
+(`2026-10-20-house.plan.json` -> `plans/`, `set.txt` -> `tracklists/`).
+Results put the counts first. A long list comes in pages: `paging` says per list `page`, `pages`
+and `total`; call the same preview or read tool with the same arguments and `page=2` for more.
+Pages 2+ are cut from page 1's run (kept 10 minutes, `run_at`): Spotify is not searched again and
+the `preview_id` is the same on every page. Check it: a different `preview_id` means the plan
+changed; show the DJ the new preview from page 1 before any write. A write tool returns the first
+page only; `paging.<list>.rest_in` names the report with the rest.
 
 The write gate (R-1102): every preview returns a `preview_id`. Show the DJ the preview, ask,
 and only after their explicit yes call the write tool with that `preview_id` and the same
@@ -80,7 +87,8 @@ is the same command with `--apply --preview-id <id>`, plus `--power-mode` for ma
    rekordbox is open: tell them, wait, run the same command again. Never work around it.
 8. Read the report named in the output. `yes` picks are now in state/match_cache.json,
    `no` decisions in state/declined.json: neither is ever asked again.
-9. Update STATE.md: counts, last sync date, next action. Append one line to log.md.
+9. Update STATE.md: counts, last sync date, next action. The tool already appended the log.md
+   line (`log` in the result); never write log.md yourself.
 
 ## Copying a rekordbox playlist to Spotify
 `uv run dj push "<rekordbox playlist path>" --json` is a dry-run: MATCH · AMBIGUOUS · MISSING,
@@ -113,8 +121,18 @@ Then read the newest file in plans/ or reports/.
 - If a command errors: show the last 10 lines and stop. Never retry with --apply.
 
 ## Log line
-YYYY-MM-DD sync <link> -> +N added, N ambiguous resolved, N missing, N declined
-YYYY-MM-DD push <rekordbox playlist> -> N on Spotify, N ambiguous, N missing
+The tool writes log.md, never you (R-904). `dj plan`, and `dj apply`, `dj copy`, `dj push`,
+`dj build` and `dj tree` with `--apply`, each append one line when they wrote something; a dry-run
+or a refusal adds none. The line comes back as `log` in the result (`log.md: ...` in the text).
+A push or build stopped by an error after the Spotify playlist existed still logs what it did
+(`, stopped by an error`), named on stderr.
+To report what happened, read log.md: in the dj-library folder once it is set up, else at the top
+of the repo. `log: null` with `WARNING log.md line not written` in stderr: the write is done;
+tell the DJ in one line what held log.md. Lines look like:
+
+    YYYY-MM-DD HH:MM plan <crate> -> N in crate, N proposed, N ambiguous, N missing, N declined; plans/<file>
+    YYYY-MM-DD HH:MM apply <crate> -> N added, N no, N pending; reports/<file>
+    YYYY-MM-DD HH:MM push <rekordbox playlist> to Spotify -> N added, N already there, N missing; reports/<file>
 
 ## Pre-send checklist
 

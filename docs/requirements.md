@@ -141,7 +141,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-901 | Scaffold: `README.md`, `library.yaml`, `exports/`, `profile/`, `structure/`, `taste/`, `crates/`, `reports/`, `proposals/`, `wishlist/`, `links.yaml`, `log.md`. Text only. | M | Created by `dj-start`; documented in README. | Built | v0.1 |
 | R-902 | `library.yaml`: device, rekordbox version, dates, chosen structure, schema version. | M | Schema test. | Built | v0.1 |
 | R-903 | `structure/current-tree.yaml` and `proposals/*.yaml` share one tree schema (today's `bases.yaml` shape). | M | One loader for both. | Built | v0.1 |
-| R-904 | The tool, not Claude, appends `log.md` lines (date, action, counts, file). | M | Every writing command appends. | Agreed | v0.1 |
+| R-904 | The tool, not Claude, appends `log.md` lines (date, action, counts, file). | M | Every writing command appends. | Built | v0.1 |
 | R-905 | Folder is git-initialisable; nothing machine-specific outside `library.yaml`. | M | `git init` + commit works; no absolute paths elsewhere. | Built | v0.1 |
 
 ### E10 Voice and ADHD UX
@@ -188,9 +188,9 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 |---|---|---|
 | NFR-01 | Setup to first report under one hour for P-1 (target: under 15 minutes on the XML path). | M |
 | NFR-02 | Analysis of a 10k-track library completes in under 5 minutes. | S |
-| NFR-03 | MCP tool results stay under the tool-result limit: counts first, items paginated. | M |
+| NFR-03 | MCP tool results stay under the tool-result limit: counts first, items paginated. | M (Built) |
 | NFR-04 | No secrets printed, logged or committed; tokens only sent to `api.spotify.com`. | M |
-| NFR-05 | Bare filenames resolve under their folder (`tracklists/`), example in the tool description. | S |
+| NFR-05 | Bare filenames resolve under their folder (`tracklists/`), example in the tool description. | S (Built) |
 | NFR-06 | Research fan-out (subagents, web searches) bounded per task. | S |
 | NFR-07 | ≤ 3 DJ actions and ≤ 5 minutes of DJ time before the work phase; no questions during it. | M |
 

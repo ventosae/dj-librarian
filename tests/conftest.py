@@ -121,3 +121,35 @@ def gate_records_in_a_temp_folder(monkeypatch, tmp_path_factory, request):
 
     key = hashlib.sha256(request.node.nodeid.encode("utf-8")).hexdigest()[:16]
     monkeypatch.setattr(write_gate, "STATE_DIR", tmp_path_factory.getbasetemp() / "gate-state" / key)
+
+
+@pytest.fixture(autouse=True)
+def activity_log_in_a_temp_folder(monkeypatch, tmp_path_factory, request):
+    """The CLI's log.md lines (dj.activity_log, R-904) go to a folder of this test's own, never to
+    REPO_ROOT/log.md or to a library folder configured on this machine. A test that checks the
+    library-folder case patches `activity_log.library_root` itself."""
+    import hashlib
+
+    from dj import activity_log
+
+    key = hashlib.sha256(request.node.nodeid.encode("utf-8")).hexdigest()[:16]
+    folder = tmp_path_factory.getbasetemp() / "activity-log" / key
+    folder.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(activity_log, "REPO_DIR", folder)
+    monkeypatch.setattr(activity_log, "library_root", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def mcp_runs_forgotten():
+    """The MCP server keeps a read tool's run for its later pages (mcp_server.RUNS): each test
+    starts and ends with none, so one test's run never answers another's page 2."""
+    import sys
+
+    def forget():
+        server = sys.modules.get("dj.mcp_server")
+        if server is not None:
+            server.RUNS.clear()
+
+    forget()
+    yield
+    forget()

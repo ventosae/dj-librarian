@@ -24,6 +24,18 @@ class PushError(RuntimeError):
     pass
 
 
+ADD_BATCH = 100  # Spotify's most items per add request
+
+
+class PushInterrupted(SpotifyError):
+    """Spotify (or the state file) failed after the playlist existed: what was written before the
+    error, so the caller can log it (R-904). The message is the original error's."""
+
+    def __init__(self, cause: BaseException, playlist: dict[str, Any], created: bool, added: int, left: int):
+        super().__init__(str(cause))
+        self.playlist, self.created, self.added, self.left = playlist, created, added, left
+
+
 # -- rekordbox side (read-only) ----------------------------------------------------------
 
 
@@ -101,7 +113,10 @@ def apply(
     state_file: Path | None = None,
     description: str = "Pushed from rekordbox by dj-librarian.",
 ) -> dict[str, Any]:
-    """Create the Spotify playlist once (remembered in state/push.json), add what is missing."""
+    """Create the Spotify playlist once (remembered in state/push.json), add what is missing.
+
+    An error once the playlist exists (a new one is created, or adds have begun) is raised as
+    PushInterrupted with what was written by then; an error before that writes nothing."""
     state_file = state_file or STATE_FILE
     state = _load_state(state_file)
     entry = state.get(rb_playlist_id)
@@ -120,13 +135,22 @@ def apply(
             "url": (made.get("external_urls") or {}).get("spotify", ""),
         }
         created = True
-        state[rb_playlist_id] = entry
-        state_file.parent.mkdir(parents=True, exist_ok=True)
-        state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
     to_add = [u for u in uris if u not in existing]
-    if to_add:
-        api.add_items(entry["spotify_id"], to_add)
+    added = 0
+    try:
+        if created:
+            state[rb_playlist_id] = entry
+            state_file.parent.mkdir(parents=True, exist_ok=True)
+            state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        for start in range(0, len(to_add), ADD_BATCH):  # one request per batch: count what got in
+            batch = to_add[start : start + ADD_BATCH]
+            api.add_items(entry["spotify_id"], batch)
+            added += len(batch)
+    except (SpotifyError, OSError) as exc:
+        if created or added:
+            raise PushInterrupted(exc, entry, created, added, len(to_add) - added) from exc
+        raise
     return {
         "playlist": entry,
         "created": created,

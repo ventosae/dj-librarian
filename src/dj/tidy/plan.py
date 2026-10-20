@@ -293,6 +293,16 @@ def load_plan(path: Path | str) -> dict[str, Any]:
 # -- apply -----------------------------------------------------------------------------------
 
 
+class Interrupted(TidyError):
+    """apply_plan / undo_plan stopped by an error outside its per-file handling after it began
+    writing. `result` holds what was done by then (the file it was on counts as failed;
+    `undo_path` is set), so the caller can log it (R-904). The message is the original error's."""
+
+    def __init__(self, cause: BaseException, result: Any):
+        super().__init__(str(cause))
+        self.result = result
+
+
 @dataclass
 class ApplyResult:
     plan_path: Path
@@ -401,7 +411,23 @@ def apply_plan(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, paths: Pa
     if dry_run:
         result.applied = ready
         return result
+    before = len(undo["records"])
+    try:
+        return _write_ready(plan, plan_path, cfg, paths, undo, undo_path, ready, result)
+    except (TidyError, OSError) as exc:  # outside the per-file handling: what was done stays recorded
+        started = len(undo["records"]) - before  # one undo record per file it began, in order
+        if not started:
+            raise
+        done = len(result.applied) + len(result.failed)
+        if done < started:  # the file it was on: its undo record is there, it may be half-written
+            result.failed.append((ready[done], str(exc)))
+        result.undo_path = undo_path
+        raise Interrupted(exc, result) from exc
 
+
+def _write_ready(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, paths: Paths, undo: dict[str, Any],
+                 undo_path: Path, ready: list[dict[str, Any]], result: ApplyResult) -> ApplyResult:
+    """apply_plan's writes: per ready item the undo record first, then the file."""
     id3_version = int(plan.get("options", {}).get("id3_version", cfg.id3_version))
     renamed: list[dict[str, Any]] = []
     for item in ready:
@@ -516,6 +542,20 @@ def undo_plan(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, paths: Pat
     undo = _read_json(undo_path, None)
     if not undo:
         raise TidyError(f"No undo file for this plan ({undo_path}). Nothing was applied, or it was undone already.")
+    touching: list[dict[str, Any]] = []  # the record whose file is being restored, until it is counted
+    try:
+        return _restore(plan, plan_path, cfg, undo, undo_path, result, touching, dry_run, force)
+    except (TidyError, OSError) as exc:  # outside the per-file handling: what was done stays recorded
+        if touching:
+            result.failed.append((touching[0], str(exc)))
+        if dry_run or not (result.restored or result.failed):
+            raise
+        raise Interrupted(exc, result) from exc
+
+
+def _restore(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, undo: dict[str, Any], undo_path: Path,
+             result: UndoResult, touching: list[dict[str, Any]], dry_run: bool, force: bool) -> UndoResult:
+    """undo_plan's loop, newest record first. `touching` holds the record whose file it is changing."""
     id3_version = int(plan.get("options", {}).get("id3_version", cfg.id3_version))
     by_file = {i["file"]: i for i in plan["items"]}
     for record in sorted(undo["records"], key=lambda r: -r["seq"]):
@@ -540,6 +580,7 @@ def undo_plan(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, paths: Pat
         if dry_run:
             result.restored.append(record)
             continue
+        touching[:] = [record]
         try:
             if record.get("renamed"):
                 back = Path(record["file_before"])
@@ -554,6 +595,7 @@ def undo_plan(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, paths: Pat
             record["error"] = f"undo: {exc}"
             _write_json_atomic(undo_path, undo)
             result.failed.append((record, str(exc)))
+            touching.clear()
             continue
         record["undone"] = {"at": datetime.now().isoformat(timespec="seconds"), "sha256": tags.sha256(path)}
         _write_json_atomic(undo_path, undo)
@@ -563,4 +605,5 @@ def undo_plan(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, paths: Pat
             plan["counts"] = counts(plan)
             _write_json_atomic(plan_path, plan)
         result.restored.append(record)
+        touching.clear()
     return result

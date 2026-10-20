@@ -696,6 +696,19 @@ def test_cli_preview_then_apply_json(folder):
     assert out["counts"] == {"create": 5, "skip": 4, "manual": 1, "tracks": 22}
 
 
+def test_cli_preview_rows_limit_caps_the_json_rows_and_0_gives_every_row(folder):
+    """NFR-03: the CLI caps `rows` at ROWS_LIMIT and counts the rest; the MCP tool asks for every
+    row (--rows-limit 0) and pages them itself, so no row is out of reach."""
+    capped = json.loads(_cli("lanes", "--library", folder.root, "--rows-limit", "3", "--json").stdout)
+    assert len(capped["rows"]) == 3 and capped["rows_more"] == len(LANES_ROWS) - 3
+    every = json.loads(_cli("lanes", "--library", folder.root, "--rows-limit", "0", "--json").stdout)
+    assert [(r["op"], r["path"]) for r in every["rows"]] == LANES_ROWS and every["rows_more"] == 0
+    assert json.loads(_cli("lanes", "--library", folder.root, "--json").stdout)["rows"] == every["rows"]
+    page = m.paginate(capped, ("rows",), 1, 50, more={"rows": "rows_more"})
+    assert page["paging"]["rows"]["total"] == len(LANES_ROWS) and page["paging"]["rows"]["listed"] == 3
+    assert _cli("lanes", "--library", folder.root, "--rows-limit", "-1").exit_code != 0
+
+
 def test_cli_text_apply_prints_the_import_card(folder):
     pid = bs.preview(folder, "lanes", today=DAY).preview_id
     result = _cli("lanes", "--library", folder.root, "--apply", "--preview-id", pid)
@@ -743,9 +756,10 @@ def test_mcp_structure_preview_passes_the_library_and_the_proposal_as_a_value(ca
     answer = json.loads(m.dj_structure_preview("Build me the Lanes structure"))
     assert answer["ok"] is True
     root = str((tmp_path / "dj-library").resolve())
-    assert calls[-1][3:] == ["library", "build", "--library", root, "--json", "--", "Build me the Lanes structure"]
+    assert calls[-1][3:] == ["library", "build", "--library", root, "--rows-limit", "0", "--json", "--",
+                             "Build me the Lanes structure"]  # fmt: skip
     m.dj_structure_preview("--apply")
-    assert calls[-1][3:] == ["library", "build", "--library", root, "--json", "--", "--apply"]
+    assert calls[-1][3:] == ["library", "build", "--library", root, "--rows-limit", "0", "--json", "--", "--apply"]
 
 
 @pytest.mark.parametrize("pid", ["", "   ", "--apply", "xyz", "0123456789AB", "0123456789ab --x"])
