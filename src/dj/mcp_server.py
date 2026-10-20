@@ -30,6 +30,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
 
 from dj import libfolder
+from dj.barber import MAX_QUESTIONS as BARBER_MAX_QUESTIONS
 from dj.gate import valid_id
 from dj.safety import REPO_ROOT
 from dj.tidy import TidyError
@@ -974,6 +975,44 @@ def dj_tidy_undo(plan_file: str, preview_id: str) -> str:
     pid = preview_id_arg(preview_id, "dj_tidy_undo_preview")
     return run_paged(["tidy", "undo", "--apply", "--preview-id", pid], (repo_file(plan_file, (".json",), folder=PLANS),),
                      keys=("items",), rest_in="undo")
+
+
+# -- Style Barber: taste text files in the library folder only (R-701, R-703) ----------------
+#
+# Like dj_plan, these write text files only (taste/*.md lines, .cache/barber.json, log.md), so
+# they have no preview tool and no preview_id: the DJ's answer to the question is the consent,
+# and every line is appended, never a rewrite. Exit code 2 here means "not a dj-library folder".
+
+BARBER_ANSWER_MAX = 400  # characters; a free-text answer is one line (a lane name, a gig remark)
+
+
+@server.tool(annotations=LIBRARY_TEXT)
+def dj_barber_next() -> str:
+    """Style Barber, in the configured dj-library folder: plan today's session (at most 8
+    questions, about 10 minutes) or resume it, and return counts (questions, answered, skipped,
+    left) and the next question: n, progress line, kind (ab, name_lane, veto, pair, gig),
+    prompt, options/chips (empty = free text), tracks, the taste file an answer goes to.
+    `done` true = nothing left today. Writes only .cache/barber.json; never rekordbox.
+    exit_code 2 = the dj-library folder is not set up: run dj-start first."""
+    return run_dj(["library", "barber", "next"])
+
+
+@server.tool(annotations=LIBRARY_TEXT)
+@guarded
+def dj_barber_record(n: int, answer: str) -> str:
+    """Record the DJ's answer to question `n` of today's Style Barber session: appends one dated
+    line to taste/anchors.md, lanes.md, vetoes.md or feedback.md (never rewrites), then returns
+    the added lines and the next question, or "done". `answer` = what the DJ picked or typed: a
+    chip (A, B, keep, never, good), its number (1, 2), free text for a lane name or gig remark,
+    or skip. An answer the question does not take writes nothing (exit_code 1); exit_code 2 = the
+    dj-library folder is not set up. Never touches rekordbox, Spotify or audio files."""
+    if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= BARBER_MAX_QUESTIONS:
+        raise ToolInputError(f"n must be a question number from 1 to {BARBER_MAX_QUESTIONS}.")
+    if not isinstance(answer, str) or not answer.strip() or len(answer) > BARBER_ANSWER_MAX:
+        raise ToolInputError(f"answer must be one line of 1 to {BARBER_ANSWER_MAX} characters.")
+    if "\n" in answer or "\r" in answer:
+        raise ToolInputError("answer must be one line.")
+    return run_dj(["library", "barber", "record"], (str(n), answer.strip()))
 
 
 def main() -> None:

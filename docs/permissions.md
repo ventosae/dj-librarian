@@ -47,6 +47,8 @@ rekordbox, Spotify or audio files.
 | `dj_tidy_plan` | A tidy plan (`plans/`). |
 | `dj_library_analyze` | profile/, structure/, taste/ and the HTML report. |
 | `dj_structure_preview` | `proposals/<slug>.yaml` and a preview record; returns a `preview_id`. |
+| `dj_barber_next` | Plans or resumes a Style Barber session (`.cache/barber.json`); returns the next question. |
+| `dj_barber_record` | Appends the DJ's answer as a dated line to `taste/*.md` (never rewrites). |
 
 ## Write tools: Ask every time
 

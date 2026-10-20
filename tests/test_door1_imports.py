@@ -27,6 +27,7 @@ DOOR1_MODULES = [
     "dj.analysis.structure",
     "dj.taste_files",
     "dj.analysis.taste",
+    "dj.barber",
     "dj.analysis.proposals",
     "dj.report",
     "dj.analysis.run_all",

@@ -25,7 +25,9 @@ PREAMBLE = re.compile(
     r"^(hi|hello|hey|great|sure|certainly|of course|absolutely|thanks|thank you|happy to)\b",
     re.IGNORECASE,
 )
-STATE = re.compile(r"\bStep \d+ of \d+\b")
+# Rule 5 restates where we are. The checklist's "Step 2 of 6" is an example; a question session
+# (dj-barber) says "Question 3 of 8".
+STATE = re.compile(r"\b(?:Step|Question) \d+ of \d+\b")
 TIME = re.compile(
     r"\b(under|about|around) (a|an|one|two|\d+) (minute|minutes|hour|hours)\b|\b\d+ ?min\b",
     re.IGNORECASE,
@@ -76,7 +78,7 @@ def reply_problems(reply: str) -> list[str]:
         return problems
     lines = [line for line in reply.strip().split("\n") if line.strip()]
     if not STATE.search(reply):
-        problems.append("rule 5: no 'Step N of M'")
+        problems.append("rule 5: no 'Step N of M' (or 'Question N of M')")
     if not FILE_NAMED.search(reply):
         problems.append("rule 7: no file named")
     if not TIME.search(lines[-1]):

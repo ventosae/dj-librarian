@@ -18,7 +18,7 @@ from typing import Any, Iterator
 
 import typer
 
-from dj import build_structure, libfolder
+from dj import barber, build_structure, libfolder
 from dj import crate as crate_mod
 from dj import report as report_mod
 from dj.analysis import profile as profile_analysis
@@ -516,6 +516,102 @@ def build(
     except (build_structure.BuildError, TreeSchemaError, LibraryError, OSError) as exc:
         _fail(str(exc))
     typer.echo(json.dumps(data, indent=2, ensure_ascii=False) if as_json else "\n".join(text))
+
+
+# -- dj library barber next|record (Style Barber, R-701, R-703) ------------------------------
+
+barber_app = typer.Typer(
+    add_completion=False, no_args_is_help=True, pretty_exceptions_show_locals=False,
+    help="Style Barber: one short question at a time (at most 8, about 10 minutes) that sharpens "
+         "taste/. Writes dated lines in taste/*.md, .cache/barber.json and log.md; never rekordbox.",
+)  # fmt: skip
+library_app.add_typer(barber_app, name="barber")
+
+
+def _question_lines(q: dict[str, Any]) -> list[str]:
+    def bpm(track: dict[str, Any]) -> str:
+        return f" ({track['bpm']} BPM)" if track["bpm"] else ""
+
+    lines = [q["progress"], q["prompt"]]
+    if q["kind"] == "ab":  # the chips name the tracks
+        lines += [f"  {chip}{bpm(track)}" for chip, track in zip(q["chips"], q["tracks"])]
+    else:
+        lines += [f"  {track['label']}{bpm(track)}" for track in q["tracks"]]
+        if q["chips"]:
+            lines.append("  " + " / ".join(q["chips"]))
+    lines.append(f"  {q['context']}")
+    answers = "|".join(q["options"]) + "|skip" if q["options"] else "text|skip"
+    lines.append(f"answer: dj library barber record {q['n']} <{answers}>  -> {q['file']}")
+    return lines
+
+
+def _barber_counts(c: dict[str, int]) -> str:
+    return f"{c['answered']} answered, {c['skipped']} skipped, {c['left']} left of {c['questions']}"
+
+
+def _barber_run(as_json: bool, call: Any, lines: Any) -> None:
+    try:
+        result = call()
+    except NotALibraryFolder as exc:
+        typer.echo(f"REFUSED {exc}", err=True)
+        raise typer.Exit(EXIT_REFUSED)
+    except (LibraryError, OSError, ValueError) as exc:
+        typer.echo(f"ERROR {exc}", err=True)
+        raise typer.Exit(EXIT_ERROR)
+    typer.echo(json.dumps(result, indent=2, ensure_ascii=False) if as_json else "\n".join(lines(result)))
+
+
+@barber_app.command("next")
+def barber_next(
+    library: str = typer.Option("", "--library", help="The dj-library folder. Empty: the configured one."),
+    today: str = typer.Option("", "--today", help="The session date, YYYY-MM-DD. Empty: today."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Plan today's session (or resume it) and show the next question. Counts first."""
+
+    def lines(result: dict[str, Any]) -> list[str]:
+        head = f"barber: {_barber_counts(result['counts'])}" + (" (resumed)" if result["resumed"] else "")
+        if result["done"]:
+            files = ", ".join(result["files"]) or "no taste file changed"
+            return [head, f"done for today: {files}"]
+        return [head, *_question_lines(result["question"])]
+
+    _barber_run(as_json, lambda: barber.next_step(library or configured_root(), today=parse_day(today)), lines)
+
+
+@barber_app.command("record")
+def barber_record(
+    n: int = typer.Argument(..., help="The question number, as `next` showed it."),
+    answer: str = typer.Argument(..., help="A chip (A, B, keep, never, good), its number, free text, or skip."),
+    library: str = typer.Option("", "--library", help="The dj-library folder. Empty: the configured one."),
+    today: str = typer.Option("", "--today", help="The session date, YYYY-MM-DD. Empty: today."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Record an answer to today's session and show the next question, or done.
+
+    Appends one dated line to a taste file (never a rewrite). An answer the question does not
+    take writes nothing (exit 1)."""
+
+    def lines(result: dict[str, Any]) -> list[str]:
+        rec = result["recorded"]
+        added = result["counts"]["lines_added"]
+        out = [
+            f"barber: question {rec['n']} {rec['status']} ({rec['answer']}) -> {added} "
+            f"line{'' if added == 1 else 's'} added to {rec['file'] if added else 'no file'}",
+            *[f"  {line}" for lines_ in result["added"].values() for line in lines_],
+        ]
+        if result["log"]:
+            out.append(f"log: {result['log']}")
+        out.append(f"barber: {_barber_counts(result['counts'])}")
+        if result["done"]:
+            out.append("done for today: " + (", ".join(result["files"]) or "no taste file changed"))
+        else:
+            out += _question_lines(result["next"])
+        return out
+
+    _barber_run(
+        as_json, lambda: barber.answer(library or configured_root(), n, answer, today=parse_day(today)), lines
+    )
 
 
 # -- dj library crate (R-601..R-604, R-702) ------------------------------------------------

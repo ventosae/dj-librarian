@@ -488,6 +488,17 @@ def read_entries(path: str | Path) -> list[LogEntry]:
     return out
 
 
+def read_keys(path: str | Path) -> set[str]:
+    """The canonical keys of every keyed line outside the Now lines, dated or not: the lines
+    `read_vetoes` reads (a hand-written `lifted: ... <!-- key:veto:16 -->` counts). A missing
+    file -> set()."""
+    path = Path(path)
+    if not path.is_file():
+        return set()
+    lines, _ = _split(_read(path))
+    return {key for key, _text in _keyed_lines(lines)}
+
+
 def read_feedback(path: str | Path) -> list[LogEntry]:
     """`taste/feedback.md`: the DJ's dated remarks, (date, text, key or None), in file order."""
     return read_entries(path)
