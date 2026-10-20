@@ -1,7 +1,8 @@
 """`dj library ...`: the library model (XML export or master.db snapshot) and its analysis.
 
 Nothing here writes to rekordbox: `inspect` only reads; `profile`, `structure`, `taste`,
-`report` and `analyze` write text files in the library folder (R-341).
+`report` and `analyze` write text files in the library folder (R-341); `build` writes a
+rekordbox XML the DJ imports, only with the id of a preview the DJ said yes to (R-501..R-505).
 """
 
 from __future__ import annotations
@@ -15,13 +16,14 @@ from typing import Any, Iterator
 
 import typer
 
-from dj import libfolder
+from dj import build_structure, libfolder
 from dj import report as report_mod
 from dj.analysis import profile as profile_analysis
 from dj.analysis import run_all
 from dj.analysis import structure as structure_analysis
 from dj.analysis import taste as taste_analysis
 from dj.analysis.common import NotALibraryFolder, parse_day
+from dj.gate import GateError
 from dj.libfolder import configured_root
 from dj.model import Library, LibraryError, PlaylistNode
 from dj.readers.xml import XML_FIELDS_MISSING, XML_NOTES, read_xml
@@ -372,3 +374,100 @@ def analyze_cmd(
         typer.echo("\n".join(lines))
     if result["failed"]:
         raise typer.Exit(EXIT_ERROR)
+
+
+# -- dj library build (R-501..R-505) -------------------------------------------------------
+
+
+def _refuse(message: str) -> None:
+    typer.echo(f"REFUSED {message}", err=True)
+    raise typer.Exit(EXIT_ERROR)
+
+
+def _fail(message: str) -> None:
+    typer.echo(f"ERROR {message}", err=True)
+    raise typer.Exit(EXIT_ERROR)
+
+
+def _preview_lines(data: dict[str, Any], rows: list[Any], slug: str) -> list[str]:
+    c = data["counts"]
+    state = "new, written now" if data["yaml_created"] else "yours, read as it is"
+    lines = [
+        f"proposal:    {data['name']} ({slug})",
+        f"tree file:   {data['yaml']} ({state})",
+        f"tracks from: {data['export']}",
+        f"counts:      {c['create']} create, {c['skip']} skip, {c['conflict']} conflict, "
+        f"{c['manual']} manual, {c['tracks']} tracks",
+        "",
+    ]
+    for row in rows:
+        source = f"  <- {', '.join(row.fill_from)}" if row.op == "CREATE" and row.fill_from else ""
+        note = f"  ({row.note})" if row.op in ("CONFLICT", "MANUAL") and row.note else ""
+        lines.append(f"  {row.op:<8} {row.kind:<8} {'/'.join(row.path)}{source}{note}")
+    if data["lands"]:
+        lines += ["", "where existing playlists land:"]
+        lines += [f"  {x['from']} -> {x['to']} ({x['tracks']} tracks)" for x in data["lands"]]
+        if data["lands_more"]:
+            lines.append(f"  ... {data['lands_more']} more")
+    if data["unplaced"]:
+        lines += ["", f"{data['unplaced']} track(s) have no file location and stay out of the XML."]
+    lines += [f"WARNING {w}" for w in data["warnings"]]
+    lines += ["", "Nothing written yet."]
+    if data["blocked"]:
+        lines.append(f"BLOCKED {data['blocked']}")
+    else:
+        lines.append(f"preview id:  {data['preview_id']}")
+        lines.append(
+            f"to write:    dj library build {slug} --apply --preview-id {data['preview_id']} "
+            "(only after the DJ said yes)"
+        )
+    return lines
+
+
+def _apply_lines(data: dict[str, Any]) -> list[str]:
+    c = data["counts"]
+    lines = [
+        f"Wrote {data['written']} ({c['create']} create, {c['skip']} skip, {c['manual']} manual, "
+        f"{c['tracks']} tracks). rekordbox untouched until you import it.",
+        f"Import in rekordbox ({data['device']}):",
+    ]
+    lines += [f"  {n}. {step}" for n, step in enumerate(data["import_steps"], 1)]
+    lines.append(f"log.md: {data['log_line']}")
+    lines += [f"WARNING {w}" for w in data["warnings"]]
+    return lines
+
+
+@library_app.command()
+def build(
+    proposal: str = typer.Argument(..., help="Slug, name, or 'Build me the <name> structure'."),
+    library: str = typer.Option(None, "--library", help="The dj-library folder. Default: the configured one."),
+    apply: bool = typer.Option(False, "--apply", help="Write proposals/<slug>.xml. Needs --preview-id."),
+    preview_id: str = typer.Option(None, "--preview-id", help="The id the preview printed, after the DJ's yes."),
+    today: str = typer.Option(None, "--today", help="Date for new files and library.yaml (YYYY-MM-DD)."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Preview a proposal (CREATE / SKIP / CONFLICT / MANUAL per node), or with --apply and the
+    preview id write proposals/<slug>.xml for the DJ to import. Never opens master.db."""
+    if apply and not (preview_id or "").strip():
+        _refuse("--apply needs --preview-id: run the preview, show it, write only after a yes.")
+    try:
+        day = date.fromisoformat(today) if today else None
+    except ValueError:
+        _fail(f"--today: expected YYYY-MM-DD, got {today!r}")
+    try:
+        root = Path(library) if library else libfolder.configured_root()
+        if not root.is_dir():
+            _fail(f"{root} is not a folder. Scaffold the dj-library folder first (dj-start).")
+        if apply:
+            result = build_structure.apply(root, proposal, (preview_id or "").strip(), today=day)
+            data = result.to_dict()
+            text = _apply_lines(data)
+        else:
+            found = build_structure.preview(root, proposal, today=day)
+            data = found.to_dict(root)
+            text = _preview_lines(data, list(found.rows), found.slug)
+    except GateError as exc:
+        _refuse(str(exc))
+    except (build_structure.BuildError, TreeSchemaError, LibraryError, OSError) as exc:
+        _fail(str(exc))
+    typer.echo(json.dumps(data, indent=2, ensure_ascii=False) if as_json else "\n".join(text))

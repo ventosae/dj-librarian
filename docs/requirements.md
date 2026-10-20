@@ -92,7 +92,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-401 | One self-contained HTML file `reports/<date>-library.html`, opens offline, opens in Cowork's side panel. | M | No external requests; renders from the folder. | Built | v0.1 |
 | R-402 | Section 1: DJ profile narrative + the 5 stats that matter. | M | Present; lists capped at 5. | Built | v0.1 |
 | R-403 | Section 2: small graph of the current structure (tree) and playlist overlap, with what it reveals (dumps, duplicates, orphans). | M | Graph renders from `structure/` data. | Built | v0.1 |
-| R-404 | Section 3: two or three named restructure proposals; each: name in the DJ's vocabulary, one-line principle, sketch tree, where existing playlists land, cost in minutes, trigger prompt (e.g. "Build me the African Bass Telepathy structure"). | M | Six parts each; trigger prompt works with `dj-build`. | Agreed | v0.1 |
+| R-404 | Section 3: two or three named restructure proposals; each: name in the DJ's vocabulary, one-line principle, sketch tree, where existing playlists land, cost in minutes, trigger prompt (e.g. "Build me the African Bass Telepathy structure"). | M | Six parts each; trigger prompt works with `dj-build`. | Built | v0.1 |
 | R-405 | Proposal families: Bases (genre base → inbox / crates / sets), Facets (5–8 shallow genre buckets + My Tag Role / Body / Vibe / Status + gig crates), Gig-first (crates per residency or event + archive). The DJ's patterns pick which and how named. | M | Picking rules documented in the skill. | Built | v0.1 |
 | R-406 | Section 4: one next action under two minutes. | M | Present. | Built | v0.1 |
 | R-407 | Report written in the voice (R-1001) and passes the ADHD rules (R-1002). | M | Checklists pass. | Built | v0.1 |
@@ -101,11 +101,11 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
-| R-501 | A trigger prompt produces `proposals/<name>.yaml` (tree as code) and a preview diff against the current tree. | M | Preview lists CREATE / SKIP per node; nothing written yet. | Agreed | v0.1 |
-| R-502 | After an explicit yes, write `proposals/<name>.xml` (rekordbox XML) and show per-OS import steps (Preferences → Advanced → Database → rekordbox xml; drag in). | M | XML validates with pyrekordbox; rekordbox imports it on Mac and Windows. | Agreed | v0.1 |
-| R-503 | Playlists in the XML pre-filled from existing playlists where the proposal maps them; tracks referenced by location. | M | Imported playlists contain the mapped tracks. | Proposed | v0.1 |
-| R-504 | master.db is never written by `dj-build`. | M | Test: no write session opened. | Agreed | v0.1 |
-| R-505 | Every build appends a line to `log.md` (R-904). | M | Line present after build. | Agreed | v0.1 |
+| R-501 | A trigger prompt produces `proposals/<name>.yaml` (tree as code) and a preview diff against the current tree. | M | Preview lists CREATE / SKIP per node; nothing written yet. | Built | v0.1 |
+| R-502 | After an explicit yes, write `proposals/<name>.xml` (rekordbox XML) and show per-OS import steps (Preferences → Advanced → Database → rekordbox xml; drag in). | M | XML validates with pyrekordbox; rekordbox imports it on Mac and Windows. | Built | v0.1 |
+| R-503 | Playlists in the XML pre-filled from existing playlists where the proposal maps them; tracks referenced by location. | M | Imported playlists contain the mapped tracks. | Built | v0.1 |
+| R-504 | master.db is never written by `dj-build`. | M | Test: no write session opened. | Built | v0.1 |
+| R-505 | Every build appends a line to `log.md` (R-904). | M | Line present after build. | Built | v0.1 |
 
 ### E6 Crate me
 

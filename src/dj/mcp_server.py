@@ -21,6 +21,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
 
 from dj import libfolder
+from dj.gate import valid_id
 from dj.safety import REPO_ROOT
 from dj.tidy import TidyError
 from dj.tidy import config as tidy_config
@@ -29,6 +30,7 @@ TIMEOUT_S = 600
 READ = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 SPOTIFY_READ = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True)
+LIBRARY_TEXT = ToolAnnotations(readOnlyHint=False, destructiveHint=False)  # text files in dj-library/
 
 server = MCPServer(
     "dj-librarian",
@@ -346,6 +348,52 @@ def dj_push_apply(playlist: str, name: str = "", include_ambiguous: bool = False
     if include_ambiguous:
         options.append("--include-ambiguous")
     return run_dj(options, (playlist,))
+
+
+# -- dj-build: a proposal -> rekordbox XML the DJ imports (R-501..R-505) -------------------
+
+
+def _proposal(proposal: str) -> str:
+    if not isinstance(proposal, str) or not proposal.strip():
+        raise ToolInputError("Name the proposal: its slug, its name, or 'Build me the <name> structure'.")
+    return proposal.strip()
+
+
+@server.tool(annotations=LIBRARY_TEXT)
+@guarded
+def dj_structure_preview(proposal: str) -> str:
+    """Preview a structure proposal from the dj-library folder: CREATE / SKIP / CONFLICT /
+    MANUAL per node against structure/current-tree.yaml, where existing playlists land, counts,
+    and a preview_id. `proposal` = its slug, its name, or "Build me the <name> structure".
+    Writes only proposals/<slug>.yaml (if missing; an existing one is the DJ's and is read as
+    it is) and the preview record. No XML, rekordbox and master.db untouched. Show the DJ the
+    result and ask "Write the XML?" before dj_structure_write. A `blocked` result has no
+    preview_id (a conflict, nothing to create, current-tree.yaml older than the export, or this
+    exact build already written)."""
+    root = str(library_root())
+    return run_dj(["library", "build", "--library", root], (_proposal(proposal),))
+
+
+@server.tool(annotations=WRITE)
+@guarded
+def dj_structure_write(proposal: str, preview_id: str) -> str:
+    """WRITES proposals/<slug>.xml (a rekordbox XML the DJ imports by hand; master.db is never
+    opened), appends one log.md line and records the chosen structure in library.yaml. Needs the
+    preview_id from dj_structure_preview and the DJ's explicit yes to that preview. Refuses
+    without one, after any change since the preview, or when the id was already used (one
+    preview, one write). Never overwrites a file: a taken name becomes <slug>-2.xml. `warnings`
+    in the result: the XML is written; tell the DJ each one."""
+    pid = (preview_id or "").strip() if isinstance(preview_id, str) else ""
+    if not pid:
+        raise ToolInputError(
+            "No preview_id. Call dj_structure_preview, show the DJ the result, and call this only "
+            "after their explicit yes."
+        )
+    if not valid_id(pid):
+        raise ToolInputError(f"{preview_id!r} is not a preview id (12 hex digits from dj_structure_preview).")
+    root = str(library_root())
+    options = ["library", "build", "--library", root, "--apply", "--preview-id", pid]
+    return run_dj(options, (_proposal(proposal),))
 
 
 # -- dj tidy: audio files, never master.db -------------------------------------------------
