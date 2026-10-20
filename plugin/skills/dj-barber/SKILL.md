@@ -11,7 +11,7 @@ at a time, and pass the answer back. Nothing here touches rekordbox, Spotify or 
 
 **Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
 
-**Requirements:** R-701, R-702, R-703.
+**Requirements:** R-701, R-702, R-703, R-1405.
 
 ## The session
 
@@ -25,6 +25,12 @@ at a time, and pass the answer back. Nothing here touches rekordbox, Spotify or 
 - The questions come from the DJ's own library only: their lanes, clusters, playlists and
   tracks. Show tracks, BPMs and counts exactly as the script returns them; never invent one
   (R-302).
+- The archetype rides along as context, in exactly one line, once per session (R-1405). When
+  `profile/identity.json` exists (dj-identity ran), `next` returns `archetype_line` with the
+  first question of a newly planned session ("From your sleeve: The Crate Archaeologist. ..."),
+  and null on every later call. Send it word for word as the second line of that first reply,
+  right under the question line, never again in the session, and add nothing of your own to it.
+  No identity.json: no line.
 
 ## How to run it
 
@@ -38,8 +44,8 @@ Paths are relative to this skill's folder. Each command prints one JSON object.
    uses the configured folder.
 3. MCP (engine connector): `dj_barber_next()` and `dj_barber_record(n, answer)`.
 
-`next` returns `counts` first (questions, answered, skipped, left), then `resumed`, `done` and
-`question`: `n`, `progress`, `kind`, `prompt`, `options` and `chips` (empty = free text),
+`next` returns `counts` first (questions, answered, skipped, left), then `archetype_line` (one
+line or null, see The session), `resumed`, `done` and `question`: `n`, `progress`, `kind`, `prompt`, `options` and `chips` (empty = free text),
 `tracks` (id, label, BPM, key), `context` (one measured line) and `file` (where the answer
 goes). `record` returns `counts` (plus `lines_added`), `recorded`, `added` (the new lines per
 file), `log` (the line appended to `log.md`) and `next`: the next question, or `"done"`.
@@ -78,6 +84,7 @@ Chips: A/B question chips, two per question at most. No chips (Q-05): the number
 
 ```text
 Question 1 of 8 · about 8 minutes left. Which one belongs in your 122-127 BPM lane?
+From your sleeve: The Crate Archaeologist. Decades deep. The old records are where you dig.
 A: Kestrel Unit - Ballast (129 BPM)
 B: The Velvet Ferrymen - Brass Tide (Club Edit) (123 BPM)
 Your pick goes to taste/anchors.md. Tap A or B, or say skip or stop (under a minute).

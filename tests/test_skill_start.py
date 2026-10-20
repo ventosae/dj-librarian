@@ -61,7 +61,7 @@ VOICE_LINE = (
     "by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this "
     "file before each reply."
 )
-REQUIREMENTS_LINE = "**Requirements:** R-101, R-102, R-103, R-104, R-105, R-106, R-107."
+REQUIREMENTS_LINE = "**Requirements:** R-101, R-102, R-103, R-104, R-105, R-106, R-107, R-1406."
 TIME = re.compile(
     r"\b(under|about|around) (a|an|one|two|\d+) (minute|minutes|hour|hours)\b", re.IGNORECASE
 )
@@ -369,7 +369,7 @@ def test_find_xml_reports_a_set_up_folder(run, lib):
     assert init(run, lib)[0] == 0
     code, out = run("find-xml", "--library", lib)
     assert code == 0, out
-    assert out["library"] == {"device": "mac", "latest_export": EXPORT, "latest_report": None}
+    assert out["library"] == {"device": "mac", "dj_name": None, "latest_export": EXPORT, "latest_report": None}
 
     (lib / "reports" / f"{DAY}-library.html").write_text("<html></html>\n", encoding="utf-8")
     (lib / "reports" / "2026-09-01-library.html").write_text("<html></html>\n", encoding="utf-8")
@@ -698,7 +698,7 @@ def test_analysis_and_report_run_on_the_xml_alone(tmp_path):
     each with --library only and the engine packages blocked: the HTML report exists, with its
     four sections and the proposals. No master.db, no engine, no network."""
     scripts = STEP4_SCRIPT.findall(_step(4))
-    assert [Path(s).parts[1] for s in scripts] == ["dj-profile", "dj-structure", "dj-taste", "dj-report"]
+    assert [Path(s).parts[1] for s in scripts] == ["dj-profile", "dj-structure", "dj-taste", "dj-identity", "dj-report"]
 
     lib = tmp_path / "dj-library"
     lib.mkdir()
@@ -861,7 +861,7 @@ def test_skill_commands_parse_with_the_script(start):
     """Every `start.py` command line in SKILL.md is one the script accepts."""
     commands = re.findall(r"`python3 (scripts/start\.py (?:init|find-xml) [^`]+)`", _text())
     assert len(commands) == 2
-    fill = {"<folder>": "dj-library", "<mac|windows>": "mac", "<xml>": "collection.xml"}
+    fill = {"<folder>": "dj-library", "<mac|windows>": "mac", "<xml>": "collection.xml", '"<name>"': "Selector"}
     for command in commands:
         for placeholder, value in fill.items():
             command = command.replace(placeholder, value)
@@ -874,17 +874,19 @@ def test_step_4_runs_the_analysis_in_order_without_questions():  # R-106, NFR-07
     assert "?" not in step
     assert "Go make a coffee" in step and "about 5 minutes" in step
     tasks = re.findall(r"^\d+\. (\w[\w ]*?):", step, re.MULTILINE)
-    assert tasks == ["Read collection", "Profile", "Structure", "Taste", "Report"]
+    assert tasks == ["Profile", "Structure", "Taste", "Identity", "Report"]  # the task list stays at 5
     order = [
         "../dj-profile/scripts/profile.py --library <folder>",
         "../dj-structure/scripts/structure.py --library <folder>",
         "../dj-taste/scripts/taste.py --library <folder>",
+        "../dj-identity/scripts/identity.py --library <folder>",
         "profile/habits.md",
+        "profile/identity.md",
         "../dj-report/scripts/report.py --library <folder>",
     ]
     positions = [step.index(item) for item in order]
     assert positions == sorted(positions)
-    assert "../dj-profile/SKILL.md" in step
+    assert "../dj-profile/SKILL.md" in step and "../dj-identity/SKILL.md" in step
     assert "keep its one-line error for step 6" in step
 
 

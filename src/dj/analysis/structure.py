@@ -5,7 +5,7 @@ opens no database and writes only text files inside the library folder (R-341).
 
     facts(lib)   -> dict: depth, width, naming, sizes, overlap, orphans, empty, dumps,
                     smart_vs_plain, notes, reveals. Pure, JSON-serialisable, deterministic.
-    graph(lib)   -> dict: nodes, edges, overlaps (for the report's tree drawing).
+    graph(lib)   -> dict: nodes, edges, overlaps (for the report's crate wall).
     write(...)   -> structure/analysis.md, graph.json, facts.json, current-tree.yaml.
     run(folder)  -> read the latest export, compute, write, append one log.md line.
 
@@ -878,7 +878,8 @@ def write(
     today: date | None = None,
 ) -> list[Path]:
     """Write structure/analysis.md, graph.json, facts.json and current-tree.yaml (tool-owned,
-    rewritten each run, temp file + os.replace). If the DJ edited current-tree.yaml since the
+    rewritten each run, temp file + os.replace). facts.json also names the export it was
+    measured from (`export`, relative), so dj-identity can tell facts of another export. If the DJ edited current-tree.yaml since the
     last run, their file is first copied to structure/current-tree.edited-<date>.yaml (create
     only); that copy is the fifth path returned. A folder that is not a dj-library folder ->
     LibraryFolderError, nothing written. Never touches rekordbox (R-341)."""
@@ -889,7 +890,7 @@ def write(
     paths = [
         write_text(folder.structure / "analysis.md", render(facts, source=source, today=today)),
         write_text(folder.structure / "graph.json", _json(graph)),
-        write_text(folder.structure / "facts.json", _json(facts)),
+        write_text(folder.structure / "facts.json", _json({**facts, "export": source})),
     ]
     tree_path, kept = _write_tree(folder, doc, source=source, today=today)
     paths.append(tree_path)

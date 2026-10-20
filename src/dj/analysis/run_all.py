@@ -1,5 +1,6 @@
-"""The one-shot analysis: read the library once, then profile, structure, taste, proposals and the
-HTML report (dj-start step 4 in one call; R-104, R-401 ... R-406).
+"""The one-shot analysis: read the library once, then profile, structure, taste, identity,
+proposals and the HTML report (dj-start step 4 in one call; R-104, R-401 ... R-406, R-1401 ...
+R-1403).
 
 Door 1 core, except the master.db read: `dj.readers.db` (pyrekordbox) is imported only inside
 `analyze` when `source="db"`, so the module imports without the engine. The Library is read once
@@ -7,8 +8,8 @@ Door 1 core, except the master.db read: `dj.readers.db` (pyrekordbox) is importe
 through its `facts` / `write` functions, so data only master.db holds (My Tags, smart
 playlists) reaches every file. Each step appends its own log.md line, as its script does.
 
-Writes text files inside the library folder only: profile/, structure/, taste/, reports/ and
-log.md. Never writes to rekordbox, Spotify or audio files; the master.db read is a read-only
+Writes text files inside the library folder only: profile/ (identity.json and sleeve.svg
+included), structure/, taste/, reports/ and log.md. Never writes to rekordbox, Spotify or audio files; the master.db read is a read-only
 session on a snapshot copy (R-202). Files written there name the source relative to the folder
 ("exports/<date>-collection.xml") or "master.db", never an absolute path.
 
@@ -24,7 +25,7 @@ from typing import Any, Callable
 
 from dj import report as report_mod
 from dj import treeschema
-from dj.analysis import profile, structure, taste
+from dj.analysis import identity, profile, structure, taste
 from dj.analysis import proposals as proposals_mod
 from dj.analysis.common import library_folder, resolve_xml
 from dj.libfolder import LibraryFolder, append_log, latest_export
@@ -33,7 +34,7 @@ from dj.readers.xml import read_xml
 
 SOURCES = ("xml", "db")
 DB_SOURCE = "master.db"  # how files in the folder name a master.db read: never its absolute path
-STEPS = ("profile", "structure", "taste", "report")
+STEPS = ("profile", "structure", "taste", "identity", "report")
 
 
 def read_library(folder: LibraryFolder, *, source: str = "xml", xml: str | Path | None = None) -> tuple[Library, str]:
@@ -109,6 +110,14 @@ def analyze(
         added = sum(len(lines) for lines in result["added"].values())
         logs.append(append_log(folder.root, "taste", {"lines added": added}, file=folder.taste, now=when))
 
+    def do_identity() -> None:
+        made, paths = identity.from_library(
+            folder, lib, profile_facts, structure_facts, taste_facts, source=label, today=today
+        )
+        written.extend(folder.relative(p) for p in paths)
+        counts = {"axes": len(identity.AXES), "lanes": made["counts"]["lanes"]}
+        logs.append(append_log(folder.root, "identity", counts, identity.IDENTITY_JSON, now=when))
+
     def do_report() -> None:
         paths = proposals_mod.write_proposals(folder, found, today, source=label)
         written.append(folder.relative(paths[0]))
@@ -119,7 +128,7 @@ def analyze(
         counts = {"proposals": len(found), "files": len(paths) + 1}
         logs.append(append_log(folder.root, "report", counts, path, now=when))
 
-    for name, work in zip(STEPS, (do_profile, do_structure, do_taste, do_report)):
+    for name, work in zip(STEPS, (do_profile, do_structure, do_taste, do_identity, do_report)):
         step(name, work)
 
     c = lib.counts()

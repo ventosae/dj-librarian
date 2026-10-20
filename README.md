@@ -74,7 +74,7 @@ Your own configuration is gitignored. `links.yaml` belongs in your dj-library fo
 
 ## Claude plugin
 
-The plugin adds eleven skills (see `plugin/skills/`) and an MCP server with a fixed list of `dj` tools. A DJ starts with **dj-start** ("set me up"): it sets up the dj-library folder from a rekordbox XML export and writes the first report. Read tools and write tools are separate, so you can leave every write tool on "ask every time"; which tool is which: [docs/permissions.md](docs/permissions.md). In Claude Code the plugin also brings a PreToolUse hook (`plugin/hooks/`) that denies a write tool called without a `preview_id`.
+The plugin adds twelve skills (see `plugin/skills/`) and an MCP server with a fixed list of `dj` tools. A DJ starts with **dj-start** ("set me up"): it sets up the dj-library folder from a rekordbox XML export and writes the first report. Read tools and write tools are separate, so you can leave every write tool on "ask every time"; which tool is which: [docs/permissions.md](docs/permissions.md). In Claude Code the plugin also brings a PreToolUse hook (`plugin/hooks/`) that denies a write tool called without a `preview_id`.
 
 The plugin starts its MCP server from the folder above the plugin folder (`uv run --directory <plugin folder>/..`), so it works only while the plugin runs from your clone, after `uv sync` there.
 

@@ -35,6 +35,10 @@ DOOR1_MODULES = [
     "dj.crate",
     "dj.write_gate",
     "dj.activity_log",
+    "dj.design",  # W-31: the design tokens (R-408)
+    "dj.sleeve",  # W-31: the sleeve (R-1403)
+    "dj.analysis.identity",  # W-31: six axes, archetype, fingerprint (R-1401, R-1402)
+    "dj.report_charts",  # W-31: the report's crate wall, axes and sleeve layers (R-403, R-408)
 ]
 
 
@@ -84,6 +88,7 @@ SCRIPTS = {
     "dj-profile/scripts/profile.py": [],
     "dj-structure/scripts/structure.py": [],
     "dj-taste/scripts/taste.py": [],
+    "dj-identity/scripts/identity.py": [],
     "dj-report/scripts/report.py": [],
     "dj-barber/scripts/barber.py": ["next"],
     "dj-build/scripts/build.py": ["preview", "lanes"],

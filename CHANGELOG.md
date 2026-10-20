@@ -25,6 +25,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - Spotify for any DJ (W-25): `dj-spotify` skill with the setup card (own app, Premium, redirect URI, `.env`); the inbox loop follows `links.yaml` in the DJ's library folder; `dj wishlist shop` writes `wishlist/<crate>.shopping.md` with Beatport and Bandcamp search links; February 2026 API audit (`docs/spotify-audit.md`) with the removed batch artists call dropped. MCP `dj_wishlist_shop`.
 - `tests/test_skills.py` pins the eleven v0.1 skills.
 - Optional Cowork Project template `templates/project/instructions.md`: voice, the 10 reply rules, safety, the `dj-library/` folder conventions (W-26).
+- `dj-identity` skill (W-31): six measured axes (Depth, Selectivity, Discipline, Breadth, Momentum, Memory), an archetype picked by code from `archetypes.yaml`, and the sleeve, a deterministic 12-inch SVG fingerprint of the library (`profile/identity.json`, `profile/sleeve.svg`); Claude writes the liner notes (`profile/identity.md`). dj-start asks the DJ's handle (`library.yaml` `dj_name`); Style Barber names the archetype once.
+- Report redesign (W-31): the sleeve hero with handle, archetype, liner notes and the 5 stats; a crate wall with hatched dumps and the overlap arc; three proposal cards with mini sleeves; a sticky Next bar; Booth (dark, default) and Day themes; hover tooltips and a table link on every chart; phone and print layouts. `docs/design.md` is the design system and `scripts/check_palette.py` validates it in CI. `docs/samples/` with `report-booth.png` and `report-day.png`, made by `scripts/make_samples.py`.
 
 ### Changed
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.

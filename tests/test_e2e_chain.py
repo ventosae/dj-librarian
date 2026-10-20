@@ -1,7 +1,8 @@
 """The whole v0.1 chain on the synthetic library, one test, through the skill scripts.
 
 xml_fixtures export -> dj-start init -> dj-profile, dj-structure, dj-taste scripts -> MD files ->
-dj-report -> one self-contained HTML -> dj-build preview -> explicit preview id -> dj-build apply
+dj-identity (identity.json, sleeve.svg) -> dj-report -> one self-contained HTML -> dj-build
+preview -> explicit preview id -> dj-build apply
 -> a rekordbox XML that pyrekordbox reads back with the same playlists and tracks the proposal
 maps. No master.db, no network, no engine: every step runs as the DJ's Claude would run it.
 """
@@ -81,13 +82,26 @@ def test_the_whole_chain_from_export_to_an_importable_rekordbox_xml(tmp_path):
     assert (lib / "structure" / "current-tree.yaml").is_file()
     (lib / "profile" / "habits.md").write_text(HABITS, encoding="utf-8")  # Claude's words (R-312)
 
+    # P4: identity after taste (R-1401..R-1403): six axes, an archetype, the sleeve.
+    code, ident = run("dj-identity/scripts/identity.py", "--library", lib, "--today", TODAY)
+    assert code == 0 and ident["ok"] is True, ident
+    data = json.loads((lib / "profile" / "identity.json").read_text(encoding="utf-8"))
+    assert list(data["axes"]) == sorted(data["order"]) and len(data["axes"]) == 6
+    assert all(0 <= axis["score"] <= 100 for axis in data["axes"].values())
+    assert data["archetype"]["name"] == ident["archetype"]["name"] and data["archetype"]["slug"]
+    sleeve = (lib / "profile" / "sleeve.svg").read_bytes()
+    assert sleeve.startswith(b"<svg") and b"</svg>" in sleeve
+    code, again = run("dj-identity/scripts/identity.py", "--library", lib, "--today", TODAY)
+    assert code == 0 and (lib / "profile" / "sleeve.svg").read_bytes() == sleeve  # same export, same bytes
+
     # P5: one self-contained HTML with the four sections of R-402..R-406.
     code, out = run("dj-report/scripts/report.py", "--library", lib, "--today", TODAY)
     assert code == 0 and out["ok"] is True, out
     page = (lib / out["report"]).read_text(encoding="utf-8")
     for section in ("who", "structure", "proposals", "next"):
         assert f'<section id="{section}">' in page
-    assert not re.search(r"https?://|<script[^>]*\bsrc=|<link[^>]*\bhref=|@import|url\(", page, re.I)
+    # W-31: the dump hatch is an in-page SVG pattern, url(#...); nothing else may be referenced
+    assert not re.search(r"https?://|<script[^>]*\bsrc=|<link[^>]*\bhref=|@import|url\((?!#)", page, re.I)
     assert "a working crate" in page  # the narrative made it in
     triggers = [p["trigger"] for p in out["proposals"]]
     assert 2 <= len(triggers) <= 3 and all(t in page for t in triggers)

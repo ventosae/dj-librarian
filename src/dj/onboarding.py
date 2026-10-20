@@ -16,7 +16,9 @@ Rules this module keeps:
   `.gitignore` lines or rewrote library.yaml (latest export, rekordbox version, device). A run
   that changed nothing writes nothing.
 - The device the DJ gave last wins (R-101): a different device in library.yaml is changed
-  through `libfolder.update_meta` and reported as `device_was`.
+  through `libfolder.update_meta` and reported as `device_was`. The same goes for the DJ's
+  handle (`dj_name`, R-1406): given, it is written to library.yaml; not given, the stored one
+  stays.
 - Only rekordbox's own export counts as the collection: an XML whose PRODUCT names another
   program (a proposal this tool wrote, for one) is never picked or imported.
 - Every path returned is POSIX and relative to the library folder; a file outside it is shown
@@ -50,8 +52,8 @@ USER_FOLDERS = frozenset(
 
 REASONS = ("no_xml", "xml", "folder", "usage", "refused")
 NEXT = (
-    "Step 4 of 6: run profile, structure and taste, write profile/habits.md, then run the "
-    "report, each script with --library on this folder."
+    "Step 4 of 6: run profile, structure, taste and identity, write profile/habits.md and "
+    "profile/identity.md, then run the report, each script with --library on this folder."
 )
 NO_XML = (
     "No rekordbox XML in the library folder. Export the collection in rekordbox "
@@ -159,7 +161,8 @@ def _stored_meta(root: Path) -> dict[str, Any] | None:
 
 
 def folder_state(root: Path) -> dict[str, Any] | None:
-    """What a set-up folder already holds: device, latest export, newest report. None = not set up."""
+    """What a set-up folder already holds: device, the DJ's handle (`dj_name`, None when the folder
+    predates it: dj-start asks once), latest export, newest report. None = not set up."""
     meta = _stored_meta(root)
     if meta is None:
         return None
@@ -171,6 +174,7 @@ def folder_state(root: Path) -> dict[str, Any] | None:
     found = newest_report(reports.iterdir()) if reports.is_dir() else None
     return {
         "device": meta.get("device"),
+        "dj_name": meta.get("dj_name"),
         "latest_export": latest,
         "latest_report": libfolder.relative(root, found) if found else None,
     }
@@ -317,6 +321,7 @@ def init(
     xml: str | Path | None = None,
     today: date | None = None,
     now: datetime | None = None,
+    dj_name: str | None = None,
 ) -> dict[str, Any]:
     """Scaffold the folder, copy the export into exports/, read the copy, log one line.
 
@@ -324,11 +329,16 @@ def init(
     finds is used; none -> `no_xml`. Checked before anything is created: the device, an
     existing library.yaml (must be this tool's) and the whole XML (rekordbox's export, with
     tracks). The original XML is only read; the copy is `exports/<date>-collection.xml`, or
-    the existing copy when one has the same content (`new_export` false).
+    the existing copy when one has the same content (`new_export` false). `dj_name` (what they
+    call the DJ in the booth; one line, at most 40 characters) goes into library.yaml.
     """
     root = Path(root)
     if device not in DEVICES:
         raise OnboardingError(f"device must be one of {', '.join(DEVICES)}, got {device!r}", "usage")
+    try:
+        dj_name = libfolder.clean_dj_name(dj_name)
+    except LibraryFolderError as exc:
+        raise OnboardingError(f"--dj-name: {exc}", "usage") from None
     stored = _stored_meta(root) if root.is_dir() else None
     if xml is not None:
         source = Path(xml)
@@ -341,7 +351,8 @@ def init(
 
     try:
         made = libfolder.scaffold(
-            root, device=device, rekordbox_version=library.rekordbox_version, today=today
+            root, device=device, rekordbox_version=library.rekordbox_version, today=today,
+            dj_name=dj_name,
         )
     except LibraryFolderError as exc:
         raise OnboardingError(str(exc), "folder") from None
@@ -360,6 +371,8 @@ def init(
     if stored is not None and stored.get("device") != device:
         device_was = stored.get("device")
         libfolder.update_meta(root, today=today, device=device)
+    if dj_name and libfolder.load_meta(root).get("dj_name") != dj_name:
+        libfolder.update_meta(root, today=today, dj_name=dj_name)
 
     export_rel = libfolder.relative(root, export)
     new_export = export.name not in before
@@ -387,6 +400,7 @@ def init(
         "new_export": new_export,
         "device": meta.get("device"),
         "device_was": device_was,
+        "dj_name": meta.get("dj_name"),
         "rekordbox_version": meta.get("rekordbox_version"),
         "counts": counts,
         "not_in_xml": {"fields": list(XML_FIELDS_MISSING), "notes": list(XML_NOTES)},

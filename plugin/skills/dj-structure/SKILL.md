@@ -39,7 +39,7 @@ All text, all inside the library folder, paths relative to it. The tool rewrites
 |---|---|
 | `structure/analysis.md` | Shape, Naming, Sizes, Overlap, Orphans and empty, Dumps, What it reveals. 5 rows at most per section. |
 | `structure/facts.json` | Every number and the full lists behind analysis.md. |
-| `structure/graph.json` | `nodes`, `edges` and `overlaps` for the tree drawing in the report. |
+| `structure/graph.json` | `nodes`, `edges` and `overlaps` for the crate wall in the report. |
 | `structure/current-tree.yaml` | The tree as code (below). |
 | `log.md` | One line: `structure -> N playlists, N folders, N files; structure/analysis.md`. |
 

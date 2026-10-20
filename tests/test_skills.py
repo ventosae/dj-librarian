@@ -318,12 +318,12 @@ def test_r1003_spot_check_on_the_report(tmp_path):
 
 EXPECTED_SKILLS = {
     "dj-start", "dj-profile", "dj-structure", "dj-taste", "dj-report", "dj-build",
-    "dj-crate", "dj-barber", "dj-spotify", "dj-sync", "dj-tidy",
+    "dj-crate", "dj-barber", "dj-spotify", "dj-sync", "dj-tidy", "dj-identity",
 }  # fmt: skip
 
 
 def test_the_v01_skill_set_is_complete():
-    """BUILD-v0.1 success criterion: these eleven skills, no more, no fewer."""
+    """BUILD-v0.1 success criterion, plus dj-identity (W-31): these twelve skills, no more, no fewer."""
     folders = {p.name for p in (Path(__file__).resolve().parents[1] / "plugin" / "skills").iterdir() if p.is_dir()}
     assert folders == EXPECTED_SKILLS
 

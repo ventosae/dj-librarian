@@ -29,6 +29,7 @@ WRITTEN = [
     "structure/analysis.md", "structure/graph.json", "structure/facts.json", "structure/current-tree.yaml",
     "taste/lanes.md", "taste/labels-artists.md", "taste/anchors.md", "taste/vocabulary.md",
     "taste/facts.json", "taste/cooccurrence.json",
+    "profile/identity.json", "profile/sleeve.svg",
     "structure/proposals.yaml", REPORT,
 ]  # fmt: skip
 runner = CliRunner()
@@ -88,10 +89,10 @@ def test_analyze_xml_writes_every_file_and_only_inside_the_library(lib_dir, tmp_
 
     assert len(reads) == 1  # the library is read once
     assert list(result)[0] == "counts"
-    assert result["counts"] == {"tracks": 24, "playlists": 8, "folders": 3, "proposals": 3, "files": 14, "failed": 0}
+    assert result["counts"] == {"tracks": 24, "playlists": 8, "folders": 3, "proposals": 3, "files": 16, "failed": 0}
     assert (result["source"], result["read"], result["report"]) == ("xml", EXPORT, REPORT)
     assert result["written"] == WRITTEN and result["kept"] == [] and result["failed"] == []
-    assert [line.split(" ", 3)[2] for line in result["log"]] == ["profile", "structure", "taste", "report"]
+    assert [line.split(" ", 3)[2] for line in result["log"]] == ["profile", "structure", "taste", "identity", "report"]
     changed = {p for p in after if before.get(p) != after[p]}
     assert changed == {f"dj-library/{rel}" for rel in WRITTEN} | {"dj-library/log.md"}
     assert set(before) <= set(after)  # nothing removed; the export and the DJ's XML untouched
@@ -111,7 +112,7 @@ def test_a_second_run_keeps_what_the_dj_edited(lib_dir):
     result = run_all.analyze(lib_dir, today=DAY)
     assert result["kept"] == ["structure/proposals.edited-2026-10-20.yaml"]
     assert result["report"] == "reports/2026-10-20-library-2.html"
-    assert result["counts"]["files"] == 15
+    assert result["counts"]["files"] == 17
 
 
 def test_a_step_that_fails_is_named_and_the_report_still_renders(lib_dir, monkeypatch):
@@ -174,6 +175,9 @@ def test_analyze_db_reads_one_snapshot_and_db_data_reaches_every_file(lib_dir, l
         assert {"from": "All Techno", "to": P.STAYS} in entry["lands"]
     page = (lib_dir / result["report"]).read_text(encoding="utf-8")
     assert "read from master.db" in page and "Not in this source" not in page
+    ident = json.loads((lib_dir / "profile" / "identity.json").read_text(encoding="utf-8"))
+    assert ident["source"] == "master.db" and len(ident["seed"]) == 64  # no export file: seeded by the counts
+    assert ident["axes"]["memory"]["inputs"]["my_tags"] is not None  # master.db carries My Tags
     for rel in result["written"] + ["log.md"]:
         text = (lib_dir / rel).read_text(encoding="utf-8")
         assert live.parent.as_posix() not in text and str(live.parent) not in text, rel

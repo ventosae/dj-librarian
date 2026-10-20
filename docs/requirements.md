@@ -96,6 +96,8 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-405 | Proposal families: Bases (genre base → inbox / crates / sets), Facets (5–8 shallow genre buckets + My Tag Role / Body / Vibe / Status + gig crates), Gig-first (crates per residency or event + archive). The DJ's patterns pick which and how named. | M | Picking rules documented in the skill. | Built | v0.1 |
 | R-406 | Section 4: one next action under two minutes. | M | Present. | Built | v0.1 |
 | R-407 | Report written in the voice (R-1001) and passes the ADHD rules (R-1002). | M | Checklists pass. | Built | v0.1 |
+| R-408 | Visual design per `docs/design.md`: tokens on `:root`, dark and light selected (not flipped), fixed categorical order, thin marks, direct labels, one axis, legend for ≥ 2 series, hover tooltips, a table-view link (the MD files) for every chart. | M | `scripts/check_palette.py` passes; design checklist in the PR. | Built | v0.1 |
+| R-409 | A rendered screenshot of the sample report (`docs/samples/report.png`, ≥ 1100 px wide, full page) is committed with every report change for the PM's eyeball pass. | M | PNG present and current. | Built | v0.1 |
 
 ### E5 Build a structure (`dj-build`)
 
@@ -181,6 +183,17 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-1301 | Windows 11 + rekordbox 7.2.x. | M | Anton's machine. | Built | v0.1 |
 | R-1302 | macOS + rekordbox 7.x. | M | CI green on macOS; live `dj_status` on the first Mac tester. | Built | v0.1 |
 | R-1303 | `dj tidy` (audio files) on macOS. | C | — | Proposed | v0.2 |
+
+### E14 Identity (`dj-identity`) — the sleeve
+
+| ID | Requirement | Pri | Acceptance | Status | Release |
+|---|---|---|---|---|---|
+| R-1401 | Six measured axes, 0–100, from facts already in `profile/`, `structure/`, `taste/`: Depth (era spread, catalogue age), Selectivity (lossless + ≥320 kbps share, bitrate floor), Discipline (named-folder share, dump ratio, orphan share, duplicate groups), Breadth (genre and BPM-lane spread), Momentum (adds in the last 365 days), Memory (ratings, colours, comments, My Tags use). | M | `profile/identity.json` holds the six scores with the inputs each used. | Built (genre spread and fingerprint measured from the export, W-31) | v0.1 |
+| R-1402 | A deterministic archetype from the two strongest axes, picked by code from `archetypes.yaml` (8 entries, names in the voice, affectionate never insulting, each with a one-line meaning and one booth line). Same library → same archetype. | M | Table-driven test over all 28 axis pairs. | Built | v0.1 |
+| R-1403 | The sleeve: a square SVG, 12-inch-record proportions, generated from the facts: a radial fingerprint (rings = decades, segments = BPM bands, thickness = share), lanes coloured in the fixed categorical order, the DJ's handle in display type, the archetype as subtitle, the three lanes as liner notes. Deterministic: seeded by a hash of the export so it only changes when the library does. | M | `profile/sleeve.svg` written; identical bytes on a second run of the same export; valid SVG; no external refs. | Built | v0.1 |
+| R-1404 | Claude writes `profile/identity.md`: the liner notes, ≤ 120 words, in the voice, from the archetype and axes only. | M | File exists after a session; numbers only from identity.json. | Built | v0.1 |
+| R-1405 | The report hero shows the sleeve, the archetype, the liner notes and the 5 stats. Style Barber reads the archetype as context (one line). | M | Hero renders from the files; barber mentions the archetype once. | Built | v0.1 |
+| R-1406 | The DJ's handle comes from `library.yaml` (`dj_name`, asked once by dj-start at step 1 as "What do they call you in the booth?"; default "You"). | M | dj-start step 1 has the question; the sleeve uses it. | Built | v0.1 |
 
 ## 6. Non-functional
 

@@ -10,13 +10,13 @@ report on their own library. rekordbox is never touched: the tool reads a copy o
 
 **Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
 
-**Requirements:** R-101, R-102, R-103, R-104, R-105, R-106, R-107.
+**Requirements:** R-101, R-102, R-103, R-104, R-105, R-106, R-107, R-1406.
 
 ## Your moves
 
 Before the work phase the DJ does exactly this, nothing more (R-106):
 
-1. Tap their device: Mac or Windows.
+1. Tap their device, Mac or Windows, and give the name they go by in the booth if they want it on the report.
 2. Export the collection XML from rekordbox.
 3. Connect a folder in Cowork and drop the XML into it.
 
@@ -37,7 +37,14 @@ version the step gives (Q-05).
 Already set up: when a folder is connected before step 1, run find-xml on it first. `library` not
 null means the folder holds this tool's `library.yaml`: take the device from `library.device`,
 skip step 1, then run init with find-xml's `xml` when it found one, without a word (init copies a
-new export and skips one it already has). Then go to the first that fits:
+new export and skips one it already has; without `--dj-name` the handle in `library.yaml` stays).
+One exception: `library.dj_name` is null (the folder was set up before the handle existed). Then
+ask once, in one line, and wait for the answer before init:
+
+`Step 1 of 6 · under a minute. What do they call you in the booth? It goes on the report; skip it and it says You.`
+
+Pass the name as `--dj-name "<name>"` to that init; "skip" passes `--dj-name You`, so
+`library.yaml` keeps the answer and the question never comes back. Then go to the first that fits:
 
 - Nothing to read (no `xml` and no `library.latest_export`): step 2.
 - A new export (`new_export` true) or no report yet (`library.latest_report` null): step 4.
@@ -47,22 +54,28 @@ new export and skips one it already has). Then go to the first that fits:
 
 ### Step 1: Hello (P1)
 
-One line in the voice that ends with the device question, shown as two chips: **Mac** and **Windows**.
+One line in the voice with two questions: the device, shown as two chips (**Mac** and
+**Windows**), and the DJ's handle, free text and optional (R-1406).
 
 ```text
-Step 1 of 6 · under a minute. I'll read your rekordbox collection and hand you one report on how your library is built, 3 moves from you. Mac or Windows?
+Step 1 of 6 · under a minute. I'll read your rekordbox collection and hand you one report on how your library is built, 3 moves from you. What do they call you in the booth? It goes on the report; skip it and the report says You. Mac or Windows? Tap one, or type it with your name: "Mac, DJ Sample".
 ```
 
 No chips: the numbered version.
 
 ```text
-Step 1 of 6 · under a minute. I'll read your rekordbox collection and hand you one report on how your library is built, 3 moves from you. Mac or Windows? Reply 1 or 2.
+Step 1 of 6 · under a minute. I'll read your rekordbox collection and hand you one report on how your library is built, 3 moves from you. What do they call you in the booth? It goes on the report; skip it and it says You. Mac or Windows? Reply 1 or 2, with your name after it if you like: "1 DJ Sample".
 1. Mac
 2. Windows
 ```
 
-Remember the answer. From here on show only that OS, never both (R-101). It becomes
-`--device mac` or `--device windows` in step 3, and `library.yaml` keeps it for later sessions.
+Remember both answers. The device: from here on show only that OS, never both (R-101). It
+becomes `--device mac` or `--device windows` in step 3, and `library.yaml` keeps it for later
+sessions. The handle: whatever name they give (one line, at most 40 characters) becomes
+`--dj-name "<name>"` in step 3 and goes into `library.yaml` as `dj_name`; the sleeve and the
+report use it. A name given in their next message still counts: use it. A tapped chip with
+nothing after it, or "skip", means `--dj-name You`: the report says You, and `library.yaml`
+records that they were asked. Never ask for the handle again in this session.
 
 ### Step 2: Export (P2)
 
@@ -97,10 +110,11 @@ Once the folder is connected, with the device from step 1:
 
 1. `python3 scripts/start.py find-xml --library <folder>`: the newest rekordbox XML in the folder
    (`xml`), outside `exports/` and `proposals/`.
-2. `python3 scripts/start.py init --library <folder> --device <mac|windows> --xml <xml>`: scaffolds
-   the folder (R-103), copies the XML into `exports/` (the original stays where the DJ put it),
-   reads the copy, records device, rekordbox version and date in `library.yaml`, and appends one
-   line to `log.md` when anything changed.
+2. `python3 scripts/start.py init --library <folder> --device <mac|windows> --dj-name "<name>" --xml <xml>`:
+   scaffolds the folder (R-103), copies the XML into `exports/`
+   (the original stays where the DJ put it), reads the copy, records device, rekordbox version,
+   date and the handle in `library.yaml`, and appends one line to `log.md` when anything changed. Leave out
+   `--dj-name` when the DJ gave no name.
 
 find-xml returned `library` (the folder was set up in an earlier session): after init, go on as
 Already set up says.
@@ -161,19 +175,20 @@ Step 4 of 6 · about 5 minutes. Go make a coffee.
 ```
 
 Show a task list with these 5 items and tick each one off as it finishes. Run them in order, each
-script with `--library <folder>`:
+script with `--library <folder>` (`init` already read the collection in step 3):
 
-1. Read collection: `init` did it in step 3. Tick it at once.
-2. Profile: `python3 ../dj-profile/scripts/profile.py --library <folder>`
-3. Structure: `python3 ../dj-structure/scripts/structure.py --library <folder>`
-4. Taste: `python3 ../dj-taste/scripts/taste.py --library <folder>`
-5. Report: write `profile/habits.md` yourself (rules in `../dj-profile/SKILL.md`), then
+1. Profile: `python3 ../dj-profile/scripts/profile.py --library <folder>`
+2. Structure: `python3 ../dj-structure/scripts/structure.py --library <folder>`
+3. Taste: `python3 ../dj-taste/scripts/taste.py --library <folder>`
+4. Identity: `python3 ../dj-identity/scripts/identity.py --library <folder>`
+5. Report: write `profile/habits.md` (rules in `../dj-profile/SKILL.md`) and
+   `profile/identity.md` (the liner notes, rules in `../dj-identity/SKILL.md`) yourself, then
    `python3 ../dj-report/scripts/report.py --library <folder>`.
 
 No task list: send this line instead.
 
 ```text
-Step 4 of 6 · about 5 minutes. Go make a coffee. Working: read collection, profile, structure, taste, report.
+Step 4 of 6 · about 5 minutes. Go make a coffee. Working: profile, structure, taste, identity, report.
 ```
 
 A script fails (exit 1 or 2): mark that item failed, keep its one-line error for step 6, run the

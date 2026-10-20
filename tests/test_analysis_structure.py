@@ -566,7 +566,7 @@ def test_run_writes_the_four_files_and_one_log_line(folder):
         r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} structure -> 8 playlists, 3 folders, 4 files; structure/analysis\.md",
         log[-1],
     )
-    assert json.loads((folder / "structure" / "facts.json").read_text(encoding="utf-8")) == st.facts(
+    assert json.loads((folder / "structure" / "facts.json").read_text(encoding="utf-8")) == {"export": EXPORT} | st.facts(
         read_xml(folder / EXPORT), today=TODAY
     )
     assert json.loads((folder / "structure" / "graph.json").read_text(encoding="utf-8")) == st.graph(

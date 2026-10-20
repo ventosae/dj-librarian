@@ -1,0 +1,80 @@
+# dj-identity archetypes (R-1402). Code picks, Claude narrates.
+#
+# The two strongest of the six axes (depth, selectivity, discipline, breadth, momentum,
+# memory; ties go to the earlier axis in that order) form one unordered pair, and the
+# archetype that lists that pair is the DJ's. Six axes make 15 pairs: every pair belongs to
+# exactly one archetype below, and every archetype owns at least one pair. A test checks both.
+#
+# Each archetype: slug (stable id), name (said to the DJ), meaning (one line: what the two
+# axes say), booth_line (one line a DJ with this library would say in the booth), pairs.
+# Affectionate, in the voice of plugin/shared/voice.md, never a joke at the DJ's expense.
+#
+# A meaning must be true for every pair its archetype owns: it names only what those axes
+# measure, and when the pairs differ it says what they share (a test maps words to axes).
+# No count in a meaning or a booth line: the liner notes quote them word for word, and every
+# count there comes from identity.json. The package carries a copy of this file
+# (src/dj/analysis/archetypes.yaml); a test keeps the two the same.
+
+archetypes:
+  - slug: crate-archaeologist
+    name: The Crate Archaeologist
+    meaning: Decades deep. The old records are where you dig.
+    booth_line: Give me a minute, I have the original of that one somewhere.
+    pairs:
+      - [depth, breadth]
+      - [depth, momentum]
+
+  - slug: archivist
+    name: The Archivist
+    meaning: "Your records are looked after, not just collected: you know your way around every crate."
+    booth_line: Third folder, green tag, two stars on the edit. Got it.
+    pairs:
+      - [depth, discipline]
+      - [depth, memory]
+      - [discipline, memory]
+
+  - slug: reissue-hunter
+    name: The Reissue Hunter
+    meaning: "Old records in good copies: decades deep, and picky about the file."
+    booth_line: Same record, cleaner master. Always the cleaner master.
+    pairs:
+      - [depth, selectivity]
+
+  - slug: sound-engineer
+    name: The Sound Engineer
+    meaning: Quality first. Lossless or 320 wherever you can get it, and it shows on a big system.
+    booth_line: If it isn't lossless or 320, it doesn't go on the stick.
+    pairs:
+      - [selectivity, discipline]
+      - [selectivity, breadth]
+      - [selectivity, memory]
+
+  - slug: day-one-buyer
+    name: The Day-One Buyer
+    meaning: New records, bought in top quality, and you keep buying.
+    booth_line: Came out Friday, bought the WAV, played it Saturday.
+    pairs:
+      - [selectivity, momentum]
+
+  - slug: open-format-pro
+    name: The Open-Format Pro
+    meaning: Every style, and you can put your hand on any of it. Ready for whatever room you walk into.
+    booth_line: Wedding at eight, warehouse at two, same USB.
+    pairs:
+      - [discipline, breadth]
+      - [breadth, memory]
+
+  - slug: omnivore
+    name: The Omnivore
+    meaning: Wide ears and a steady flow of new music from every direction.
+    booth_line: Something from every corner in this week's folder. Watch the floor.
+    pairs:
+      - [breadth, momentum]
+
+  - slug: weekly-ritual
+    name: The Tuesday Digger
+    meaning: You keep adding and you keep up with it, so the crate never goes stale.
+    booth_line: Tuesday I dig, Wednesday I tag, Saturday I play.
+    pairs:
+      - [discipline, momentum]
+      - [momentum, memory]

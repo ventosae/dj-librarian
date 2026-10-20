@@ -762,7 +762,7 @@ def _skill_text() -> tuple[dict, str]:
 def test_skill_md():
     meta, body = _skill_text()
     assert meta["name"] == "dj-barber" and meta["description"].strip()
-    assert "**Requirements:** R-701, R-702, R-703." in body
+    assert "**Requirements:** R-701, R-702, R-703, R-1405." in body
     assert "[shared/voice.md](../../shared/voice.md)" in body and "[shared/adhd.md](../../shared/adhd.md)" in body
     for needle in (
         "one question", "never ask two in one reply", "Question 3 of 8 · about 6 minutes left",

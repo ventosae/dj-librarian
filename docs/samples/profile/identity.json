@@ -1,0 +1,399 @@
+{
+  "archetype": {
+    "booth_line": "Give me a minute, I have the original of that one somewhere.",
+    "meaning": "Decades deep. The old records are where you dig.",
+    "name": "The Crate Archaeologist",
+    "slug": "crate-archaeologist"
+  },
+  "axes": {
+    "breadth": {
+      "formula": "100 * (0.4 * min(effective_genres / 6, 1) + 0.3 * min(lanes / 5, 1) + 0.3 * min(bands_used / 6, 1))",
+      "inputs": {
+        "bands_used": 6,
+        "bpm_tagged": 24,
+        "effective_genres": 4.93,
+        "genres": 5,
+        "lanes": 3
+      },
+      "name": "Breadth",
+      "score": 81
+    },
+    "depth": {
+      "formula": "100 * (0.6 * min(effective_decades / 5, 1) + 0.4 * min(median_age_years / 25, 1))",
+      "inputs": {
+        "dated_tracks": 23,
+        "decades": 6,
+        "effective_decades": 5.64,
+        "median_age_years": 21,
+        "median_decade": "2000s",
+        "newest": "2020s",
+        "oldest": "1970s"
+      },
+      "name": "Depth",
+      "score": 94
+    },
+    "discipline": {
+      "formula": "100 * (0.2 * in_folders_share + 0.3 * (1 - dump_share) + 0.3 * (1 - orphan_share) + 0.2 * (1 - min(2 * duplicate_share, 1)))",
+      "inputs": {
+        "dump_share": 0.667,
+        "dumps": 1,
+        "duplicate_groups": 2,
+        "duplicate_share": 0.167,
+        "in_folders": 6,
+        "in_folders_share": 0.75,
+        "orphan_share": 0.083,
+        "playlists": 8
+      },
+      "name": "Discipline",
+      "score": 66
+    },
+    "memory": {
+      "formula": "mean fill % of rating, colour, comment, my_tags (only the fields the source carries)",
+      "inputs": {
+        "carried": 3,
+        "colour": 71,
+        "comment": 71,
+        "my_tags": null,
+        "rating": 83
+      },
+      "name": "Memory",
+      "score": 75
+    },
+    "momentum": {
+      "formula": "100 * (0.4 * min(recent_share / 0.25, 1) + 0.3 * min(pace / 2, 1) + 0.3 * freshness)",
+      "inputs": {
+        "added_last_365_days": 4,
+        "adds_per_year": 3.2,
+        "days_since_last_add": 73,
+        "freshness": 0.8,
+        "pace": 1.25,
+        "recent_share": 0.167
+      },
+      "name": "Momentum",
+      "score": 69
+    },
+    "selectivity": {
+      "formula": "100 * (0.4 * high_share + 0.3 * min(lossless_share / 0.5, 1) + 0.3 * (1 - min(under_256_share / 0.25, 1)))",
+      "inputs": {
+        "at_320": 8,
+        "high_share": 0.667,
+        "known_bitrate": 24,
+        "lossless": 8,
+        "lossless_share": 0.333,
+        "under_256": 4,
+        "under_256_share": 0.167
+      },
+      "name": "Selectivity",
+      "score": 57
+    }
+  },
+  "by": "dj.analysis.identity",
+  "counts": {
+    "axes": 6,
+    "bands": 8,
+    "decades": 6,
+    "lanes": 3,
+    "tracks": 24
+  },
+  "date": "2026-10-20",
+  "fingerprint": {
+    "bands": [
+      {
+        "band": "<100",
+        "hi": 100,
+        "lane": "100-109",
+        "lo": null,
+        "share": 0.0833,
+        "slot": 1,
+        "tracks": 2
+      },
+      {
+        "band": "100-110",
+        "hi": 110,
+        "lane": "100-109",
+        "lo": 100,
+        "share": 0.1667,
+        "slot": 1,
+        "tracks": 4
+      },
+      {
+        "band": "110-118",
+        "hi": 118,
+        "lane": null,
+        "lo": 110,
+        "share": 0.0833,
+        "slot": null,
+        "tracks": 2
+      },
+      {
+        "band": "118-122",
+        "hi": 122,
+        "lane": "119-122",
+        "lo": 118,
+        "share": 0.2083,
+        "slot": 2,
+        "tracks": 5
+      },
+      {
+        "band": "122-125",
+        "hi": 125,
+        "lane": "122-127",
+        "lo": 122,
+        "share": 0.2083,
+        "slot": 3,
+        "tracks": 5
+      },
+      {
+        "band": "125-128",
+        "hi": 128,
+        "lane": "122-127",
+        "lo": 125,
+        "share": 0.0417,
+        "slot": 3,
+        "tracks": 1
+      },
+      {
+        "band": "128-135",
+        "hi": 135,
+        "lane": null,
+        "lo": 128,
+        "share": 0.2083,
+        "slot": null,
+        "tracks": 5
+      },
+      {
+        "band": "135+",
+        "hi": null,
+        "lane": null,
+        "lo": 135,
+        "share": 0.0,
+        "slot": null,
+        "tracks": 0
+      }
+    ],
+    "counts": [
+      [
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0,
+        4,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        3,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        2,
+        1,
+        3,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        2,
+        0
+      ]
+    ],
+    "edges": [
+      100,
+      110,
+      118,
+      122,
+      125,
+      128,
+      135
+    ],
+    "no_bpm": 0,
+    "no_year": 1,
+    "placed": 23,
+    "rings": [
+      {
+        "decade": "1970s",
+        "share": 0.087,
+        "tracks": 2
+      },
+      {
+        "decade": "1980s",
+        "share": 0.1739,
+        "tracks": 4
+      },
+      {
+        "decade": "1990s",
+        "share": 0.2174,
+        "tracks": 5
+      },
+      {
+        "decade": "2000s",
+        "share": 0.1304,
+        "tracks": 3
+      },
+      {
+        "decade": "2010s",
+        "share": 0.2609,
+        "tracks": 6
+      },
+      {
+        "decade": "2020s",
+        "share": 0.1304,
+        "tracks": 3
+      }
+    ],
+    "shares": [
+      [
+        0.0435,
+        0.0435,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0435,
+        0.0435,
+        0.087,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0435,
+        0.0,
+        0.1739,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1304,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.087,
+        0.0435,
+        0.1304,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0435,
+        0.0,
+        0.0,
+        0.087,
+        0.0
+      ]
+    ]
+  },
+  "handle": "DJ Sample",
+  "lanes": [
+    {
+      "hi": 109,
+      "key": "lane:funk-disco-78-92",
+      "label": "100-109",
+      "lo": 100,
+      "median": 104,
+      "playlists": [
+        "funk & disco 78-92"
+      ],
+      "slot": 1,
+      "tracks": 7
+    },
+    {
+      "hi": 122,
+      "key": "lane:house-1-1-warm-up",
+      "label": "119-122",
+      "lo": 119,
+      "median": 120,
+      "playlists": [
+        "House/1.1_warm_up",
+        "House/Deep/deep_rollers"
+      ],
+      "slot": 2,
+      "tracks": 6
+    },
+    {
+      "hi": 127,
+      "key": "lane:gigs-gig-2025-03-warehouse",
+      "label": "122-127",
+      "lo": 122,
+      "median": 124,
+      "playlists": [
+        "House/1.2_peak",
+        "Gigs/Gig 2025-03 Warehouse"
+      ],
+      "slot": 3,
+      "tracks": 9
+    }
+  ],
+  "order": [
+    "depth",
+    "selectivity",
+    "discipline",
+    "breadth",
+    "momentum",
+    "memory"
+  ],
+  "schema": 1,
+  "seed": "417108838ca9bac9b9a0c080df1bbfb7401a89a87a8a95f028925425ce7f3c7e",
+  "source": "exports/2026-10-20-collection.xml",
+  "top": [
+    "depth",
+    "breadth"
+  ]
+}

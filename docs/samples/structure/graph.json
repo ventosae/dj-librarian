@@ -1,0 +1,130 @@
+{
+  "nodes": [
+    {
+      "id": "House",
+      "path": "House",
+      "name": "House",
+      "kind": "folder",
+      "tracks": 10,
+      "depth": 1
+    },
+    {
+      "id": "House/1.1_warm_up",
+      "path": "House/1.1_warm_up",
+      "name": "1.1_warm_up",
+      "kind": "playlist",
+      "tracks": 4,
+      "depth": 2
+    },
+    {
+      "id": "House/1.2_peak",
+      "path": "House/1.2_peak",
+      "name": "1.2_peak",
+      "kind": "playlist",
+      "tracks": 6,
+      "depth": 2
+    },
+    {
+      "id": "House/Deep",
+      "path": "House/Deep",
+      "name": "Deep",
+      "kind": "folder",
+      "tracks": 4,
+      "depth": 2
+    },
+    {
+      "id": "House/Deep/deep_rollers",
+      "path": "House/Deep/deep_rollers",
+      "name": "deep_rollers",
+      "kind": "playlist",
+      "tracks": 4,
+      "depth": 3
+    },
+    {
+      "id": "House/Deep/empty_ideas",
+      "path": "House/Deep/empty_ideas",
+      "name": "empty_ideas",
+      "kind": "playlist",
+      "tracks": 0,
+      "depth": 3
+    },
+    {
+      "id": "Gigs",
+      "path": "Gigs",
+      "name": "Gigs",
+      "kind": "folder",
+      "tracks": 12,
+      "depth": 1
+    },
+    {
+      "id": "Gigs/Gig 2025-03 Warehouse",
+      "path": "Gigs/Gig 2025-03 Warehouse",
+      "name": "Gig 2025-03 Warehouse",
+      "kind": "playlist",
+      "tracks": 8,
+      "depth": 2
+    },
+    {
+      "id": "Gigs/Gig 2025-11 Rooftop",
+      "path": "Gigs/Gig 2025-11 Rooftop",
+      "name": "Gig 2025-11 Rooftop",
+      "kind": "playlist",
+      "tracks": 6,
+      "depth": 2
+    },
+    {
+      "id": "unsorted dump",
+      "path": "unsorted dump",
+      "name": "unsorted dump",
+      "kind": "playlist",
+      "tracks": 16,
+      "depth": 1
+    },
+    {
+      "id": "funk & disco 78-92",
+      "path": "funk & disco 78-92",
+      "name": "funk & disco 78-92",
+      "kind": "playlist",
+      "tracks": 7,
+      "depth": 1
+    }
+  ],
+  "edges": [
+    {
+      "source": "House",
+      "target": "House/1.1_warm_up"
+    },
+    {
+      "source": "House",
+      "target": "House/1.2_peak"
+    },
+    {
+      "source": "House",
+      "target": "House/Deep"
+    },
+    {
+      "source": "House/Deep",
+      "target": "House/Deep/deep_rollers"
+    },
+    {
+      "source": "House/Deep",
+      "target": "House/Deep/empty_ideas"
+    },
+    {
+      "source": "Gigs",
+      "target": "Gigs/Gig 2025-03 Warehouse"
+    },
+    {
+      "source": "Gigs",
+      "target": "Gigs/Gig 2025-11 Rooftop"
+    }
+  ],
+  "overlaps": [
+    {
+      "a": "House/1.2_peak",
+      "b": "Gigs/Gig 2025-03 Warehouse",
+      "jaccard": 0.556,
+      "shared": 5
+    }
+  ]
+}

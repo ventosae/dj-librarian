@@ -859,13 +859,37 @@ def start(folder: LibraryFolder | str | Path, *, today: date | None = None) -> t
     return session, False
 
 
+IDENTITY_JSON = "profile/identity.json"  # dj-identity's file (R-1405)
+
+
+def archetype_line(folder: LibraryFolder | str | Path) -> str | None:
+    """One line naming the DJ's archetype from profile/identity.json (dj-identity), as context
+    for the session: "From your sleeve: <name>. <meaning>". None when the file is missing or
+    does not hold an archetype."""
+    root = folder.root if isinstance(folder, LibraryFolder) else Path(folder)
+    try:
+        data = json.loads((root / IDENTITY_JSON).read_bytes().decode("utf-8"))
+        archetype = data["archetype"]
+        name, meaning = _norm(archetype["name"]), _norm(archetype.get("meaning", ""))
+    except (OSError, UnicodeDecodeError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    if not name:
+        return None
+    return f"From your sleeve: {name}." + (f" {meaning}" if meaning else "")
+
+
 def next_step(folder: LibraryFolder | str | Path, *, today: date | None = None) -> dict[str, Any]:
-    """`barber next`: plan or resume today's session; counts first, then the next question
-    (None when the session is done) and the taste files it added lines to so far."""
+    """`barber next`: plan or resume today's session; counts first, then the archetype line, the
+    next question (None when the session is done) and the taste files it added lines to so far.
+
+    `archetype_line` (R-1405) is set once per session: on the first `next` of a newly planned
+    session, before any answer, when profile/identity.json exists; None otherwise."""
     session, resumed = start(folder, today=today)
     q = session.next_question()
+    first = not resumed and not session.answers and q is not None
     return {
         "counts": session.counts(),
+        "archetype_line": archetype_line(folder) if first else None,
         "date": session.day.isoformat(),
         "source": session.source,
         "resumed": resumed,

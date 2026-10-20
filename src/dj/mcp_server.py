@@ -591,9 +591,11 @@ ANALYZE_SOURCES = ("xml", "db")
 def dj_library_analyze(source: str = "xml") -> str:
     """Analyse the DJ's library in one go and render the HTML report: reads the library once
     (source "xml" = the latest export in the dj-library folder; "db" = a read-only snapshot of
-    master.db), then writes profile/, structure/ (incl. proposals.yaml with 2-3 restructure
-    proposals), taste/ and reports/<date>-library.html, plus log.md lines. Text files in the
-    configured dj-library folder only; rekordbox, Spotify and audio files are never written.
+    master.db), then writes profile/ (incl. identity.json, the six axes and the archetype, and
+    sleeve.svg), structure/ (incl. proposals.yaml with 2-3 restructure proposals), taste/ and
+    reports/<date>-library.html, plus log.md lines. Identity runs after taste, before the
+    report. Text files in the configured dj-library folder only; rekordbox, Spotify and audio
+    files are never written.
     Returns counts first, the report path, the proposals (trigger, cost) and any failed step.
     It always rebuilds structure/proposals.yaml (an edited copy is kept first): after renaming a
     proposal, render with the dj-report script instead. exit_code 2 = refused, see `hint`."""
@@ -1020,7 +1022,8 @@ def dj_barber_next() -> str:
     questions, about 10 minutes) or resume it, and return counts (questions, answered, skipped,
     left) and the next question: n, progress line, kind (ab, name_lane, veto, pair, gig),
     prompt, options/chips (empty = free text), tracks, the taste file an answer goes to.
-    `done` true = nothing left today. Writes only .cache/barber.json; never rekordbox.
+    `archetype_line`: the DJ's archetype in one line, only with a new session's first question
+    (say it once). `done` true = nothing left today. Writes only .cache/barber.json; never rekordbox.
     exit_code 2 = the dj-library folder is not set up: run dj-start first."""
     return run_dj(["library", "barber", "next"])
 

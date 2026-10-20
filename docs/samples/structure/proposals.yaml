@@ -1,0 +1,169 @@
+# Restructure proposals for your library, generated from exports/2026-10-20-collection.xml on 2026-10-20.
+# Rename a proposal or change its tree here, then render the report again: it shows this file.
+# Keep each trigger "Build me the <name> structure". The next propose run rewrites this file; a copy you edited is kept first.
+# fingerprint: 99472440ca91
+- slug: house-bases
+  name: House Bases
+  family: bases
+  principle: 'One base per main genre (House, Techno, Deep House and 2 more): new tracks land in 0_INBOX, your crates sit in 1_CRATES, gigs and sets in 2_SETS.'
+  cost_minutes: 23
+  trigger: Build me the House Bases structure
+  lands:
+    - from: House/1.1_warm_up
+      to: deep_house_base/1_CRATES/1.1_warm_up
+    - from: House/1.2_peak
+      to: house_base/1_CRATES/1.2_peak
+    - from: House/Deep/deep_rollers
+      to: deep_house_base/1_CRATES/deep_rollers
+    - from: Gigs/Gig 2025-03 Warehouse
+      to: house_base/2_SETS/Gig 2025-03 Warehouse
+    - from: Gigs/Gig 2025-11 Rooftop
+      to: house_base/2_SETS/Gig 2025-11 Rooftop
+    - from: unsorted dump
+      to: funk_base/0_INBOX
+    - from: funk & disco 78-92
+      to: funk_base/1_CRATES/funk & disco 78-92
+  tree:
+    - folder: house_base
+      children:
+        - playlist: 0_INBOX
+        - folder: 1_CRATES
+          children:
+            - playlist: 1.2_peak
+              from:
+                - House/1.2_peak
+        - folder: 2_SETS
+          children:
+            - playlist: Gig 2025-03 Warehouse
+              from:
+                - Gigs/Gig 2025-03 Warehouse
+            - playlist: Gig 2025-11 Rooftop
+              from:
+                - Gigs/Gig 2025-11 Rooftop
+    - folder: techno_base
+      children:
+        - playlist: 0_INBOX
+        - folder: 1_CRATES
+        - folder: 2_SETS
+    - folder: deep_house_base
+      children:
+        - playlist: 0_INBOX
+        - folder: 1_CRATES
+          children:
+            - playlist: 1.1_warm_up
+              from:
+                - House/1.1_warm_up
+            - playlist: deep_rollers
+              from:
+                - House/Deep/deep_rollers
+        - folder: 2_SETS
+    - folder: disco_base
+      children:
+        - playlist: 0_INBOX
+        - folder: 1_CRATES
+        - folder: 2_SETS
+    - folder: funk_base
+      children:
+        - playlist: 0_INBOX
+          from:
+            - unsorted dump
+        - folder: 1_CRATES
+          children:
+            - playlist: funk & disco 78-92
+              from:
+                - funk & disco 78-92
+        - folder: 2_SETS
+- slug: deep-facets
+  name: Deep Facets
+  family: facets
+  principle: 5 shallow genre shelves (House, Techno, Deep House and 2 more) and your gig crates beside them; My Tags (Role, Body, Vibe, Status) sort inside them later.
+  cost_minutes: 8
+  trigger: Build me the Deep Facets structure
+  lands:
+    - from: House/1.1_warm_up
+      to: genres/Deep House
+    - from: House/1.2_peak
+      to: genres/House
+    - from: House/Deep/deep_rollers
+      to: genres/Deep House
+    - from: Gigs/Gig 2025-03 Warehouse
+      to: gigs (new)/Gig 2025-03 Warehouse
+    - from: Gigs/Gig 2025-11 Rooftop
+      to: gigs (new)/Gig 2025-11 Rooftop
+    - from: unsorted dump
+      to: 0_INBOX
+    - from: funk & disco 78-92
+      to: genres/Funk
+  tree:
+    - playlist: 0_INBOX
+      from:
+        - unsorted dump
+    - folder: genres
+      children:
+        - playlist: House
+          from:
+            - House/1.2_peak
+        - playlist: Techno
+        - playlist: Deep House
+          from:
+            - House/1.1_warm_up
+            - House/Deep/deep_rollers
+        - playlist: Disco
+        - playlist: Funk
+          from:
+            - funk & disco 78-92
+    - folder: gigs (new)
+      children:
+        - playlist: Gig 2025-03 Warehouse
+          from:
+            - Gigs/Gig 2025-03 Warehouse
+        - playlist: Gig 2025-11 Rooftop
+          from:
+            - Gigs/Gig 2025-11 Rooftop
+- slug: warehouse-gigs
+  name: Warehouse Gigs
+  family: gig-first
+  principle: A crate per residency or event (2 crates), everything else in an archive; new tracks wait in 0_INBOX.
+  cost_minutes: 8
+  trigger: Build me the Warehouse Gigs structure
+  lands:
+    - from: House/1.1_warm_up
+      to: archive/1.1_warm_up
+    - from: House/1.2_peak
+      to: archive/1.2_peak
+    - from: House/Deep/deep_rollers
+      to: archive/deep_rollers
+    - from: Gigs/Gig 2025-03 Warehouse
+      to: gigs (new)/Warehouse
+    - from: Gigs/Gig 2025-11 Rooftop
+      to: gigs (new)/Rooftop
+    - from: unsorted dump
+      to: 0_INBOX
+    - from: funk & disco 78-92
+      to: archive/funk & disco 78-92
+  tree:
+    - playlist: 0_INBOX
+      from:
+        - unsorted dump
+    - folder: gigs (new)
+      children:
+        - playlist: Warehouse
+          from:
+            - Gigs/Gig 2025-03 Warehouse
+        - playlist: Rooftop
+          from:
+            - Gigs/Gig 2025-11 Rooftop
+    - folder: archive
+      children:
+        - playlist: 1.1_warm_up
+          from:
+            - House/1.1_warm_up
+        - playlist: 1.2_peak
+          from:
+            - House/1.2_peak
+        - playlist: deep_rollers
+          from:
+            - House/Deep/deep_rollers
+        - playlist: funk & disco 78-92
+          from:
+            - funk & disco 78-92

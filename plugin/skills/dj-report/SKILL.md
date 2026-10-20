@@ -1,6 +1,6 @@
 ---
 name: dj-report
-description: Render the DJ's library report - one self-contained HTML file in reports/ with who they are as a DJ, how their rekordbox tree is built (a tree drawing, overlap, dumps, duplicates, orphans), two or three named ways to rebuild it, each with a trigger prompt, and one next action. Use at the end of the first run (dj-start step 4 and 5), when the DJ asks for their report, for restructure ideas, "how should I organise my library", or after a new export lands, even if they never say "report".
+description: Render the DJ's library report - one self-contained HTML file in reports/ with who they are as a DJ (their sleeve, archetype, liner notes and five stats), how their rekordbox tree is built (a crate wall of folders and playlists, overlaps, dumps, duplicates, orphans), two or three named ways to rebuild it, each with a trigger prompt, and one next action. Use at the end of the first run (dj-start step 4 and 5), when the DJ asks for their report, for restructure ideas, "how should I organise my library", or after a new export lands, even if they never say "report".
 ---
 
 # dj-report
@@ -11,14 +11,15 @@ the report, and the proposal names in the DJ's own vocabulary. Nothing here touc
 
 **Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
 
-**Requirements:** R-401, R-402, R-403, R-404, R-405, R-406, R-407, R-1003.
+**Requirements:** R-401, R-402, R-403, R-404, R-405, R-406, R-407, R-408, R-409, R-1003, R-1405.
 
 ## How the report is made
 
-1. dj-profile, dj-structure and dj-taste have run: `profile/`, `structure/`, `taste/` hold the
-   measured facts (R-302).
-2. You write `profile/habits.md` (rules and template in `../dj-profile/SKILL.md`). The report
-   shows it as section 1. Missing: the report shows a placeholder line instead, so never block on it.
+1. dj-profile, dj-structure, dj-taste and dj-identity have run: `profile/`, `structure/`, `taste/`
+   hold the measured facts, `profile/identity.json` the axes and the archetype (R-302).
+2. You write `profile/habits.md` (rules and template in `../dj-profile/SKILL.md`) and
+   `profile/identity.md`, the liner notes (template in `../dj-identity/SKILL.md`). The report shows
+   both in section 1. Missing: the report shows a placeholder line instead, so never block on them.
 3. `propose`: the code picks 2 or 3 restructure proposals and writes `structure/proposals.yaml`.
 4. `render`: the code writes `reports/<date>-library.html` from the folder's files. A new file
    every time (`-2`, `-3` ... on the same day); an old report is never overwritten. The JSON's
@@ -29,10 +30,19 @@ the report, and the proposal names in the DJ's own vocabulary. Nothing here touc
    (the script without `render`, `dj library report`, `dj library analyze`, `dj_library_analyze`)
    writes the proposals again, and your names survive only in the kept copy.
 
-The sections: 1 who you are (your narrative + the 5 stats that matter, R-402); 2 how it's built
-(tree drawing, overlap bars, at most 5 reveals, R-403); 3 ways to rebuild it (2-3 proposals with
-six parts each: name, principle, new tree, where playlists land, cost, trigger, R-404); 4 next
-(one action under 2 minutes, R-406).
+The sections: 1 who you are (the sleeve, the DJ's handle, the archetype, the liner notes (the
+archetype's one-line meaning stands in until they exist), the six axes, the 5 stats that matter,
+then the narrative, R-402, R-1405); 2 how it's built (the crate wall: one row per top-level
+folder, a bar per playlist in the folder's lane colour, dumps hatched, empty playlists as
+outlines, overlaps as arcs; at most 5 reveals, R-403); 3 ways to rebuild it (2-3 cards, each with
+a mini sleeve in the same lane colours, showing where that proposal puts each tempo band, and six
+parts: name, principle, new tree, where playlists land, cost, trigger, R-404); 4 next (a sticky
+footer with one action under 2 minutes, R-406).
+
+The page follows `docs/design.md` (R-408): Booth (dark) by default, Day (light) one tap away in
+the header, every chart with a tooltip on each mark and a "table" link to the file it was drawn
+from. A sample built from the synthetic library, with its screenshots, lives in `docs/samples/`
+(R-409): after any change to the report, `uv run python scripts/make_samples.py` builds it again.
 
 ## How to run
 

@@ -1,7 +1,7 @@
 """dj-start: set up the DJ's library folder from their rekordbox XML export (R-103, R-104).
 
     start.py find-xml --library DIR
-    start.py init --library DIR --device mac|windows [--xml FILE] [--today YYYY-MM-DD]
+    start.py init --library DIR --device mac|windows [--dj-name NAME] [--xml FILE] [--today YYYY-MM-DD]
 
 Argument parsing around dj.onboarding (find_xml, init); the rules live there. A relative --xml
 is looked up in the library folder first, then in the current folder.
@@ -66,7 +66,9 @@ def cmd_find_xml(args: argparse.Namespace) -> dict[str, Any]:
 def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
     root = _library(args.library)
     xml = _xml_arg(root, args.xml) if args.xml else None
-    return onboarding.init(root, device=args.device, xml=xml, today=args.today, now=_now(args.today))
+    return onboarding.init(
+        root, device=args.device, xml=xml, today=args.today, now=_now(args.today), dj_name=args.dj_name
+    )
 
 
 def _xml_arg(root: Path, text: str) -> Path:
@@ -114,6 +116,7 @@ def _parser() -> _Parser:
     init.add_argument(
         "--device", required=True, type=str.lower, choices=onboarding.DEVICES, help="mac or windows"
     )
+    init.add_argument("--dj-name", help="what they call the DJ in the booth (optional; the sleeve says You without it)")
     init.add_argument("--xml", help="the export; default: the newest XML in the folder")
     init.add_argument("--today", type=_day, help="YYYY-MM-DD; default: today")
     init.set_defaults(run=cmd_init)

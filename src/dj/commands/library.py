@@ -1,7 +1,7 @@
 """`dj library ...`: the library model (XML export or master.db snapshot) and its analysis.
 
 Nothing here writes to rekordbox: `inspect` only reads; `profile`, `structure`, `taste`,
-`report` and `analyze` write text files in the library folder (R-341); `build` and `crate`
+`identity`, `report` and `analyze` write text files in the library folder (R-341); `build` and `crate`
 write a rekordbox XML the DJ imports, only with the id of a preview the DJ said yes to
 (R-501..R-505, R-601..R-604).
 """
@@ -21,6 +21,7 @@ import typer
 from dj import barber, build_structure, libfolder
 from dj import crate as crate_mod
 from dj import report as report_mod
+from dj.analysis import identity as identity_analysis
 from dj.analysis import profile as profile_analysis
 from dj.analysis import run_all
 from dj.analysis import structure as structure_analysis
@@ -274,6 +275,43 @@ def taste(
     typer.echo("\n".join(lines))
 
 
+@library_app.command("identity")
+def identity_cmd(
+    library: str = typer.Option("", "--library", help="The dj-library folder. Empty: the configured one."),
+    xml: str = typer.Option("", "--xml", help="Read this export instead of the latest one in exports/."),
+    today: str = typer.Option(
+        "", "--today", help="Date the axes are measured at, YYYY-MM-DD. Empty: the date in profile/facts.json."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Six measured axes, an archetype and the sleeve: profile/identity.json, profile/sleeve.svg.
+
+    R-1401..R-1403. Reads profile/, structure/ and taste/ facts (run profile, structure and taste
+    first) and the export; one log.md line. Never writes to rekordbox, Spotify or audio files."""
+    try:
+        root = library or configured_root()
+        result = identity_analysis.run(root, xml=xml or None, today=parse_day(today))
+    except NotALibraryFolder as exc:
+        typer.echo(f"REFUSED {exc}", err=True)
+        raise typer.Exit(EXIT_REFUSED)
+    except (LibraryError, OSError, ValueError) as exc:
+        typer.echo(f"ERROR {exc}", err=True)
+        raise typer.Exit(EXIT_ERROR)
+    if as_json:
+        typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+    scores = ", ".join(f"{axis} {score}" for axis, score in result["scores"].items())
+    lines = [
+        f"identity: {result['archetype']['name']} ({' + '.join(result['top'])}) for {result['handle']}",
+        f"axes: {scores}",
+        *[f"wrote {path}" for path in result["written"]],
+        f"log: {result['log']}",
+        "",
+        "Nothing was written to rekordbox.",
+    ]
+    typer.echo("\n".join(lines))
+
+
 def _added_lines(added: dict[str, list[str]]) -> list[str]:
     """The diff per file (R-332): at most SHOWN_LINES lines each, then how many more."""
     lines = []
@@ -344,7 +382,7 @@ def analyze_cmd(
     today: str = typer.Option(None, "--today", help="Date written into the files, YYYY-MM-DD. Default: today."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
-    """Read the library once, then profile, structure, taste, proposals and the HTML report.
+    """Read the library once, then profile, structure, taste, identity, proposals and the HTML report.
 
     Writes text files in the library folder only, one log.md line per step. --source db reads a
     snapshot copy of master.db (read-only). Never writes to rekordbox, Spotify or audio files.
@@ -574,7 +612,9 @@ def barber_next(
         if result["done"]:
             files = ", ".join(result["files"]) or "no taste file changed"
             return [head, f"done for today: {files}"]
-        return [head, *_question_lines(result["question"])]
+        question = _question_lines(result["question"])
+        context = [result["archetype_line"]] if result.get("archetype_line") else []
+        return [head, *question[:2], *context, *question[2:]]  # the archetype right under the question
 
     _barber_run(as_json, lambda: barber.next_step(library or configured_root(), today=parse_day(today)), lines)
 

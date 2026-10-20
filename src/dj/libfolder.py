@@ -47,6 +47,9 @@ META_KEYS = (
     "structure",
     "exports",
 )
+# Keys a library.yaml may hold but need not: files written before them stay valid (R-1406).
+OPTIONAL_META_KEYS = ("dj_name",)
+DJ_NAME_MAX = 40  # characters of the DJ's handle (what they call you in the booth)
 ENV_VAR = "DJ_LIBRARY"
 _DATED_EXPORT = re.compile(r"^(\d{4}-\d{2}-\d{2})-collection(?:-(\d+))?\.xml$")
 _DRIVE = re.compile(r"^[A-Za-z]:")
@@ -160,8 +163,8 @@ rekordbox until you import a file yourself.
 
 - `README.md`: this page.
 - `library.yaml`: the folder's settings. Mac or Windows, the rekordbox version of your last
-  export, when the folder was made and last changed, the structure you picked. The tool
-  keeps it current; you never need to edit it.
+  export, when the folder was made and last changed, the structure you picked, and your DJ
+  name if you gave one. The tool keeps it current; you never need to edit it.
 - `links.yaml`: your Spotify inbox playlists and the rekordbox crate each one feeds. Just a
   commented example until you set up Spotify.
 - `log.md`: one line for every change the tool made: date, what, how many, which file. The
@@ -245,11 +248,14 @@ def scaffold(
     device: str,
     rekordbox_version: str | None = None,
     today: date | None = None,
+    dj_name: str | None = None,
 ) -> ScaffoldResult:
-    """Create what is missing. An existing folder or file is never touched (SKIP)."""
+    """Create what is missing. An existing folder or file is never touched (SKIP).
+    `dj_name` (the DJ's handle) goes into a new library.yaml when given."""
     if device not in DEVICES:
         raise LibraryFolderError(f"device must be one of {', '.join(DEVICES)}, got {device!r}")
     _check_version(rekordbox_version)
+    dj_name = clean_dj_name(dj_name)
     folder = LibraryFolder(Path(root))
     today = today or date.today()
 
@@ -281,7 +287,7 @@ def scaffold(
 
     contents = {
         "README.md": README_TEXT,
-        "library.yaml": _meta_text(new_meta(device, rekordbox_version, today)),
+        "library.yaml": _meta_text(new_meta(device, rekordbox_version, today, dj_name=dj_name)),
         "links.yaml": LINKS_TEXT,
         "log.md": LOG_TEXT,
         ".gitignore": GITIGNORE_TEXT,
@@ -331,8 +337,8 @@ def ensure_gitignore(root: str | Path, extra: tuple[str, ...] = ()) -> tuple[str
 # -- library.yaml (R-902) ------------------------------------------------------------------
 
 
-def new_meta(device: str, rekordbox_version: str | None, today: date) -> dict[str, Any]:
-    return {
+def new_meta(device: str, rekordbox_version: str | None, today: date, *, dj_name: str | None = None) -> dict[str, Any]:
+    meta: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "device": device,
         "rekordbox_version": rekordbox_version,
@@ -341,6 +347,24 @@ def new_meta(device: str, rekordbox_version: str | None, today: date) -> dict[st
         "structure": {"chosen": None},
         "exports": {"latest": None},
     }
+    if dj_name:
+        meta["dj_name"] = dj_name
+    return meta
+
+
+def clean_dj_name(value: Any) -> str | None:
+    """The DJ's handle on one line (spaces collapsed); None for nothing or blank. Control
+    characters, a line break or more than DJ_NAME_MAX characters -> LibraryFolderError."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise LibraryFolderError(f"dj_name: expected text, got {value!r}")
+    if any(ch in "\r\n" or (not ch.isprintable() and not ch.isspace()) for ch in value):
+        raise LibraryFolderError("dj_name: one line of plain text, please")
+    text = " ".join(value.split())
+    if len(text) > DJ_NAME_MAX:
+        raise LibraryFolderError(f"dj_name: at most {DJ_NAME_MAX} characters, got {len(text)}")
+    return text or None
 
 
 def load_meta(root: str | Path) -> dict[str, Any]:
@@ -362,7 +386,14 @@ def validate_meta(data: Any) -> list[str]:
     if not isinstance(data, dict):
         return ["library.yaml: expected a mapping of settings"]
     errors = [f"missing key: {key}" for key in META_KEYS if key not in data]
-    errors += [f"unknown key: {key}" for key in sorted(map(str, set(data) - set(META_KEYS)))]
+    known = set(META_KEYS) | set(OPTIONAL_META_KEYS)
+    errors += [f"unknown key: {key}" for key in sorted(map(str, set(data) - known))]
+    if "dj_name" in data and data["dj_name"] is not None:
+        try:
+            if clean_dj_name(data["dj_name"]) is None:
+                errors.append("dj_name: expected a name or null, got an empty text")
+        except LibraryFolderError as exc:
+            errors.append(str(exc))
 
     if "schema_version" in data:
         version = data["schema_version"]
@@ -394,7 +425,7 @@ def update_meta(root: str | Path, today: date | None = None, **changes: Any) -> 
     A mapping value (`structure`, `exports`) is merged into the existing mapping.
     Invalid result -> LibraryFolderError and the file is left as it was.
     """
-    unknown = sorted(set(changes) - set(META_KEYS))
+    unknown = sorted(set(changes) - set(META_KEYS) - set(OPTIONAL_META_KEYS))
     if unknown:
         raise LibraryFolderError(f"library.yaml has no key(s): {', '.join(unknown)}")
     folder = LibraryFolder(Path(root))
@@ -414,7 +445,7 @@ def update_meta(root: str | Path, today: date | None = None, **changes: Any) -> 
 
 
 def _meta_text(meta: Mapping[str, Any]) -> str:
-    ordered = {key: meta[key] for key in META_KEYS if key in meta}
+    ordered = {key: meta[key] for key in META_KEYS + OPTIONAL_META_KEYS if key in meta}
     body = yaml.safe_dump(ordered, sort_keys=False, allow_unicode=True, default_flow_style=False)
     return _META_HEADER + body
 
