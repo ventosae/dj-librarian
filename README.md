@@ -84,6 +84,8 @@ A marketplace added from GitHub (`OWNER/dj-librarian`) runs a cached copy of the
 
 - **Claude desktop app:** Customize → Plugins → Add → Add marketplace. Whether the plugin's MCP server then starts from your clone is not verified yet (open question Q-08). If `dj_status` does not answer, register the engine by hand as below.
 
+Optional: [templates/project/instructions.md](templates/project/instructions.md) is a Cowork Project template you can paste into a new Project's instructions; the plugin works without it.
+
 ### The engine on Windows and macOS
 
 The engine is the MCP server `dj-mcp`; it runs on your computer. The plugin starts it for you. To register it in Claude Desktop by hand instead, add it to Claude Desktop's config file:

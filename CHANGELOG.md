@@ -24,6 +24,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - `dj-barber` skill (Style Barber): at most 8 short questions (about 10 minutes, progress stated): A/B picks from the DJ's own tracks, naming lanes, vetoes, pairs, what worked at a gig; every answer appends a dated line to `taste/*.md`. `dj library barber next|record`, MCP `dj_barber_next` / `dj_barber_record` (W-24).
 - Spotify for any DJ (W-25): `dj-spotify` skill with the setup card (own app, Premium, redirect URI, `.env`); the inbox loop follows `links.yaml` in the DJ's library folder; `dj wishlist shop` writes `wishlist/<crate>.shopping.md` with Beatport and Bandcamp search links; February 2026 API audit (`docs/spotify-audit.md`) with the removed batch artists call dropped. MCP `dj_wishlist_shop`.
 - `tests/test_skills.py` pins the eleven v0.1 skills.
+- Optional Cowork Project template `templates/project/instructions.md`: voice, the 10 reply rules, safety, the `dj-library/` folder conventions (W-26).
 
 ### Changed
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.

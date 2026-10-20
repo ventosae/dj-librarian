@@ -59,7 +59,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-104 | **First-contact input is the rekordbox XML export** (File → Export Collection in xml format), guided by a 3-step card, dropped into the connected folder. | M | Analysis + report run on the XML alone. | Built | v0.1 |
 | R-105 | Onboarding states time estimates and progress ("Step 2 of 6") on every turn. | M | Every onboarding reply has both. | Built | v0.1 |
 | R-106 | Super short start: ≤ 3 DJ actions before the work phase; zero questions during the work phase; chat under 5 lines until the report (NFR-07). | M | Transcript of the Dijok session. | Agreed | v0.1 |
-| R-107 | Cowork Project template (`templates/project/instructions.md`) the DJ can paste into a new Project: voice, ADHD rules, safety, folder conventions. Optional; nothing essential depends on it. | M | Template exists; the flow works without it. | Agreed | v0.1 |
+| R-107 | Cowork Project template (`templates/project/instructions.md`) the DJ can paste into a new Project: voice, ADHD rules, safety, folder conventions. Optional; nothing essential depends on it. | M | Template exists; the flow works without it. | Built | v0.1 |
 
 ### E2 Library access
 
