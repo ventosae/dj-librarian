@@ -1,8 +1,10 @@
-"""Spotify Web API client. Endpoints verified against the live reference (2026-09):
+"""Spotify Web API client. Endpoints verified against the live reference (2026-09) and
+audited against the February 2026 development-mode changes (C-06, docs/spotify-audit.md):
 
   GET  /v1/search                 limit max 10, filters isrc: track: artist:
   GET  /v1/me/playlists
-  GET  /v1/playlists/{id}/items   (was /tracks; rows carry `item`, formerly `track`)
+  GET  /v1/playlists/{id}/items   (was /tracks; rows carry `item`, formerly `track`). Only
+                                  playlists the user owns or collaborates on; others: 403.
   POST /v1/me/playlists           (POST /users/{id}/playlists was removed)
   POST /v1/playlists/{id}/items   max 100 uris per request
   GET  /v1/me                     (dj analyze, read-only)
@@ -10,9 +12,11 @@
   GET  /v1/me/albums              limit max 50
   GET  /v1/me/following?type=artist   cursor paging, page sits under "artists"
   GET  /v1/me/top/{artists|tracks}    time_range short|medium|long_term
-  GET  /v1/artists?ids=           max 50 ids; answers 403 to this app (2026-09), single
-                                  GET /v1/artists/{id} still works but carries no genres.
-                                  Track popularity comes back empty as well.
+
+Never called: the batch fetches GET /v1/tracks?ids=, /artists?ids=, /albums?ids= (removed
+Feb 2026), other users' playlist endpoints (removed), audio features (closed to
+new apps since Nov 2024). popularity, genres, external_ids and label are read with .get and
+may be missing.
 
 Credentials come from .env and are never printed. The token cache lives in .cache/.
 """
@@ -22,6 +26,7 @@ from __future__ import annotations
 import http.server
 import json
 import os
+import re
 import secrets
 import time
 import urllib.parse
@@ -48,6 +53,35 @@ MAX_RETRY_WAIT_S = 30
 
 class SpotifyError(RuntimeError):
     pass
+
+
+# Since Feb 2026 (C-06) a development-mode app reads only playlists its user owns or
+# collaborates on: any other playlist answers 403, sometimes 404. A deleted or mistyped
+# playlist answers 404 too, so the 404 message names both causes and both fixes.
+UNREADABLE_PLAYLIST = {
+    403: "Spotify will not let this app read {name!r} (403). Since February 2026 an app in "
+         "development mode reads only playlists you own or collaborate on. Copy the tracks "
+         "into a playlist of your own and put that one in links.yaml.",
+    404: "Spotify did not find {name!r} (404): it does not exist, or this app may not read "
+         "it. Deleted or mistyped: fix the link in links.yaml. Another user's or Spotify's "
+         "own playlist (since February 2026 an app in development mode reads only playlists "
+         "you own or collaborate on): copy the tracks into a playlist of your own and put "
+         "that one in links.yaml.",
+}  # fmt: skip
+
+
+def refused_status(exc: BaseException) -> int | None:
+    """403 or 404 when `exc` is a SpotifyError from a Web API call (`<METHOD> <url> -> <code>
+    ...`), else None. One test for `dj pull` and `dj analyze` alike."""
+    if not isinstance(exc, SpotifyError):
+        return None
+    found = re.search(r" -> (403|404)\b", str(exc))
+    return int(found.group(1)) if found else None
+
+
+def unreadable_playlist(name: str, status: int) -> str:
+    """The plain message for a playlist that answered 403 or 404 (UNREADABLE_PLAYLIST)."""
+    return UNREADABLE_PLAYLIST[status].format(name=name)
 
 
 def load_env(path: Path | None = None) -> dict[str, str]:
@@ -234,14 +268,6 @@ class Spotify:
         params = {"time_range": time_range, "limit": 50}
         page = self._request("GET", f"/me/top/{kind}", params=params)
         return [x for x in page.get("items") or [] if x]
-
-    def artists(self, ids: list[str]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        for start in range(0, len(ids), 50):
-            params = {"ids": ",".join(ids[start : start + 50])}
-            page = self._request("GET", "/artists", params=params)
-            out.extend(a for a in page.get("artists") or [] if a)
-        return out
 
     def create_playlist(self, name: str, description: str = "") -> dict[str, Any]:
         body = {"name": name, "public": False, "description": description}

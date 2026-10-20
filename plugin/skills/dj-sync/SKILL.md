@@ -26,7 +26,8 @@ rekordbox is the truth. Spotify playlists are candidates. You only propose.
 | `dj push P` / `--apply` | `dj_push_preview(playlist)` / `dj_push_apply(playlist, preview_id)` |
 
 Every tool returns `{ok, exit_code, result | output, stderr}`. File arguments are paths
-inside the repo (`bases.yaml`, `plans/....plan.json`); a bare name is looked up in its folder
+inside the repo (`bases.yaml`, `plans/....plan.json`); plans and tracklists may also sit in
+the dj-library folder. A bare name is looked up in its folder
 (`2026-10-20-house.plan.json` -> `plans/`, `set.txt` -> `tracklists/`).
 Results put the counts first. A long list comes in pages: `paging` says per list `page`, `pages`
 and `total`; call the same preview or read tool with the same arguments and `page=2` for more.
@@ -62,6 +63,11 @@ is the same command with `--apply --preview-id <id>`, plus `--power-mode` for ma
 1. Read STATE.md, then README.md. CLAUDE.md holds the hard rules.
 2. Pick the link: the one the DJ named, else the one STATE.md marks as current.
    A `<link>` is the `spotify` or the `crate` value of an entry in links.yaml.
+   links.yaml lives in the DJ's dj-library folder; while that file holds no link, the repo's
+   links.yaml is used as before (`dj status` names the one in use as `links_file`). With the
+   library's links.yaml, plans/, wishlist/ and the apply reports (reports/apply/) sit in that
+   folder; the match memory and declined list are under its .cache/ (read the report, not
+   those). Spotify setup for a new DJ: the dj-spotify skill.
    No entry yet: ask the DJ for the Spotify playlist and the crate, add it to links.yaml.
    The crate must already exist in rekordbox as a normal playlist. If it does not,
    the DJ creates it in rekordbox (or adds it to tree.yaml and asks for `dj tree`: the preview,

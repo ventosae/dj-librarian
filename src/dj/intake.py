@@ -2,6 +2,9 @@
 
 rekordbox is the truth. Spotify playlists are candidates, not members. The tool only
 proposes: nothing enters a crate without `decision: yes` in the plan file.
+
+Where the files live (R-802): in the DJ's library folder when its links.yaml holds at least
+one link (`default_paths`), else in the repo root as before. See `Paths`.
 """
 
 from __future__ import annotations
@@ -15,15 +18,25 @@ from typing import Any
 
 import yaml
 
-from dj import library, match
+from dj import libfolder, library, match
 from dj.match import Candidate, Local, Scored
 from dj.safety import REPO_ROOT
+from dj.spotify import SpotifyError, refused_status, unreadable_playlist
 
 IN_CRATE, PROPOSE, AMBIGUOUS, MISSING, DECLINED = (
     "IN_CRATE", "PROPOSE", "AMBIGUOUS", "MISSING", "DECLINED",
 )  # fmt: skip
 STATUSES = (IN_CRATE, PROPOSE, AMBIGUOUS, MISSING, DECLINED)
 PENDING, YES, NO = "pending", "yes", "no"
+
+# A plan lists the paths of local music files (its candidates): machine data, kept out of git
+# in a library folder (R-905). The line goes into the library's own .gitignore (append-only,
+# libfolder.ensure_gitignore) and into plans/.gitignore (created once, never overwritten).
+PLANS_IGNORE_LINE = "plans/*.plan.json"
+PLANS_GITIGNORE = (
+    "# dj-librarian: plans list the paths of music files on this computer. Not for git.\n"
+    "*.plan.json\n"
+)
 
 
 class IntakeError(RuntimeError):
@@ -32,7 +45,23 @@ class IntakeError(RuntimeError):
 
 @dataclass
 class Paths:
+    """root = the repo (library=False, the layout of every earlier version) or the DJ's
+    dj-library folder (library=True). links.yaml, plans/ and wishlist/ sit at the root either
+    way. In a library folder the apply reports go to reports/apply/ (files the DJ reads), the
+    inbox and state/ (match cache, declined list) are machine state under `.cache/`
+    (gitignored by the scaffold).
+
+    carry_from = the repo root, for a library folder that took over from it: while the
+    library has no state file of its own, the repo's state/<same name> is read (`state_source`)
+    and the next write (`record`) carries it into the library."""
+
     root: Path = REPO_ROOT
+    library: bool = False
+    carry_from: Path | None = None
+
+    @property
+    def machine(self) -> Path:
+        return self.root / ".cache" if self.library else self.root
 
     @property
     def links(self) -> Path:
@@ -40,7 +69,7 @@ class Paths:
 
     @property
     def inbox(self) -> Path:
-        return self.root / "inbox"
+        return self.machine / "inbox"
 
     @property
     def plans(self) -> Path:
@@ -48,7 +77,7 @@ class Paths:
 
     @property
     def reports(self) -> Path:
-        return self.root / "reports"
+        return self.root / "reports" / "apply" if self.library else self.root / "reports"
 
     @property
     def wishlist(self) -> Path:
@@ -56,11 +85,55 @@ class Paths:
 
     @property
     def cache(self) -> Path:
-        return self.root / "state" / "match_cache.json"
+        return self.machine / "state" / "match_cache.json"
 
     @property
     def declined(self) -> Path:
-        return self.root / "state" / "declined.json"
+        return self.machine / "state" / "declined.json"
+
+    def state_source(self, path: Path) -> Path:
+        """Where to read the state file `path` (`cache` or `declined`): `path` itself, or,
+        while a library folder has none yet, the repo's state/<same name> it took over from.
+        So the DJ's declined tracks and AMBIGUOUS picks survive the switch to the library."""
+        if self.carry_from is not None and not path.is_file():
+            earlier = self.carry_from / "state" / path.name
+            if earlier.is_file():
+                return earlier
+        return path
+
+    def carried_state(self) -> list[str]:
+        """The repo state files read in place of the library's own (`dj status` names them)."""
+        return [p.name for p in (self.cache, self.declined) if self.state_source(p) != p]
+
+
+def library_links_root() -> Path | None:
+    """The configured library folder when its links.yaml holds at least one entry, else None.
+
+    The scaffold writes links.yaml as comments only, so a fresh folder keeps the repo layout
+    until the DJ adds a link. A links.yaml that cannot be read (not valid YAML, not UTF-8, a
+    read error) still counts: the DJ gets the error for their own file from `load_links`,
+    never a silent switch back to the repo.
+    """
+    try:
+        root = libfolder.configured_root()
+    except libfolder.LibraryFolderError:
+        return None
+    links = root / "links.yaml"
+    if not links.is_file():
+        return None
+    try:
+        data = yaml.safe_load(links.read_text(encoding="utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError, OSError):
+        return root
+    return root if data else None
+
+
+def default_paths() -> Paths:
+    """Paths for the inbox loop: the DJ's library folder (R-802), else the repo root."""
+    root = library_links_root()
+    if root is None:
+        return Paths()
+    return Paths(root, library=True, carry_from=REPO_ROOT)
 
 
 def slug(text: str) -> str:
@@ -91,8 +164,19 @@ class Link:
 
 def load_links(paths: Paths) -> list[Link]:
     if not paths.links.is_file():
-        raise IntakeError("links.yaml not found. Copy examples/links.example.yaml to links.yaml and edit it.")
-    data = yaml.safe_load(paths.links.read_text(encoding="utf-8")) or []
+        raise IntakeError("links.yaml not found. Add your first link to links.yaml in your "
+                          "dj-library folder (see examples/links.example.yaml).")
+    try:
+        data = yaml.safe_load(paths.links.read_text(encoding="utf-8")) or []
+    except UnicodeDecodeError:
+        raise IntakeError(f"links.yaml is not UTF-8: {paths.links}. Open it in a text editor and "
+                          "save it with the encoding UTF-8.") from None
+    except OSError as exc:
+        raise IntakeError(f"links.yaml cannot be read ({type(exc).__name__}): {paths.links}") from None
+    except yaml.YAMLError as exc:
+        where = getattr(exc, "problem_mark", None)
+        line = f" (line {where.line + 1})" if where is not None else ""
+        raise IntakeError(f"links.yaml is not valid YAML{line}: {paths.links}") from None
     links = []
     for entry in data:
         if not isinstance(entry, dict) or not entry.get("spotify") or not entry.get("crate"):
@@ -121,14 +205,17 @@ def flatten(rows: Any) -> list[dict[str, Any]]:
         t = row.get("item") or row.get("track")  # Feb 2026 rename: track -> item
         if not t or t.get("type", "track") != "track" or not t.get("uri"):
             continue
+        album = t.get("album") or {}
         out.append(
             {
                 "uri": t["uri"],
                 "title": t.get("name"),
                 "artists": [a.get("name") for a in t.get("artists") or []],
-                "album": (t.get("album") or {}).get("name"),
+                "album": album.get("name"),
                 "duration_ms": t.get("duration_ms"),
+                # Optional since Feb 2026: read when Spotify sends them (docs/spotify-audit.md).
                 "isrc": (t.get("external_ids") or {}).get("isrc"),
+                "label": t.get("label") or album.get("label"),
                 "added_at": row.get("added_at"),
             }
         )
@@ -148,7 +235,14 @@ def find_spotify_playlist(api: Any, ref: str) -> tuple[str, str]:
 
 def pull(api: Any, link: Link, paths: Paths) -> dict[str, Any]:
     pid, name = find_spotify_playlist(api, link.spotify)
-    tracks = flatten(api.playlist_items(pid))
+    try:
+        tracks = flatten(api.playlist_items(pid))
+    except SpotifyError as exc:
+        # Feb 2026 (C-06): 403/404 = not the DJ's playlist, or gone (dj.spotify.UNREADABLE_PLAYLIST)
+        code = refused_status(exc)
+        if code is None:
+            raise
+        raise IntakeError(unreadable_playlist(link.spotify, code)) from None
     data = {
         "playlist_id": pid,
         "name": name,
@@ -247,8 +341,8 @@ def match_link(link: Link, db: Any, paths: Paths) -> list[Item]:
     playlist = library.find_playlist(db, link.crate)
     in_crate = library.crate_content_ids(playlist)
     tracks = library.all_tracks(db)
-    cache = _read_json(paths.cache, {})
-    declined = _read_json(paths.declined, [])
+    cache = _read_json(paths.state_source(paths.cache), {})
+    declined = _read_json(paths.state_source(paths.declined), [])
     return [match_one(t, link.crate, tracks, in_crate, cache, declined) for t in inbox["tracks"]]
 
 
@@ -314,6 +408,9 @@ def write_plan(link: Link, items: list[Item], in_crate: set[str], paths: Paths) 
         "items": out,
     }
     _write_json(path, plan)
+    if paths.library:
+        libfolder.ensure_gitignore(paths.root, (PLANS_IGNORE_LINE,))  # add only
+        libfolder.write_new_text(paths.plans / ".gitignore", PLANS_GITIGNORE)  # SKIP if there
     return path
 
 
@@ -385,14 +482,19 @@ def add_to_crate(db: Any, plan: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def record(plan: dict[str, Any], plan_path: Path, added: list[dict[str, Any]], paths: Paths) -> Path:
-    """After the commit: yes picks -> match_cache, no -> declined, write the report."""
+    """After the commit: yes picks -> match_cache, no -> declined, write the report.
+
+    In a library folder the state is read through `state_source` (the repo's state/ until the
+    library has its own) and always written to the library: the first apply carries it over.
+    The repo files are only read, never changed.
+    """
     by_decision = decisions(plan)
-    cache = _read_json(paths.cache, {})
+    cache = _read_json(paths.state_source(paths.cache), {})
     for item in by_decision[YES]:
         cache[item["spotify_uri"]] = str(item["pick"])
     _write_json(paths.cache, cache)
 
-    declined = _read_json(paths.declined, [])
+    declined = _read_json(paths.state_source(paths.declined), [])
     known = {(d["crate"], d["spotify_uri"]) for d in declined}
     for item in by_decision[NO]:
         if (plan["crate"], item["spotify_uri"]) not in known:
@@ -401,7 +503,7 @@ def record(plan: dict[str, Any], plan_path: Path, added: list[dict[str, Any]], p
     _write_json(paths.declined, declined)
 
     report = {
-        "plan": str(plan_path),
+        "plan": _plan_ref(plan_path, paths),
         "spotify": plan.get("spotify"),
         "crate": plan["crate"],
         "applied_at": datetime.now().isoformat(timespec="seconds"),
@@ -416,6 +518,17 @@ def record(plan: dict[str, Any], plan_path: Path, added: list[dict[str, Any]], p
     path = paths.reports / f"{date.today().isoformat()}-{slug(plan['crate'])}.report.json"
     _write_json(path, report)
     return path
+
+
+def _plan_ref(plan_path: Path, paths: Paths) -> str:
+    """The plan as the report names it. In a library folder the report is a file the DJ reads
+    (reports/apply/), so the path is library-relative; a plan from outside: its name only."""
+    if not paths.library:
+        return str(plan_path)
+    try:
+        return libfolder.relative(paths.root, Path(plan_path).resolve())
+    except libfolder.LibraryFolderError:
+        return Path(plan_path).name
 
 
 def last_report(link: Link, paths: Paths) -> str | None:

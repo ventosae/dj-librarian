@@ -22,6 +22,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - MCP results stay under the tool-result limit: counts first, lists paged (`page`, `page_size`) on every preview and read tool; a bare file name resolves under its folder (`tracklists/`, `plans/`, `exports/`); every writing command appends its own `log.md` line (`dj.activity_log`), and the skills only read the log (W-22).
 - `dj-crate` skill (Crate me): Claude turns a brief into `crates/<slug>.spec.yaml`; code picks exactly 30 / 50 / 70 owned tracks with a reason each, plus 20% spares across energy tiers, honouring vetoes; after a yes, `proposals/crate-<slug>.xml` to import and `crates/<slug>.md`. Built proposals leave vetoed tracks out. `dj library crate`, MCP `dj_crate_preview` / `dj_crate_write` (W-23).
 - `dj-barber` skill (Style Barber): at most 8 short questions (about 10 minutes, progress stated): A/B picks from the DJ's own tracks, naming lanes, vetoes, pairs, what worked at a gig; every answer appends a dated line to `taste/*.md`. `dj library barber next|record`, MCP `dj_barber_next` / `dj_barber_record` (W-24).
+- Spotify for any DJ (W-25): `dj-spotify` skill with the setup card (own app, Premium, redirect URI, `.env`); the inbox loop follows `links.yaml` in the DJ's library folder; `dj wishlist shop` writes `wishlist/<crate>.shopping.md` with Beatport and Bandcamp search links; February 2026 API audit (`docs/spotify-audit.md`) with the removed batch artists call dropped. MCP `dj_wishlist_shop`.
+- `tests/test_skills.py` pins the eleven v0.1 skills.
 
 ### Changed
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.

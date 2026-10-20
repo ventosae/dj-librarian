@@ -120,13 +120,13 @@ def test_tool_list_and_which_ones_are_read_only():
         "dj_tidy_audit", "dj_tidy_dupes", "dj_tidy_plan", "dj_tidy_apply_preview", "dj_tidy_apply",
         "dj_tidy_undo_preview", "dj_tidy_undo",
         "dj_library_inspect", "dj_library_analyze", "dj_structure_preview", "dj_structure_write",
-        "dj_crate_preview", "dj_crate_write", "dj_barber_next", "dj_barber_record",
+        "dj_crate_preview", "dj_crate_write", "dj_barber_next", "dj_barber_record", "dj_wishlist_shop",
     }
     writers = {n for n, t in tools.items() if not t.annotations.read_only_hint}
     assert writers == {"dj_plan", "dj_tree_apply", "dj_apply_write", "dj_copy_apply", "dj_push_apply",
                        "dj_build_apply", "dj_tidy_plan", "dj_tidy_apply", "dj_tidy_undo", "dj_library_analyze",
                        "dj_structure_preview", "dj_structure_write", "dj_crate_write", "dj_barber_next",
-                       "dj_barber_record"}
+                       "dj_barber_record", "dj_wishlist_shop"}
     assert not any(t.annotations.destructive_hint for t in tools.values())
     assert "file" in tools["dj_tree_apply"].input_schema["properties"]  # schema survives @guarded
 

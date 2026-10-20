@@ -1,7 +1,8 @@
 """dj analyze: a read-only census of the Spotify library.
 
 Pull everything once into .cache/library/*.json (playlists, Liked Songs, saved albums,
-followed artists, top items, artist genres), then write reports/library/*.md:
+followed artists, top items; genres only where those artists carry them), then write
+reports/library/*.md:
 
   00_summary.md    computed stats and rankings, meant to be read whole
   01_artists.md    one line per artist, by track count
@@ -24,7 +25,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from dj.safety import REPO_ROOT
-from dj.spotify import SpotifyError
+from dj.spotify import SpotifyError, refused_status
 
 CACHE_DIR = REPO_ROOT / ".cache" / "library"
 REPORT_DIR = REPO_ROOT / "reports" / "library"
@@ -126,11 +127,15 @@ def pull(api: Any, cache_dir: Path | None = None,
         try:
             entry["rows"] = _rows(api.playlist_items(p["id"]))
         except SpotifyError as exc:
-            # Spotify-owned editorial / algorithmic playlists answer 403 to dev-mode apps.
-            if "403" not in str(exc):
+            # Since Feb 2026 a dev-mode app reads only playlists the user owns or collaborates
+            # on: other users' and Spotify's own playlists answer 403 or 404 (C-06), and a
+            # playlist removed since the listing answers 404. Same test as `dj pull`.
+            code = refused_status(exc)
+            if code is None:
                 raise
-            skipped.append({"name": entry["name"], "owner": entry["owner_name"]})
-            progress(f"playlist {entry['name']}: SKIPPED (403, Spotify-owned)")
+            skipped.append({"name": entry["name"], "owner": entry["owner_name"], "status": code})
+            why = "not yours or Spotify-owned" if code == 403 else "not found, or not readable by this app"
+            progress(f"playlist {entry['name']}: SKIPPED ({code}, {why})")
             continue
         playlists.append(entry)
         progress(f"playlist {entry['name']}: {len(entry['rows'])} rows")
@@ -164,22 +169,13 @@ def pull(api: Any, cache_dir: Path | None = None,
         wanted.update(a["id"] for a in track["artists"] if a.get("id"))
     for row in albums:
         wanted.update(a["id"] for a in row["album"]["artists"] if a.get("id"))
-    missing = sorted(wanted - set(known))
-    progress(f"artists: {len(wanted)} distinct, fetching {len(missing)}")
+    # The batch GET /artists?ids= was removed in Feb 2026 (C-06) and a single GET /artists/{id}
+    # carries no genres for this app, so only followed and top artists carry details.
+    progress(f"artists: {len(wanted)} distinct, {len(set(wanted) & set(known))} with details "
+             "(followed or top); no per-artist fetch")
     genres_available = any(a.get("genres") for a in known.values())
     if not genres_available:
-        # Spotify no longer returns artist genres to apps like this one (2025); when even
-        # the top/followed artists carry none, thousands of lookups would return nothing.
-        progress("artist genres: none returned by Spotify, skipping the artist fetch")
-    else:
-        try:
-            for a in api.artists(missing):
-                if a.get("id"):
-                    known[a["id"]] = slim_artist(a)
-        except SpotifyError as exc:
-            if "403" not in str(exc):
-                raise
-            progress("artist genres: batch endpoint forbidden (403), keeping what we have")
+        progress("artist genres: none returned by Spotify")
     _write(cache / "artists.json", known)
     _write(cache / "pulled.json", {"pulled_at": datetime.now(timezone.utc).isoformat(),
                                    "playlists": len(playlists), "liked": len(liked),
@@ -433,6 +429,8 @@ def playlist_stats(lib: Library) -> list[dict[str, Any]]:
             genres.update(lib.genres_of(t))
             artists.update(t.artist_names)
         years = [t.year for t in ts if t.year]
+        # popularity is gone for this app since Feb 2026 (C-06): no scores -> no average, not 0
+        pops = [t.popularity for t in ts if t.popularity is not None]
         out.append({
             "name": p["name"], "mine": p["mine"], "owner": p.get("owner_name") or p.get("owner_id"),
             "rows": len(p["rows"]), "tracks": len(ts),
@@ -440,7 +438,7 @@ def playlist_stats(lib: Library) -> list[dict[str, Any]]:
             "liked": sum(t.liked for t in ts),
             "duration_ms": sum(t.duration_ms for t in ts),
             "median_year": sorted(years)[len(years) // 2] if years else None,
-            "avg_pop": round(sum(t.popularity or 0 for t in ts) / len(ts)) if ts else None,
+            "avg_pop": round(sum(pops) / len(pops)) if pops else None,
             "top_genres": [g for g, _ in genres.most_common(3)],
             "top_artists": [a for a, _ in artists.most_common(3)],
             "tracks_list": sorted(ts, key=lambda t: (t.artist.lower(), t.name.lower())),
@@ -516,8 +514,10 @@ def summary_md(lib: Library) -> str:
     if lib.excluded:
         L += [f"Owner filter active: {len(lib.excluded)} playlists by other owners left out.", ""]
     if lib.skipped:
-        L += ["Not readable by this app (Spotify-owned, 403): " +
-              "; ".join(p["name"] or "?" for p in lib.skipped), ""]
+        # entries from before W-25 carry no status: they were 403s
+        L += ["Not readable by this app (403: not yours or Spotify-owned; 404: not found, or not "
+              "readable): " + "; ".join(f"{p['name'] or '?'} ({p.get('status', 403)})"
+                                        for p in lib.skipped), ""]
     L += table(["playlist", "owner", "tracks", "only here", "liked", "length", "median year", "avg pop", "top genres", "top artists"],
                [[s["name"], "me" if s["mine"] else s["owner"], s["tracks"], s["only_here"], s["liked"],
                  hours(s["duration_ms"]), s["median_year"], s["avg_pop"],
@@ -630,7 +630,7 @@ def playlists_md(lib: Library) -> str:
         L += [f"## {s['name']}", "",
               f"owner: {'me' if s['mine'] else s['owner']} | tracks: {s['tracks']} | only here: {s['only_here']} | "
               f"liked: {s['liked']} | length: {hours(s['duration_ms'])} | median year: {s['median_year']} | "
-              f"avg pop: {s['avg_pop']}", "",
+              f"avg pop: {'-' if s['avg_pop'] is None else s['avg_pop']}", "",
               f"top genres: {'; '.join(s['top_genres']) or '-'}", "",
               f"top artists: {'; '.join(s['top_artists']) or '-'}", ""]
         L += table(["artist", "title", "year", "len", "pop", "L"],

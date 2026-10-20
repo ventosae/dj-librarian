@@ -314,3 +314,15 @@ def test_r1003_spot_check_on_the_report(tmp_path):
         assert text.split("\n")[0].startswith("# "), name  # each section has its heading ...
         assert not text.split("\n")[1].startswith(("# ", "- ")), name  # ... and then its point
         assert text_problems(text) == [], (name, text_problems(text))
+
+
+EXPECTED_SKILLS = {
+    "dj-start", "dj-profile", "dj-structure", "dj-taste", "dj-report", "dj-build",
+    "dj-crate", "dj-barber", "dj-spotify", "dj-sync", "dj-tidy",
+}  # fmt: skip
+
+
+def test_the_v01_skill_set_is_complete():
+    """BUILD-v0.1 success criterion: these eleven skills, no more, no fewer."""
+    folders = {p.name for p in (Path(__file__).resolve().parents[1] / "plugin" / "skills").iterdir() if p.is_dir()}
+    assert folders == EXPECTED_SKILLS

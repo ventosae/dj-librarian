@@ -174,7 +174,8 @@ TOOLS = {  # tool -> (call with a bare name, the folder, the file's name)
 def test_each_file_tool_resolves_a_bare_name_in_its_folder(repo, calls, tool):
     call, folder, name = TOOLS[tool]
     answer = json.loads(call(name))
-    assert answer["ok"] is False and answer["error"] == f"{name!r} not found: looked in {folder}/ and the repo root."
+    # repo_file names "the repo root"; library_file (sync plans and tracklists, W-25) names both roots
+    assert answer["ok"] is False and answer["error"].startswith(f"{name!r} not found: looked in {folder}/ and ")
     assert calls == []  # refused before anything ran
     target = write(repo.root / folder / name, "{}")
     assert json.loads(call(name))["ok"] is True

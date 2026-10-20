@@ -297,17 +297,19 @@ def scaffold(
     return ScaffoldResult(tuple(created), tuple(skipped), added)
 
 
-def gitignore_missing(root: str | Path) -> tuple[str, ...]:
-    """The machine-path lines the folder's `.gitignore` lacks (all of them if there is none)."""
+def gitignore_missing(root: str | Path, extra: tuple[str, ...] = ()) -> tuple[str, ...]:
+    """The machine-path lines the folder's `.gitignore` lacks (all of them if there is none).
+    `extra` = further lines a feature needs (W-25: `plans/*.plan.json`)."""
     path = LibraryFolder(Path(root)).gitignore
     have: set[str] = set()
     if path.is_file():
         have = {line.strip() for line in path.read_bytes().decode("utf-8", "replace").splitlines()}
-    return tuple(line for line in GITIGNORE_LINES + GITIGNORE_EXTRA if line not in have)
+    return tuple(line for line in GITIGNORE_LINES + GITIGNORE_EXTRA + extra if line not in have)
 
 
-def ensure_gitignore(root: str | Path) -> tuple[str, ...]:
-    """Append the missing machine-path lines to an existing `.gitignore`; return them.
+def ensure_gitignore(root: str | Path, extra: tuple[str, ...] = ()) -> tuple[str, ...]:
+    """Append the missing machine-path lines (and `extra`) to an existing `.gitignore`;
+    return them.
 
     Add only: the DJ's own lines stay exactly as they are. Lines go at the end, after a
     marker comment, so they win over an earlier `!` rule. No `.gitignore` -> nothing done
@@ -316,7 +318,7 @@ def ensure_gitignore(root: str | Path) -> tuple[str, ...]:
     path = LibraryFolder(Path(root)).gitignore
     if not path.is_file():
         return ()
-    missing = gitignore_missing(root)
+    missing = gitignore_missing(root, extra)
     if not missing:
         return ()
     existing = path.read_bytes()

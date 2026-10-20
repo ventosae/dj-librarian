@@ -66,8 +66,9 @@ class FakeAPI:
         return [track("t2", "Chameleon", ["Herbie"], year="1973")] if rng == "short_term" else []
 
     def artists(self, ids):
+        # GET /artists?ids= was removed in Feb 2026 (C-06): dj analyze must never ask.
         self.artist_calls.append(list(ids))
-        return [ARTISTS[i] for i in ids if i in ARTISTS]
+        raise AssertionError("dj analyze called the removed batch GET /artists?ids=")
 
 
 @pytest.fixture
@@ -78,12 +79,13 @@ def pulled(tmp_path):
     return api, cache, counts
 
 
-def test_pull_writes_slim_cache_and_only_fetches_unknown_artists(pulled):
+def test_pull_writes_slim_cache_and_never_calls_the_artist_batch(pulled):
     api, cache, counts = pulled
     assert counts == {"playlists": 2, "playlist_rows": 5, "skipped": 1, "liked": 2, "albums": 1,
-                      "followed": 1, "artists": 3, "genres_available": True, "cache": str(cache)}
-    # Moodymann came from followed, Herbie from top artists: only Nobody is fetched.
-    assert api.artist_calls == [["a_Nobody"]]
+                      "followed": 1, "artists": 2, "genres_available": True, "cache": str(cache)}
+    # Moodymann came from followed, Herbie from top artists. Nobody stays without details:
+    # the batch GET /artists?ids= is gone (R-804, C-06).
+    assert api.artist_calls == []
     me = json.loads((cache / "me.json").read_text(encoding="utf-8"))
     assert "email" not in me
     playlists = json.loads((cache / "playlists.json").read_text(encoding="utf-8"))
@@ -117,13 +119,14 @@ def test_reports(pulled, tmp_path):
     assert "| unique tracks overall | 5 |" in summary
     assert "| Liked Songs not in any playlist | 1 (50%) |" in summary
     assert "| Deep | me | 3 |" in summary and "| Jazz | Someone | 2 |" in summary
-    assert "| 1 | Nobody | 3 | 1 | 2 | 1 |  |" in summary
+    assert "| 1 | Nobody | 3 | 1 | 2 |  |  |" in summary  # no batch fetch: no popularity
     assert "| 2 | Herbie | 2 | 0 | 2 | 70 | jazz funk |" in summary
     assert "| jazz | 2 |" in summary and "| house | 1 |" in summary
     assert "| 1970s | 1 |" in summary and "| unknown | 2 |" in summary
     assert "| Deep | Jazz | 1 |" in summary
     assert "Head Hunters" in summary and "never@print" not in summary
-    assert "Not readable by this app (Spotify-owned, 403): Editorial" in summary
+    assert ("Not readable by this app (403: not yours or Spotify-owned; 404: not found, or not "
+            "readable): Editorial (403)") in summary
     artists = (out / "01_artists.md").read_text(encoding="utf-8")
     assert artists.splitlines()[7].startswith("| Herbie | 2 | 0 | 2 | 70 | jazz funk | Deep; Jazz |")
     tracks = (out / "10_tracks.md").read_text(encoding="utf-8")
@@ -170,15 +173,27 @@ def test_pull_skips_artist_fetch_when_spotify_returns_no_genres(tmp_path):
         ARTISTS["a_Herbie"]["genres"] = ["jazz funk"]
 
 
-def test_pull_survives_forbidden_artist_batch(tmp_path):
-    api = FakeAPI()
+def test_pull_works_with_a_client_that_has_no_artist_batch(tmp_path):
+    class NoBatch(FakeAPI):
+        artists = None  # GET /artists?ids= is gone (R-804, C-06): calling it would raise
 
-    def forbidden(ids):
-        raise SpotifyError("GET /artists -> 403 Forbidden")
-
-    api.artists = forbidden
-    counts = analyze.pull(api, tmp_path)
+    counts = analyze.pull(NoBatch(), tmp_path)
     assert counts["artists"] == 2  # followed + top only
+
+
+def test_no_popularity_from_spotify_is_no_average_not_zero(pulled):
+    # R-804: popularity is one of the fields removed in Feb 2026 (C-06). A missing score must
+    # not turn into an average of 0; tracks that do carry one are averaged on their own.
+    _, cache, _ = pulled
+    lib = analyze.load(cache)
+    for t in lib.tracks.values():
+        t.popularity = None
+    assert {s["name"]: s["avg_pop"] for s in analyze.playlist_stats(lib)} == {"Deep": None, "Jazz": None}
+    assert "Spotify returned no popularity scores to this app." in analyze.summary_md(lib)
+    playlists = analyze.playlists_md(lib)
+    assert "| avg pop: -\n" in playlists and "avg pop: 0" not in playlists
+    lib.tracks["t2"].popularity = 40  # Chameleon, in both playlists
+    assert {s["name"]: s["avg_pop"] for s in analyze.playlist_stats(lib)} == {"Deep": 40, "Jazz": 40}
 
 
 def test_duplicate_playlist_names_are_kept_apart(pulled):
@@ -190,3 +205,32 @@ def test_duplicate_playlist_names_are_kept_apart(pulled):
     lib = analyze.load(cache)
     assert [p["name"] for p in lib.playlists] == ["Deep", "Jazz", "Deep (2)"]
     assert lib.tracks["t1"].playlists == ["Deep", "Deep (2)"]
+
+
+class GonePlaylistAPI(FakeAPI):
+    """One followed playlist answers 404 (not readable, or deleted since the listing)."""
+
+    def __init__(self, code=404):
+        super().__init__()
+        self.code = code
+
+    def playlist_items(self, pid):
+        if pid == "p2":
+            raise SpotifyError(f"GET https://api.spotify.com/v1/playlists/p2/items -> {self.code} x")
+        return super().playlist_items(pid)
+
+
+def test_a_404_playlist_is_skipped_like_a_403_not_the_end_of_the_census(tmp_path):
+    progress = []
+    counts = analyze.pull(GonePlaylistAPI(), tmp_path / "cache", progress.append)
+    assert (counts["playlists"], counts["skipped"]) == (1, 2)
+    skipped = json.loads((tmp_path / "cache" / "skipped.json").read_text(encoding="utf-8"))
+    assert [(s["name"], s["status"]) for s in skipped] == [("Jazz", 404), ("Editorial", 403)]
+    assert "playlist Jazz: SKIPPED (404, not found, or not readable by this app)" in progress
+    summary = analyze.summary_md(analyze.load(tmp_path / "cache"))
+    assert "Jazz (404); Editorial (403)" in summary
+
+
+def test_other_spotify_errors_still_stop_the_census(tmp_path):
+    with pytest.raises(SpotifyError, match="500"):
+        analyze.pull(GonePlaylistAPI(code=500), tmp_path / "cache")

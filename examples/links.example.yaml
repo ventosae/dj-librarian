@@ -1,4 +1,5 @@
-# Copy to links.yaml. One entry per Spotify inbox playlist.
+# Copy to links.yaml in your dj-library folder (the repo root still works while that file
+# holds no link). One entry per Spotify inbox playlist.
 #   spotify: playlist name, URL or ID (a playlist you own or collaborate on)
 #   crate:   path of a normal playlist that already exists in rekordbox
 - spotify: funk_109_bpm

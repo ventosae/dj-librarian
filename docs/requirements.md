@@ -128,11 +128,11 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
-| R-801 | Guided Spotify setup for a new DJ: Premium check, create their own app, scopes, `.env` — numbered steps per C-06. | M | Dijok completes it without Anton; `dj pull` works. | Agreed | v0.1 |
-| R-802 | Inbox loop for any DJ: `pull → match → plan → yes → apply → log → wishlist`; links and crate paths in the DJ's `dj-library/links.yaml`. | M | Tests pass with repo paths removed; live run on Anton's library. | Agreed | v0.1 |
-| R-803 | Shopping list: missing tracks → `wishlist/<crate>.shopping.md` with Beatport / Bandcamp links, label, BPM / key. | M | File produced for one crate. | Agreed | v0.1 |
-| R-804 | `spotify.py` audited against the Feb 2026 endpoint changes (`/items`, batch removal, search limit 10, removed fields). | M | Audit note; failing calls fixed; tests updated. | Proposed | v0.1 |
-| R-805 | `dj build` (tracklist → Spotify) and `dj push` available to any DJ with their own app. | M | Live run by Anton. | Agreed | v0.1 |
+| R-801 | Guided Spotify setup for a new DJ: Premium check, create their own app, scopes, `.env` — numbered steps per C-06. | M | Dijok completes it without Anton; `dj pull` works. | Built | v0.1 |
+| R-802 | Inbox loop for any DJ: `pull → match → plan → yes → apply → log → wishlist`; links and crate paths in the DJ's `dj-library/links.yaml`. | M | Tests pass with repo paths removed; live run on Anton's library. | Built | v0.1 |
+| R-803 | Shopping list: missing tracks → `wishlist/<crate>.shopping.md` with Beatport / Bandcamp links, label, BPM / key. | M | File produced for one crate. | Built | v0.1 |
+| R-804 | `spotify.py` audited against the Feb 2026 endpoint changes (`/items`, batch removal, search limit 10, removed fields). | M | Audit note; failing calls fixed; tests updated. | Built | v0.1 |
+| R-805 | `dj build` (tracklist → Spotify) and `dj push` available to any DJ with their own app. | M | Live run by Anton. | Built | v0.1 |
 
 ### E9 Library as code (`dj-library/`)
 

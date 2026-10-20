@@ -173,19 +173,17 @@ def test_library_scopes_are_read_only():
     assert set(spotify.READ_SCOPES) <= set(spotify.LIBRARY_SCOPES)
 
 
-def test_followed_artists_pages_under_artists_key_and_artists_batch_by_50():
+def test_followed_artists_pages_under_artists_key_and_there_is_no_artist_batch():
     urls = []
 
     def handler(request):
         urls.append(str(request.url))
-        if "/me/following" in str(request.url):
-            if "after=" in str(request.url):
-                return httpx.Response(200, json={"artists": {"items": [{"id": "b"}], "next": None}})
-            return httpx.Response(200, json={"artists": {"items": [{"id": "a"}, None],
-                                                         "next": f"{API}/me/following?type=artist&after=a"}})
-        return httpx.Response(200, json={"artists": [{"id": i} for i in request.url.params["ids"].split(",")]})
+        if "after=" in str(request.url):
+            return httpx.Response(200, json={"artists": {"items": [{"id": "b"}], "next": None}})
+        return httpx.Response(200, json={"artists": {"items": [{"id": "a"}, None],
+                                                     "next": f"{API}/me/following?type=artist&after=a"}})
 
     api = client(handler)
     assert [a["id"] for a in api.followed_artists()] == ["a", "b"]
-    assert len(api.artists([f"x{i}" for i in range(120)])) == 120
-    assert len([u for u in urls if "/artists?" in u]) == 3
+    assert all("/me/following" in u for u in urls)
+    assert not hasattr(api, "artists")  # GET /artists?ids= was removed in Feb 2026 (R-804)

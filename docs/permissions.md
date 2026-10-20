@@ -49,6 +49,7 @@ rekordbox, Spotify or audio files.
 | `dj_structure_preview` | `proposals/<slug>.yaml` and a preview record; returns a `preview_id`. |
 | `dj_barber_next` | Plans or resumes a Style Barber session (`.cache/barber.json`); returns the next question. |
 | `dj_barber_record` | Appends the DJ's answer as a dated line to `taste/*.md` (never rewrites). |
+| `dj_wishlist_shop` | `wishlist/<crate>.shopping.md`: search links for the missing tracks (never fetched). |
 
 ## Write tools: Ask every time
 

@@ -130,13 +130,22 @@ def library_file(path: str, suffixes: tuple[str, ...], folder: str | None = None
     """Like repo_file, but a file inside the configured library folder is accepted too.
     A relative path is looked up in the library folder first, then in the repo; with a default
     `folder`, then in that folder of each (NFR-05: "x.xml" -> exports/x.xml). An existing exact
-    path wins."""
-    roots = [library_root().resolve(), REPO_ROOT.resolve()]
+    path wins.
+
+    An unusable library setting (a drive root, the home folder) leaves the repo as the only
+    root, as the CLI falls back to the repo (intake.default_paths): repo files keep working,
+    and the setting's error is named only for a path the repo does not hold."""
+    try:
+        roots = [library_root().resolve(), REPO_ROOT.resolve()]
+        unusable = ""
+    except ToolInputError as exc:
+        roots, unusable = [REPO_ROOT.resolve()], f" The library folder setting is not used: {exc}"
     candidate = Path(path)
     exact = [candidate] if candidate.is_absolute() else [root / candidate for root in roots]
     inside = [p.resolve() for p in exact if any(p.resolve().is_relative_to(r) for r in roots)]
     if not inside:
-        raise ToolInputError(f"{path!r} is outside the dj-library folder and the dj-librarian folder.")
+        where = "the dj-librarian folder" if unusable else "the dj-library folder and the dj-librarian folder"
+        raise ToolInputError(f"{path!r} is outside {where}.{unusable}")
     if Path(path).suffix.lower() not in suffixes:
         raise ToolInputError(f"{path!r}: expected one of {', '.join(suffixes)}.")
     if folder and not candidate.is_absolute():
@@ -146,10 +155,10 @@ def library_file(path: str, suffixes: tuple[str, ...], folder: str | None = None
         if full.is_file() and full.suffix.lower() in suffixes:
             return str(full)
     if candidate.is_absolute():
-        raise ToolInputError(f"{path!r} not found: no file at that path.")
+        raise ToolInputError(f"{path!r} not found: no file at that path.{unusable}")
     places = " and ".join(str(r) for r in roots)
     where = f"{folder}/ and the top of {places}" if folder else places
-    raise ToolInputError(f"{path!r} not found: looked in {where}.")
+    raise ToolInputError(f"{path!r} not found: looked in {where}.{unusable}")
 
 
 def music_folder(path: str) -> str:
@@ -531,7 +540,9 @@ def dj_status(page: int = 1, page_size: int = PAGE_SIZE, smart_xml: bool = False
     """Library overview: counts first (tracks, folders, playlists, smart, links), whether
     rekordbox is running, the playlist tree as one row per node, depth first (`tree`: path like
     "house_base/0_INBOX", kind, tracks, children) and per link in links.yaml (`links`) the counts
-    by status, last pull and last apply. Read-only. `tree` and `links` come in pages (`paging`):
+    by status, last pull and last apply (`links_file`: the dj-library folder's links.yaml, else
+    the repo's; `state_from_repo`: repo state files still read until the first apply in the
+    library folder). Read-only. `tree` and `links` come in pages (`paging`):
     page=2 for the next, cut from page 1's run. smart_xml=true adds each smart playlist's raw rule
     XML to its row."""
     page, page_size = page_args(page, page_size)
@@ -590,8 +601,9 @@ def dj_library_analyze(source: str = "xml") -> str:
 
 @server.tool(annotations=SPOTIFY_READ)
 def dj_pull(link: str = "", all_links: bool = False) -> str:
-    """Download a Spotify inbox playlist to inbox/<crate>.json. Read-only on Spotify and
-    rekordbox. `link` = the spotify or crate value of an entry in links.yaml."""
+    """Download a Spotify inbox playlist to the inbox (<library>/.cache/inbox/<crate>.json, or
+    inbox/ in the repo when the library folder's links.yaml has no link yet). Read-only on
+    Spotify and rekordbox. `link` = the spotify or crate value of an entry in links.yaml."""
     if all_links:
         return run_dj(["pull", "--all"])
     return run_dj(["pull"], (link,))
@@ -609,11 +621,22 @@ def dj_match(link: str, page: int = 1, page_size: int = PAGE_SIZE) -> str:
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
 def dj_plan(link: str) -> str:
-    """Write plans/<date>-<crate>.plan.json and wishlist/<crate>.md (files in the repo only,
-    rekordbox untouched) and one log.md line. Returns the paths, the counts and the log line.
-    Then edit the plan: decision yes|no, and for AMBIGUOUS a pick (rb_content_id from its
-    candidates)."""
+    """Write plans/<date>-<crate>.plan.json and wishlist/<crate>.md (text files in the
+    dj-library folder, or in the repo while its links.yaml has no link; rekordbox untouched) and
+    one log.md line. Returns the paths, the counts and the log line. Then edit the plan: decision
+    yes|no, and for AMBIGUOUS a pick (rb_content_id from its candidates)."""
     return run_dj(["plan"], (link,))
+
+
+@server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
+def dj_wishlist_shop(link: str) -> str:
+    """Write the shopping list wishlist/<crate>.shopping.md from the MISSING tracks of the
+    link's newest plan (call dj_plan first): artist - title, Beatport and Bandcamp search links
+    (never fetched), label when Spotify sends one; BPM and key are '-'. A generated text file,
+    rewritten on every call; rekordbox and Spotify untouched. Returns counts first: missing,
+    top labels, the file, the log.md line (library folder only). `stale_plan: true` = the
+    inbox was pulled after that plan: call dj_plan, then this again."""
+    return run_dj(["wishlist", "shop"], (link,))
 
 
 @server.tool(annotations=READ)
@@ -621,11 +644,11 @@ def dj_plan(link: str) -> str:
 def dj_apply_preview(plan_file: str, page: int = 1, page_size: int = PAGE_SIZE) -> str:
     """Dry-run of a plan: the counts (would_add, yes, no, pending), which `decision: yes` tracks
     would be added to the crate (`adds`, in pages: `paging`), and a preview_id (on every page).
-    Writes nothing. `plan_file` = a plan in plans/; a bare name is looked up there
+    Writes nothing. `plan_file` = a plan in plans/ of the dj-library folder or the repo; a bare name is looked up there
     ("2026-10-20-house.plan.json" -> plans/2026-10-20-house.plan.json). Show the DJ the result;
     dj_apply_write needs this preview_id."""
     page, page_size = page_args(page, page_size)
-    return run_paged(["apply"], (repo_file(plan_file, (".json",), folder=PLANS),), keys=("adds",), page=page,
+    return run_paged(["apply"], (library_file(plan_file, (".json",), folder=PLANS),), keys=("adds",), page=page,
                      page_size=page_size)
 
 
@@ -648,14 +671,14 @@ def dj_build_preview(file: str, name: str = "", include_ambiguous: bool = False,
     in pages (`paging`), and a preview_id (on every page). rekordbox untouched, writes nothing.
     Page 1 searches Spotify; pages 2+ are cut from that run (10 minutes), so the preview_id stays
     the same: a different one means the matches changed, show the DJ again. `file` = a tracklist
-    in tracklists/; a bare name is looked up there ("set.txt" -> tracklists/set.txt). Pass the
+    in tracklists/ (dj-library folder or repo); a bare name is looked up there ("set.txt" -> tracklists/set.txt). Pass the
     same `name` and `include_ambiguous` you will pass to dj_build_apply: its preview_id is for
     exactly these arguments."""
     page, page_size = page_args(page, page_size)
     options = ["build"] + (["--name", name] if name else [])
     if include_ambiguous:
         options.append("--include-ambiguous")
-    return run_paged(options, (repo_file(file, (".txt", ".md"), folder=TRACKLISTS),), keys=("items", "skipped_lines"),
+    return run_paged(options, (library_file(file, (".txt", ".md"), folder=TRACKLISTS),), keys=("items", "skipped_lines"),
                      page=page, page_size=page_size)
 
 
@@ -704,7 +727,7 @@ def dj_tree_apply(preview_id: str, file: str = "tree.yaml", power_mode: bool = F
 def dj_apply_write(plan_file: str, preview_id: str, power_mode: bool = False) -> str:
     """WRITES to rekordbox master.db: append the `decision: yes` tracks of a plan to its crate.
     Backup first, one commit, exit_code 2 while rekordbox is open. Then updates
-    state/match_cache.json, state/declined.json and writes a report. Windows power mode (R-205):
+    the match cache and the declined list and writes a report (reports/apply/ in a library folder). Windows power mode (R-205):
     needs power_mode=true, else refused; the default write path is an XML the DJ imports
     (dj_structure_preview / dj_structure_write). Call dj_apply_preview, show the DJ the result,
     ask, and only after their explicit yes pass its preview_id (same `plan_file`; a bare name is
@@ -713,7 +736,7 @@ def dj_apply_write(plan_file: str, preview_id: str, power_mode: bool = False) ->
     `paging.<list>.rest_in` names the report with all of it."""
     power_mode_arg(power_mode)
     pid = preview_id_arg(preview_id, "dj_apply_preview")
-    plan = repo_file(plan_file, (".json",), folder=PLANS)
+    plan = library_file(plan_file, (".json",), folder=PLANS)
     return run_paged(["apply", "--apply", "--power-mode", "--preview-id", pid], (plan,), **WRITTEN_LISTS)
 
 
@@ -744,7 +767,7 @@ def dj_build_apply(file: str, preview_id: str, name: str = "", include_ambiguous
     options = ["build", "--apply", "--preview-id", pid] + (["--name", name] if name else [])
     if include_ambiguous:
         options.append("--include-ambiguous")
-    return run_paged(options, (repo_file(file, (".txt", ".md"), folder=TRACKLISTS),), **WRITTEN_LISTS)
+    return run_paged(options, (library_file(file, (".txt", ".md"), folder=TRACKLISTS),), **WRITTEN_LISTS)
 
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))

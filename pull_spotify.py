@@ -50,6 +50,8 @@ def login(cid, secret):
 
 def pages(url, token):
     while url:
+        if not url.startswith(API + "/"):  # `next` comes from the response: token stays on api.spotify.com
+            sys.exit(f"Refusing to send the token to {url.split('?')[0]}")
         page = call(url, token)
         yield from page.get("items", [])
         url = page.get("next")

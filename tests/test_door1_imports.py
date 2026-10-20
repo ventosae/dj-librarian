@@ -17,6 +17,7 @@ DOOR1_MODULES = [
     "dj.readers.xml",
     "dj.libfolder",
     "dj.treeschema",
+    "dj.shopping",  # W-25: the shopping list (R-803)
     "dj.gate",
     "dj.writers.rekordbox_xml",
     "dj.build_structure",

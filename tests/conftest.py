@@ -112,6 +112,15 @@ def no_real_db_no_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_library_folder(monkeypatch, tmp_path_factory):
+    """The DJ's own dj-library folder is real data too. Since W-25 (R-802) the inbox loop follows
+    the library's links.yaml, so a set DJ_LIBRARY or a remembered folder on the test machine would
+    send `dj pull`/`plan`/`apply` there. Every test starts with a library folder that does not
+    exist; a test that needs one builds it under tmp_path and sets DJ_LIBRARY itself."""
+    monkeypatch.setenv("DJ_LIBRARY", str(tmp_path_factory.getbasetemp() / "no-dj-library"))
+
+
+@pytest.fixture(autouse=True)
 def gate_records_in_a_temp_folder(monkeypatch, tmp_path_factory, request):
     """The CLI's preview records (dj.write_gate, R-1102) go to a folder of this test's own, never
     to REPO_ROOT/state. Created only when a test records a preview."""

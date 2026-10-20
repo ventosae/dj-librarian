@@ -18,6 +18,7 @@ from dj import playlist_copy as copy_mod
 from dj import push as push_mod
 from dj import tree as tree_mod
 from dj.commands.library import library_app
+from dj.commands.wishlist import wishlist_app
 from dj.gate import GateError
 from dj.readers import db as db_reader
 from dj.tidy import TidyError
@@ -34,6 +35,7 @@ app = typer.Typer(
     add_completion=False, no_args_is_help=True, help=__doc__, pretty_exceptions_show_locals=False
 )
 app.add_typer(library_app, name="library")
+app.add_typer(wishlist_app, name="wishlist")
 
 EXIT_ERROR = 1
 EXIT_REKORDBOX_RUNNING = 2
@@ -251,10 +253,14 @@ def status(
         "pyrekordbox": version("pyrekordbox"),
         "running": _running_or_none(),
     }
+    paths = intake.default_paths()
+    data["links_file"] = str(paths.links)  # the library folder's links.yaml, else the repo's
+    # repo state/ files still read in place of the library's own, until the next apply
+    data["state_from_repo"] = paths.carried_state()
     try:
         with db_reader.open_snapshot(db_path) as db:
             data["tracks"] = db.get_content().count()
-            data["links"] = links_data(db, intake.Paths())
+            data["links"] = links_data(db, paths)
             if as_json:
                 data["tree"] = tree_data(db)
                 typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
@@ -271,6 +277,9 @@ def status(
     except db_reader.LibraryError as exc:  # the snapshot copy failed or kept changing
         _fail(exc)
     typer.echo("")
+    if data["state_from_repo"]:  # library folder only: the repo's declined list and match memory
+        typer.echo(f"state:         {', '.join(data['state_from_repo'])} read from the repo's state/ "
+                   "until the next `dj apply --apply` copies them into the library folder")
     typer.echo("links:" if data["links"] else "links:         none (links.yaml)")
     for link in data["links"]:
         typer.echo(f"  {link['spotify']} -> {link['crate']}")
@@ -586,7 +595,7 @@ def pull(
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
     """Spotify playlist -> inbox/<crate>.json. Read-only on both sides."""
-    paths = intake.Paths()
+    paths = intake.default_paths()
     try:
         if bool(link) == all_links:
             raise intake.IntakeError("Give one <link>, or --all.")
@@ -600,7 +609,7 @@ def pull(
 
 
 def _match(link_arg: str) -> tuple[intake.Link, list[intake.Item], set[str]]:
-    paths = intake.Paths()
+    paths = intake.default_paths()
     link = intake.resolve_link(link_arg, paths)
     with safety.open_db(write=False) as db:
         items = intake.match_link(link, db, paths)
@@ -648,7 +657,7 @@ def plan(
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
     """Write plans/<date>-<crate>.plan.json and wishlist/<crate>.md. rekordbox untouched."""
-    paths = intake.Paths()
+    paths = intake.default_paths()
     try:
         lnk, items, in_crate = _match(link)
         plan_path = intake.write_plan(lnk, items, in_crate, paths)
@@ -675,7 +684,7 @@ def apply_plan(
     The dry-run prints a preview id; --apply needs --power-mode and that id (R-205, R-1102)."""
     if apply:
         _gate_db_write(power_mode, preview_id)
-    paths = intake.Paths()
+    paths = intake.default_paths()
     try:
         plan_data = intake.load_plan(plan_file)
         by = intake.decisions(plan_data)
