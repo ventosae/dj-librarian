@@ -3,6 +3,7 @@ session, and that apply/undo open none at all."""
 
 import functools
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -30,6 +31,8 @@ def env(tmp_path, monkeypatch, sessions):  # noqa: F811
     yaml_path.write_text(YAML.format(root=root.as_posix()), encoding="utf-8")
     monkeypatch.setattr(cli.intake, "Paths", functools.partial(cli.intake.Paths, tmp_path))
     monkeypatch.setattr(cli.safety, "rekordbox_running", lambda: False)
+    # tidy writes are Windows-only (test_platform.py); the write mechanics run on every runner
+    monkeypatch.setattr(cli.safety, "TIDY_WRITE_PLATFORMS", (sys.platform,))
     sessions.db = TidyDB()
     return SimpleNamespace(root=root, yaml=str(yaml_path), sessions=sessions, tmp=tmp_path)
 

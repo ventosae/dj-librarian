@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import time
 
 import httpx
@@ -116,6 +118,35 @@ def test_expired_token_is_refreshed_and_keeps_its_refresh_token(env, monkeypatch
     assert spotify.get_token(spotify.READ_SCOPES, env) == "new"
     assert asked == [{"grant_type": "refresh_token", "refresh_token": "R"}]
     assert json.loads(env.read_text())["refresh_token"] == "R"
+
+
+def test_the_token_cache_is_rewritten_in_full(env, monkeypatch):
+    save(env, access_token="old", refresh_token="R", scope=" ".join(spotify.READ_SCOPES), expires_at=0,
+         padding="x" * 500)  # a longer old file must not leave a tail behind
+    monkeypatch.setattr(spotify, "_token_request", lambda e, body: {"access_token": "new", "expires_in": 3600})
+    assert spotify.get_token(spotify.READ_SCOPES, env) == "new"
+    saved = json.loads(env.read_text(encoding="utf-8"))
+    assert saved["access_token"] == "new" and saved["refresh_token"] == "R" and "padding" not in saved
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes; Windows keeps the profile's ACLs")
+@pytest.mark.parametrize("old_mode", [None, 0o644])
+def test_the_token_cache_is_readable_by_its_owner_only_on_posix(env, monkeypatch, old_mode):
+    """macOS/Linux: the cache holds the refresh token; under a 0755 home a 0644 file is readable
+    by every local account. New folder 0700, file 0600, also over an older, wider file."""
+    old_umask = os.umask(0o022)  # the usual umask, restored below
+    try:
+        if old_mode is not None:
+            save(env, access_token="old", refresh_token="R", scope=" ".join(spotify.READ_SCOPES), expires_at=0)
+            env.chmod(old_mode)
+        monkeypatch.setattr(spotify, "_token_request", lambda e, body: {"access_token": "new", "expires_in": 3600})
+        monkeypatch.setattr(spotify, "_login", lambda e, scopes: {"access_token": "new", "scope": " ".join(scopes)})
+        assert spotify.get_token(spotify.READ_SCOPES, env) == "new"
+    finally:
+        os.umask(old_umask)
+    assert stat.S_IMODE(env.stat().st_mode) == 0o600
+    if old_mode is None:
+        assert stat.S_IMODE(env.parent.stat().st_mode) == 0o700
 
 
 def test_a_wider_scope_forces_a_new_login_never_a_silent_upgrade(env, monkeypatch):

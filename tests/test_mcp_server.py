@@ -190,6 +190,7 @@ def test_tidy_preview_and_write_tools(calls, tmp_path, monkeypatch):
 
 
 def test_a_stripped_environment_is_filled_in(calls, monkeypatch):
+    monkeypatch.setattr(m.sys, "platform", "win32")  # the Windows defaults; other OS: test_platform.py
     for key in ("ProgramFiles", "PROGRAMFILES", "APPDATA", "SystemRoot", "SYSTEMROOT"):
         monkeypatch.delenv(key, raising=False)
     m.dj_status()

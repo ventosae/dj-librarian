@@ -4,7 +4,7 @@ A DJ librarian for rekordbox that you talk to through Claude.
 It syncs Spotify playlists into rekordbox crates, builds playlist folders from a YAML file, copies playlists to Spotify, and tidies the tags of your audio files.
 rekordbox stays the source of truth: the tool only ever proposes and adds.
 
-Status: early (0.1.0, unreleased). Windows is the tested platform; macOS support is in progress.
+Status: early (0.1.0, unreleased). Windows is the tested platform. macOS is ported (process check, master.db location) but not yet confirmed against a live rekordbox on a Mac.
 
 ## Safety model
 
@@ -79,6 +79,33 @@ claude plugin install dj-librarian@dj-librarian
 ```
 
 On Claude Code 2.1.275 or later, one step also works: `/plugin install dj-librarian --marketplace OWNER/dj-librarian`.
+
+### The engine on Windows and macOS
+
+The engine is the MCP server `dj-mcp`; it runs on your computer. The plugin starts it for you. To register it in Claude Desktop by hand instead, add it to Claude Desktop's config file:
+
+| OS | Claude Desktop config file |
+|---|---|
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+
+```json
+{
+  "mcpServers": {
+    "dj-librarian": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/dj-librarian", "--no-sync", "dj-mcp"],
+      "env": {"UV_PROJECT_ENVIRONMENT": "/Users/<you>/.venvs/dj-librarian"}
+    }
+  }
+}
+```
+
+On macOS, Claude Desktop starts programs with a short `PATH`: if it cannot find `uv`, put the full path that `which uv` prints into `command`. It does not read `~/.zshrc` either, so the `UV_PROJECT_ENVIRONMENT` from [CONTRIBUTING.md](CONTRIBUTING.md) does not reach it: pass the venv folder in `env` as above, as a full path (no `~`, no `$HOME`). On Windows it is written `C:\\Users\\<you>\\.venvs\\dj-librarian` in the JSON. Leave `env` out when uv uses `.venv/` inside the repo.
+
+- **master.db.** Found through pyrekordbox, else at rekordbox's default location: `%APPDATA%\Pioneer\rekordbox\master.db` on Windows, `~/Library/Pioneer/rekordbox/master.db` on macOS. Set `DJ_MASTER_DB` to use another file. Reads work while rekordbox is open.
+- **Is rekordbox running?** Checked with `tasklist` on Windows and `/usr/bin/pgrep` on macOS. If the check cannot answer, writes are refused.
+- **Writes.** Direct master.db writes (`dj tree`, `dj apply`, `dj copy` with `--apply`) stay Windows-only; on macOS they refuse with a one-line reason. `dj tidy apply --apply` and `dj tidy undo --apply` write audio files on Windows only in v0.1; on macOS they refuse with a one-line reason (macOS support is planned for v0.2). Their dry-runs only read.
 
 ## Documentation
 

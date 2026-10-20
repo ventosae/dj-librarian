@@ -65,9 +65,9 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
-| R-201 | Read master.db read-only through the engine on Mac and Windows, with rekordbox open. | M | `dj_status` returns counts on both OS with rekordbox running. | Proposed | v0.1 |
+| R-201 | Read master.db read-only through the engine on Mac and Windows, with rekordbox open. | M | `dj_status` returns counts on both OS with rekordbox running. | Built | v0.1 |
 | R-202 | Read from a snapshot copy of master.db, never the live file. | M | Live file never opened for read; snapshot path logged. | Built | v0.1 |
-| R-203 | Mac port: process check without `tasklist.exe`, DB discovery under `~/Library/Pioneer/rekordbox`, path handling, Claude Desktop config path on macOS. | M | Tests green on `macos-latest` and `windows-latest`; live `dj_status` on one Mac when a Mac tester appears. | Proposed | v0.1 |
+| R-203 | Mac port: process check without `tasklist.exe`, DB discovery under `~/Library/Pioneer/rekordbox`, path handling, Claude Desktop config path on macOS. | M | Tests green on `macos-latest` and `windows-latest`; live `dj_status` on one Mac when a Mac tester appears. | Built | v0.1 |
 | R-204 | One track/tree model fed by two readers: XML export and master.db. Fields: track metadata, playlist tree, smart playlists, ratings, colours, comments, date added; My Tags, play counts, history where the source has them. | M | Field list documented per reader; fixtures for each. | Built | v0.1 |
 | R-205 | Direct master.db writes (`dj tree --apply`, `dj apply --apply`, `dj copy --apply`) stay Windows-only power mode behind an explicit flag. | M | Flag absent → command refuses with a one-line reason. | Agreed | v0.1 |
 
@@ -179,7 +179,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
 | R-1301 | Windows 11 + rekordbox 7.2.x. | M | Anton's machine. | Built | v0.1 |
-| R-1302 | macOS + rekordbox 7.x. | M | CI green on macOS; live `dj_status` on the first Mac tester. | Agreed | v0.1 |
+| R-1302 | macOS + rekordbox 7.x. | M | CI green on macOS; live `dj_status` on the first Mac tester. | Built | v0.1 |
 | R-1303 | `dj tidy` (audio files) on macOS. | C | — | Proposed | v0.2 |
 
 ## 6. Non-functional

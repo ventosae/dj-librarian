@@ -17,6 +17,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - `dj-report` skill: 2-3 restructure proposals (bases, facets, gig-first) picked from the DJ's patterns (`structure/proposals.yaml`), and the one-file HTML report (`reports/<date>-library.html`: who you are, how it's built, three ways to rebuild it, one next action; no external requests). `dj library report`, `dj library analyze` and the MCP tool `dj_library_analyze` (W-17).
 - `dj-build` skill: a proposal becomes `proposals/<slug>.yaml` (tree as code) and a preview (CREATE / SKIP per node); only with that preview's id does it write `proposals/<slug>.xml`, a rekordbox XML the DJ imports, plus import steps for their OS and a `log.md` line. The preview gate (`dj.gate`) and the XML writer (`dj.writers.rekordbox_xml`, read back by pyrekordbox in tests). `dj library build`, MCP `dj_structure_preview` / `dj_structure_write`. master.db is never opened (W-18).
 - `tests/test_e2e_chain.py`: one test runs export, start, profile, structure, taste, report and build through the skill scripts (W-18).
+- macOS port: rekordbox process check with `pgrep`, master.db discovery under `~/Library/Pioneer/rekordbox`, MCP environment per OS, Claude Desktop config path per OS in the README; master.db writes stay Windows-only (W-20).
 
 ### Changed
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.

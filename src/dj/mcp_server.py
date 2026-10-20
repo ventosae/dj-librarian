@@ -116,19 +116,33 @@ def tidy_target(crate: str, folder: str, all_tracks: bool) -> tuple[list[str], t
     return [], (crate,)
 
 
+MAC_PATH_DIRS = ("/usr/bin", "/bin")  # pgrep lives in /usr/bin
+
+
 def host_env() -> dict[str, str]:
-    """MCP clients start servers with a stripped environment. pyrekordbox needs
-    %ProgramFiles% and %APPDATA% to find rekordbox, tasklist needs %SystemRoot%."""
-    home = Path.home()
-    defaults = {
-        "ProgramFiles": r"C:\Program Files",
-        "SystemRoot": r"C:\Windows",
-        "APPDATA": str(home / "AppData" / "Roaming"),
-        "LOCALAPPDATA": str(home / "AppData" / "Local"),
-        "USERPROFILE": str(home),
-    }
-    present = {k.upper() for k in os.environ}
-    return dict(os.environ) | {k: v for k, v in defaults.items() if k.upper() not in present}
+    """MCP clients start servers with a stripped environment; fill in what the dj process needs.
+
+    Windows: pyrekordbox needs %ProgramFiles% and %APPDATA% to find rekordbox, tasklist needs
+    %SystemRoot%. macOS: pyrekordbox and the master.db default live under HOME, and PATH gets
+    /usr/bin and /bin. Any other OS: the environment as it is."""
+    env = dict(os.environ)
+    if sys.platform == "win32":
+        home = Path.home()
+        defaults = {
+            "ProgramFiles": r"C:\Program Files",
+            "SystemRoot": r"C:\Windows",
+            "APPDATA": str(home / "AppData" / "Roaming"),
+            "LOCALAPPDATA": str(home / "AppData" / "Local"),
+            "USERPROFILE": str(home),
+        }
+        present = {k.upper() for k in env}
+        return env | {k: v for k, v in defaults.items() if k.upper() not in present}
+    if sys.platform == "darwin":
+        if not env.get("HOME"):
+            env["HOME"] = str(Path.home())
+        dirs = [d for d in env.get("PATH", "").split(":") if d]
+        env["PATH"] = ":".join(dirs + [d for d in MAC_PATH_DIRS if d not in dirs])
+    return env
 
 
 def run_dj(options: list[str], positionals: tuple[str, ...] = (), as_json: bool = True) -> str:

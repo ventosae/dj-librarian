@@ -21,9 +21,10 @@ import re
 import shutil
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from dj import safety
 from dj.library import to_track_info
@@ -254,3 +255,28 @@ def read_db(master_db: str | Path | None = None, *, read_at: str | None = None) 
         tracks=tracks,
         roots=roots,
     )
+
+
+@contextmanager
+def open_snapshot(master_db: Path) -> Iterator[Any]:
+    """The pyrekordbox database of a snapshot copy of `master_db`, read-only (R-202), for a
+    caller that needs the rows themselves (`dj status`). Same copy, log line and clean-up as
+    `read_db`; the live file is never opened. A copy that fails comes back as LibraryError."""
+    with tempfile.TemporaryDirectory(prefix="dj-snapshot-") as tmp:
+        try:
+            copy = snapshot(master_db, Path(tmp))
+        except OSError as exc:
+            raise LibraryError(f"Could not copy master.db for a snapshot ({exc}).") from exc
+        log.info("reading master.db snapshot %s (the live file is not opened)", copy,
+                 extra={"snapshot": copy.as_posix()})  # fmt: skip
+        engine = None
+        try:
+            with safety.open_db(write=False, db_path=copy) as db:
+                engine = _engine_of(db)
+                yield db
+        finally:
+            if engine is not None:
+                try:
+                    engine.dispose()  # pooled SQLite handles would block removing the folder on Windows
+                except Exception as exc:
+                    log.warning("could not close the snapshot connection (%s)", _short_reason(exc))

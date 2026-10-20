@@ -18,6 +18,7 @@ from dj import playlist_copy as copy_mod
 from dj import push as push_mod
 from dj import tree as tree_mod
 from dj.commands.library import library_app
+from dj.readers import db as db_reader
 from dj.tidy import TidyError
 from dj.tidy import checks as tidy_checks
 from dj.tidy import config as tidy_config
@@ -99,6 +100,15 @@ def links_data(db: Any, paths: intake.Paths) -> list[dict[str, Any]]:
     return out
 
 
+def _running_or_none() -> bool | None:
+    """The process check for a read: None where this OS cannot answer (R-201: a read works
+    with rekordbox open and never depends on the check)."""
+    try:
+        return safety.rekordbox_running()
+    except safety.SafetyError:
+        return None
+
+
 @app.command()
 def status(
     smart_xml: bool = typer.Option(
@@ -106,29 +116,34 @@ def status(
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
-    """Read-only: track count, playlist tree, rekordbox version, state of every link."""
+    """Read-only: track count, playlist tree, rekordbox version, state of every link.
+    Reads a snapshot copy of master.db (R-202), so it works while rekordbox runs (R-201)."""
     db_path = safety.find_master_db()
     data: dict[str, Any] = {
-        "master_db": str(db_path),
+        "master_db": str(db_path),  # the live file, named only; SQLite opens the copy
         "rekordbox": rekordbox_version(db_path),
         "pyrekordbox": version("pyrekordbox"),
-        "running": safety.rekordbox_running(),
+        "running": _running_or_none(),
     }
-    with safety.open_db(write=False, db_path=db_path) as db:
-        data["tracks"] = db.get_content().count()
-        data["links"] = links_data(db, intake.Paths())
-        if as_json:
-            data["tree"] = tree_data(db)
-            typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
-            return
-        typer.echo(f"master.db:     {data['master_db']}")
-        typer.echo(f"rekordbox:     {data['rekordbox'] or 'unknown'}")
-        typer.echo(f"pyrekordbox:   {data['pyrekordbox']}")
-        typer.echo(f"running:       {'YES' if data['running'] else 'no'}")
-        typer.echo(f"tracks:        {data['tracks']}")
-        typer.echo("")
-        typer.echo("playlist tree:")
-        print_tree(db, smart_xml=smart_xml)
+    try:
+        with db_reader.open_snapshot(db_path) as db:
+            data["tracks"] = db.get_content().count()
+            data["links"] = links_data(db, intake.Paths())
+            if as_json:
+                data["tree"] = tree_data(db)
+                typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
+                return
+            typer.echo(f"master.db:     {data['master_db']}")
+            typer.echo(f"rekordbox:     {data['rekordbox'] or 'unknown'}")
+            typer.echo(f"pyrekordbox:   {data['pyrekordbox']}")
+            running = {True: "YES", False: "no", None: "unknown (the process check could not answer)"}[data["running"]]
+            typer.echo(f"running:       {running}")
+            typer.echo(f"tracks:        {data['tracks']}")
+            typer.echo("")
+            typer.echo("playlist tree:")
+            print_tree(db, smart_xml=smart_xml)
+    except db_reader.LibraryError as exc:  # the snapshot copy failed or kept changing
+        _fail(exc)
     typer.echo("")
     typer.echo("links:" if data["links"] else "links:         none (links.yaml)")
     for link in data["links"]:
@@ -203,6 +218,8 @@ def tree(
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
+    except safety.SafetyError as exc:  # e.g. not Windows (DB_WRITE_PLATFORMS): one line, nothing written
+        _fail(exc)
     typer.echo(f"APPLIED. Created {created} node(s) in one commit. Backup in backups/.")
 
     typer.echo("")
@@ -458,7 +475,7 @@ def apply_plan(
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
-    except INTAKE_ERRORS as exc:
+    except (*INTAKE_ERRORS, safety.SafetyError) as exc:
         _fail(exc)
     _out(as_json, payload, lines)
 
@@ -500,7 +517,7 @@ def copy_playlist(
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
-    except (copy_mod.CopyError, library.LibraryError) as exc:
+    except (copy_mod.CopyError, library.LibraryError, safety.SafetyError) as exc:
         _fail(exc)
     _out(as_json, payload, lines)
 
@@ -702,9 +719,16 @@ def tidy_plan_cmd(
 
 
 def _refuse_if_rekordbox_runs() -> None:
+    """Before any tidy write. Off Windows (safety.TIDY_WRITE_PLATFORMS) it refuses outright:
+    tidy on macOS is R-1303, v0.2. On Windows it asks safety.rekordbox_running; where that
+    check cannot answer it raises SafetyError and the write is refused, never guessed."""
+    if sys.platform not in safety.TIDY_WRITE_PLATFORMS:
+        raise safety.SafetyError(
+            f"dj tidy writes audio files on Windows only in v0.1 (macOS: R-1303, v0.2); this is "
+            f"{sys.platform}. Nothing written.")
     if safety.rekordbox_running():
         raise safety.RekordboxRunningError(
-            f"{safety.PROCESS_NAME} is running. Close rekordbox before writing audio files; it may hold them open "
+            f"{safety.process_name()} is running. Close rekordbox before writing audio files; it may hold them open "
             "and it must Reload Tag afterwards anyway.")
 
 
@@ -727,7 +751,7 @@ def tidy_apply(
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
-    except TIDY_ERRORS as exc:
+    except (*TIDY_ERRORS, safety.SafetyError) as exc:
         _fail(exc)
     verb = "WROTE   " if apply else "WOULD   "
     lines = [f"{verb} {_tail(i['file'])}\n          {_change_text(i)}" for i in result.applied]
@@ -770,7 +794,7 @@ def tidy_undo(
     except safety.RekordboxRunningError as exc:
         typer.echo(f"STOP {exc}", err=True)
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
-    except TIDY_ERRORS as exc:
+    except (*TIDY_ERRORS, safety.SafetyError) as exc:
         _fail(exc)
     verb = "RESTORED" if apply else "WOULD   "
     lines = [f"{verb} {_tail(r['file_before'])}" for r in result.restored]

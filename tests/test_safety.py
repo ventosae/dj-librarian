@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from dj import safety
@@ -15,6 +17,8 @@ def fake_env(db, tmp_path, monkeypatch):
     monkeypatch.setattr(safety, "_connect", lambda path, quiet=False: db)
     monkeypatch.setattr(safety, "_verify_opens", lambda copy: None)
     monkeypatch.setattr(safety, "BACKUP_DIR", tmp_path / "backups")
+    # write sessions are Windows-only (test_platform.py); the write mechanics run on every runner
+    monkeypatch.setattr(safety, "DB_WRITE_PLATFORMS", (sys.platform,))
     return db_path, state
 
 

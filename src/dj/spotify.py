@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import http.server
 import json
+import os
 import secrets
 import time
 import urllib.parse
@@ -140,9 +141,20 @@ def get_token(scopes: tuple[str, ...], cache: Path | None = None) -> str:
     else:
         fresh = _login(env, scopes)
     fresh["expires_at"] = time.time() + int(fresh.get("expires_in", 3600))
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps(fresh), encoding="utf-8")
+    _write_private(cache, json.dumps(fresh))
     return fresh["access_token"]
+
+
+def _write_private(path: Path, content: str) -> None:
+    """Write the token cache readable by its owner only. On macOS and Linux the usual umask
+    would leave it 0644 under a 0755 home; a new `.cache` folder is 0700, the file 0600 (also
+    when an older, wider file is already there). Windows keeps the profile's ACLs."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        if os.name == "posix":
+            os.fchmod(fd, 0o600)
+        fh.write(content)
 
 
 # -- api ---------------------------------------------------------------------------------

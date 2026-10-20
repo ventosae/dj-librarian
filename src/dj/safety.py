@@ -20,7 +20,16 @@ from typing import Any, Iterator
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKUP_DIR = REPO_ROOT / "backups"
 PLAYLIST_XML = "masterPlaylists6.xml"
-PROCESS_NAME = "rekordbox.exe"
+PROCESS_NAME = "rekordbox.exe"  # Windows image name, as tasklist shows it
+MAC_PROCESS_NAME = "rekordbox"  # macOS process name, as pgrep -x matches it
+PGREP = "/usr/bin/pgrep"  # by absolute path, never from PATH
+PGREP_TIMEOUT_S = 30
+# Direct master.db writes are Windows power mode (CLAUDE.md rule 4, R-205). The macOS port
+# (R-203) makes the process check work there; it must not open the write path with it.
+DB_WRITE_PLATFORMS = ("win32",)
+# `dj tidy apply/undo --apply` write audio files on Windows only in v0.1 (macOS is R-1303,
+# v0.2): a working pgrep must not open tidy's write path on a Mac either.
+TIDY_WRITE_PLATFORMS = ("win32",)
 
 
 class SafetyError(RuntimeError):
@@ -36,12 +45,13 @@ class BackupError(SafetyError):
 
 
 def find_master_db() -> Path:
-    """Locate master.db: DJ_MASTER_DB override, pyrekordbox config, then %APPDATA%."""
+    """Locate master.db: DJ_MASTER_DB override, pyrekordbox config, then the OS default
+    (Windows: %APPDATA%/Pioneer/rekordbox, macOS: ~/Library/Pioneer/rekordbox; none elsewhere)."""
     override = os.environ.get("DJ_MASTER_DB")
     if override:
         path = Path(override)
     else:
-        path = _db_path_from_pyrekordbox() or _db_path_from_appdata()
+        path = _db_path_from_pyrekordbox() or _db_path_default()
     if path is None or not path.is_file():
         raise FileNotFoundError(f"master.db not found (looked at: {path})")
     return path
@@ -60,6 +70,15 @@ def _db_path_from_pyrekordbox() -> Path | None:
     return None
 
 
+def _db_path_default() -> Path | None:
+    """Where rekordbox keeps master.db by default on this OS; None where it does not run."""
+    if sys.platform == "win32":
+        return _db_path_from_appdata()
+    if sys.platform == "darwin":
+        return _db_path_from_mac_home()
+    return None
+
+
 def _db_path_from_appdata() -> Path | None:
     appdata = os.environ.get("APPDATA")
     if not appdata:
@@ -67,19 +86,63 @@ def _db_path_from_appdata() -> Path | None:
     return Path(appdata) / "Pioneer" / "rekordbox" / "master.db"
 
 
+def _db_path_from_mac_home() -> Path:
+    return Path.home() / "Library" / "Pioneer" / "rekordbox" / "master.db"
+
+
+def process_name() -> str:
+    """The rekordbox process name on this OS, for messages."""
+    return MAC_PROCESS_NAME if sys.platform == "darwin" else PROCESS_NAME
+
+
 def rekordbox_running() -> bool:
-    """True if rekordbox.exe is running, per tasklist. Windows only."""
-    if sys.platform != "win32":
-        # Never report "not running" when we cannot actually see Windows processes.
-        raise SafetyError("rekordbox_running() needs native Windows (tasklist).")
-    tasklist = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tasklist.exe"
-    result = subprocess.run(
-        [str(tasklist), "/FI", f"IMAGENAME eq {PROCESS_NAME}", "/FO", "CSV", "/NH"],
-        capture_output=True,
-        text=True,
-        check=True,
+    """True if rekordbox runs: tasklist on Windows, pgrep on macOS.
+
+    Any other OS, or a check that cannot answer, raises SafetyError: never report
+    "not running" when the processes cannot actually be seen."""
+    if sys.platform == "win32":
+        return _running_windows()
+    if sys.platform == "darwin":
+        return _running_macos()
+    raise SafetyError(
+        f"rekordbox_running() needs Windows (tasklist) or macOS (pgrep); this is {sys.platform}."
     )
+
+
+def _running_windows() -> bool:
+    """tasklist as before; a tasklist that cannot run or fails is a SafetyError, like pgrep."""
+    tasklist = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tasklist.exe"
+    try:
+        result = subprocess.run(
+            [str(tasklist), "/FI", f"IMAGENAME eq {PROCESS_NAME}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SafetyError(f"Cannot tell whether rekordbox runs: tasklist failed ({exc}).") from exc
     return PROCESS_NAME.lower() in result.stdout.lower()
+
+
+def _running_macos() -> bool:
+    """pgrep exits 0 when a process matched, 1 when none did; anything else is an error."""
+    try:
+        result = subprocess.run(
+            [PGREP, "-x", MAC_PROCESS_NAME],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=PGREP_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SafetyError(f"Cannot tell whether rekordbox runs: {PGREP} failed ({exc}).") from exc
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        return False
+    raise SafetyError(
+        f"Cannot tell whether rekordbox runs: {PGREP} exited with {result.returncode}."
+    )
 
 
 def sha256(path: Path) -> str:
@@ -170,15 +233,21 @@ def open_db(write: bool = False, db_path: Path | None = None) -> Iterator[Any]:
     """Open master.db and yield the pyrekordbox database.
 
     write=False: never commits; rolls back on exit.
-    write=True:  refuses if rekordbox runs -> verified backup -> yield ->
-                 exactly one commit on clean exit. Any exception -> rollback, no commit.
+    write=True:  Windows only (DB_WRITE_PLATFORMS) -> refuses if rekordbox runs ->
+                 verified backup -> yield -> exactly one commit on clean exit.
+                 Any exception -> rollback, no commit.
                  The db object is closed and discarded either way.
     """
+    if write and sys.platform not in DB_WRITE_PLATFORMS:
+        raise SafetyError(
+            f"Direct master.db writes are Windows-only power mode; this is {sys.platform}. "
+            "Nothing written."
+        )
     path = db_path or find_master_db()
     bk: Backup | None = None
     if write:
         if rekordbox_running():
-            raise RekordboxRunningError("rekordbox.exe is running. Close it, then retry.")
+            raise RekordboxRunningError(f"{process_name()} is running. Close it, then retry.")
         bk = backup(path)
 
     db = _connect(path)
@@ -187,7 +256,7 @@ def open_db(write: bool = False, db_path: Path | None = None) -> Iterator[Any]:
         if write:
             if rekordbox_running():
                 raise RekordboxRunningError(
-                    "rekordbox.exe was started during the run. Nothing committed."
+                    f"{process_name()} was started during the run. Nothing committed."
                 )
             db.commit()
         else:
