@@ -58,9 +58,27 @@ with the same key whose text does not start with `never propose:` / `never pair:
 `Vetoes.with_copies(tracks)` extends it to every copy (same artist and title) in the library,
 and Crate me (`dj.crate.select`) and dj-build (`dj.build_structure`) apply vetoes that way.
 
-`taste/feedback.md` holds what the DJ said about picks, one dated line each, the key optional:
+`taste/feedback.md` holds what the DJ said about a gig, one dated line each, the key optional. Two
+line shapes are scored (R-702, Q-19): the text after the date starts with a sign, `+` for a track
+that worked, `-` for one that flopped, then `Artist - Title`, then `: note` (the note optional)::
 
-    - [2026-10-22] too dark for a warm-up: Kestrel Unit - Ballast <!-- key:feedback:18 -->
+    - [2026-10-22] + Kestrel Unit - Ballast: packed the floor at 1am <!-- key:gig:saturday-gig -->
+    - [2026-10-22] - Grid Saint - Pressure Vessel: cleared the floor
+    - [2026-10-22] what worked at Saturday Gig: the rooftop closers    (a remark: not scored)
+
+The leading `- [date] ` is the dated bullet every taste file uses (`append_entries` writes it), so
+the sign sits right after the date. A line typed by hand with the sign as its bullet,
+`+ [2026-10-22] Kestrel Unit - Ballast: packed the floor`, counts as worked too. `- [date] Artist -
+Title` stays a remark: `-` is the bullet of every dated line, so a flop needs the sign after the
+date. `read_gig_feedback` reads the signed lines (a keyed line counts only while it is the latest
+line for its key; a later one's `updated: ` prefix is dropped). `feedback_scores` matches each to
+the library's songs as vetoes do (`dj.analysis.common.dup_key`: artist and title, so every copy of
+the song; a remix named only in the Remixer field is another track, which a line names by adding
+the remixer to the title: `Brass Tide (Dub Atelier Remix)`) and gives +1 (worked) or -1 (flopped)
+per track, the latest line for a song deciding. A line that names no track in the library counts
+for nothing. Crate me adds that to a track's score and never takes a flopped track as a spare
+(`dj.crate.select`). The barber writes a gig answer as one unit (`dj.barber.entries_for`): a later
+answer for the same gig replaces the earlier one whole.
 """
 
 from __future__ import annotations
@@ -71,7 +89,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Iterable, NamedTuple, Sequence
 
-from dj.analysis.common import dup_key
+from dj.analysis.common import dup_key, norm_key
 from dj.libfolder import write_text
 from dj.model import LibraryError
 
@@ -81,6 +99,14 @@ LOG_HEADING = "## Log"
 UPDATED = "updated: "
 VETO_TEXT = "never propose:"
 PAIR_TEXT = "never pair:"
+WORKED, FLOPPED = 1, -1  # a signed feedback line: + worked, - flopped (Crate me: +1 / -1)
+FEEDBACK_SIGNS = {"+": WORKED, "-": FLOPPED}
+_SIGNED = re.compile(r"^([+-])\s+(\S.*)$")
+# Words a title may add after a remixer's name to name that remix: "(Dub Atelier Remix)".
+_VERSION_WORDS = frozenset(
+    {"remix", "mix", "edit", "dub", "rework", "version", "extended", "club", "vip", "bootleg", "refix", "re",
+     "radio", "instrumental", "reprise", "flip"}
+)  # fmt: skip
 
 # `- [YYYY-MM-DD] text <!-- key:k -->`; lenient on the bullet and on spaces, so lines the DJ
 # typed by hand parse too. The key comment is optional.
@@ -471,11 +497,16 @@ def read_entries(path: str | Path) -> list[LogEntry]:
 
     Undated lines and lines with an impossible date are skipped. A missing file -> [].
     """
+    return [entry for _bullet, entry in _dated_entries(path)]
+
+
+def _dated_entries(path: str | Path) -> list[tuple[str, LogEntry]]:
+    """`read_entries`, each with the bullet its line starts with (`-`, `*` or `+`)."""
     path = Path(path)
     if not path.is_file():
         return []
     lines, _ = _split(_read(path))
-    out: list[LogEntry] = []
+    out: list[tuple[str, LogEntry]] = []
     for line in _outside_now(lines):
         m = _ENTRY.match(line.rstrip("\r"))
         if not m:
@@ -484,7 +515,8 @@ def read_entries(path: str | Path) -> list[LogEntry]:
             day = date.fromisoformat(m.group(1))
         except ValueError:
             continue
-        out.append(LogEntry(day, _SPACE.sub(" ", m.group(2)).strip(), m.group(3) or None))
+        entry = LogEntry(day, _SPACE.sub(" ", m.group(2)).strip(), m.group(3) or None)
+        out.append((line.lstrip()[:1], entry))
     return out
 
 
@@ -502,6 +534,126 @@ def read_keys(path: str | Path) -> set[str]:
 def read_feedback(path: str | Path) -> list[LogEntry]:
     """`taste/feedback.md`: the DJ's dated remarks, (date, text, key or None), in file order."""
     return read_entries(path)
+
+
+class GigFeedback(NamedTuple):
+    """A signed line of `taste/feedback.md` (see the module docstring)."""
+
+    date: date
+    sign: int  # WORKED (+1) or FLOPPED (-1)
+    text: str  # what follows the sign: "Artist - Title: note"
+    key: str | None
+
+
+def signed_feedback(text: str) -> tuple[int, str] | None:
+    """`+ Artist - Title: note` -> (+1, "Artist - Title: note"), `- ...` -> (-1, ...); anything else
+    (a remark, a sign without "Artist - Title") -> None."""
+    m = _SIGNED.match(_SPACE.sub(" ", text).strip())
+    if not m or " - " not in m.group(2):
+        return None
+    return FEEDBACK_SIGNS[m.group(1)], m.group(2).strip()
+
+
+def read_gig_feedback(path: str | Path) -> list[GigFeedback]:
+    """The signed lines of `taste/feedback.md`, in file order. A keyed line counts only while it is
+    the latest line for its key (an `updated:` gig answer replaces the earlier one; its prefix is
+    dropped); every dated line without a key counts. A line whose bullet is `+` and whose text is
+    `Artist - Title: note` without a sign counts as worked (typed by hand: `+ [date] ...`). A
+    missing file -> []."""
+    entries = _dated_entries(path)
+    first: dict[str, int] = {}
+    last: dict[str, int] = {}
+    for n, (_bullet, entry) in enumerate(entries):
+        if entry.key:
+            key = canonical_key(entry.key)
+            first.setdefault(key, n)
+            last[key] = n
+    out: list[GigFeedback] = []
+    for n, (bullet, entry) in enumerate(entries):
+        text = entry.text
+        if entry.key:
+            key = canonical_key(entry.key)
+            if last[key] != n:
+                continue
+            if first[key] != n:
+                text = _strip_updated(text)
+        signed = signed_feedback(text)
+        if signed is None and bullet == "+":
+            signed = signed_feedback(f"+ {text}")
+        if signed is not None:
+            out.append(GigFeedback(entry.date, signed[0], signed[1], entry.key))
+    return out
+
+
+class _Songs(NamedTuple):
+    """The library's songs as a signed line names them: `groups` = `dup_key` -> track ids (the
+    copies of one song); `remixes` = `norm_key` -> (remixer words, `dup_key`) of each remix named
+    only in its Remixer field."""
+
+    groups: dict[str, list[str]]
+    remixes: dict[str, list[tuple[list[str], str]]]
+
+
+def _songs(tracks: Iterable[Any]) -> _Songs:
+    groups: dict[str, list[str]] = {}
+    remixes: dict[str, list[tuple[list[str], str]]] = {}
+    for t in tracks:
+        key = dup_key(t.artist, t.title, getattr(t, "remixer", "") or "")
+        if not key:
+            continue
+        if key not in groups:
+            base = norm_key(t.artist, t.title)
+            if key != base:  # `dup_key` added the remixer: `<base>|<remixer>`
+                remixes.setdefault(base, []).append((key[len(base) + 1:].split(), key))
+        groups.setdefault(key, []).append(str(t.id))
+    return _Songs(groups, remixes)
+
+
+def _remix_of(name: str, songs: _Songs) -> str | None:
+    """The remix (named only in its Remixer field) a `norm_key` names: the title is the remix's
+    title, then the remixer's words, then version words only (`brass tide dub atelier remix`)."""
+    artist, _, title = name.partition("|")
+    words = title.split()
+    for k in range(len(words) - 1, 0, -1):  # the longest base title first
+        tail = words[k:]
+        for mix, key in songs.remixes.get(f"{artist}|{' '.join(words[:k])}", ()):
+            if tail[: len(mix)] == mix and all(w in _VERSION_WORDS for w in tail[len(mix):]):
+                return key
+    return None
+
+
+def _song_key(text: str, songs: _Songs) -> str | None:
+    """The `dup_key` of the song a signed line names, when the library holds it. `text` is
+    "Artist - Title: note"; an artist or a title may hold " - " or ": " itself, so every split is
+    tried: the first " - " first, and for each the longest title before a ": " first. A song named
+    as it is (same `norm_key`) wins over a remix named only in a Remixer field, which is tried
+    after every split."""
+    names: list[str] = []
+    dashes = [i for i in range(len(text)) if text.startswith(" - ", i)]
+    for i in dashes:
+        artist, rest = text[:i], text[i + 3:]
+        cuts = [len(rest)] + sorted((j for j in range(len(rest)) if rest.startswith(": ", j)), reverse=True)
+        names += [key for j in cuts if (key := norm_key(artist, rest[:j]))]
+    hit = next((name for name in names if name in songs.groups), None)
+    return hit or next((key for name in names if (key := _remix_of(name, songs))), None)
+
+
+def feedback_scores(feedback: Iterable[GigFeedback], tracks: Iterable[Any]) -> dict[str, int]:
+    """Track id -> WORKED (+1) or FLOPPED (-1) from the signed feedback lines, for every copy of the
+    song a line names: the same `dup_key` (artist and title, as `Vetoes.with_copies` counts copies),
+    so a remix named only in the Remixer field is another track; a line names it by adding the
+    remixer to the title ("Brass Tide (Dub Atelier Remix)"). The latest line for a song decides (by
+    date, then file order). A line that names no track counts for nothing. `tracks`: anything
+    with `id`, `artist`, `title` and (optional) `remixer`."""
+    songs = _songs(tracks)
+    verdict: dict[str, tuple[date, int, int]] = {}
+    for order, line in enumerate(feedback):
+        key = _song_key(line.text, songs)
+        if key is None:
+            continue
+        if key not in verdict or (line.date, order) >= verdict[key][:2]:
+            verdict[key] = (line.date, order, line.sign)
+    return {tid: sign for key, (_day, _order, sign) in verdict.items() for tid in songs.groups[key]}
 
 
 def read_vetoes(path: str | Path) -> Vetoes:

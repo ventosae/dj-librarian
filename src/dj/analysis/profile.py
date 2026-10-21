@@ -525,7 +525,7 @@ def run(folder: LibraryFolder | str | Path, *, xml: str | Path | None = None, to
     source = _source_name(folder, path)
     written = write(folder, measured, source=source, today=today)
     counts = {"tracks": measured["size"]["tracks"], "duplicates": measured["duplicates"]["groups"]}
-    append_log(folder.root, "profile", counts, STATS_MD)
+    append_log(folder.root, "profile", counts, STATS_MD, today=today)
     return {
         "written": [folder.relative(p) for p in written],
         "headline": measured["headline"],

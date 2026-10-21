@@ -407,9 +407,10 @@ def test_windows_is_the_db_write_platform():
 
 
 @pytest.fixture
-def db_write_cli(monkeypatch, tmp_path):
-    """The read pass sees a fake db; the write session is the real open_db, so its platform
-    refusal runs. Nothing behind the refusal (backup, process check, connect) may run."""
+def db_write_cli(monkeypatch, tmp_path, live_master_db):
+    """The read pass sees a fake db (it locates master.db to copy it: a snapshot, R-202); the write
+    session is the real open_db, so its platform refusal runs. Nothing behind the refusal (backup,
+    process check, connect) may run."""
     state = SimpleNamespace(db=None, sessions=[])
 
     @contextmanager
@@ -425,7 +426,7 @@ def db_write_cli(monkeypatch, tmp_path):
         raise AssertionError("nothing may run before the platform refusal")
 
     monkeypatch.setattr(safety, "open_db", open_db)
-    for name in ("find_master_db", "rekordbox_running", "backup", "_connect"):
+    for name in ("rekordbox_running", "backup", "_connect"):
         monkeypatch.setattr(safety, name, untouched)
     monkeypatch.setattr(cli.intake, "Paths", functools.partial(cli.intake.Paths, tmp_path))
     return state

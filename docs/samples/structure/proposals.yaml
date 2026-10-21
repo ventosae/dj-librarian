@@ -1,13 +1,14 @@
 # Restructure proposals for your library, generated from exports/2026-10-20-collection.xml on 2026-10-20.
 # Rename a proposal or change its tree here, then render the report again: it shows this file.
 # Keep each trigger "Build me the <name> structure". The next propose run rewrites this file; a copy you edited is kept first.
-# fingerprint: 99472440ca91
+# fingerprint: 4031b0db47fd
 - slug: house-bases
   name: House Bases
   family: bases
   principle: 'One base per main genre (House, Techno, Deep House and 2 more): new tracks land in 0_INBOX, your crates sit in 1_CRATES, gigs and sets in 2_SETS.'
   cost_minutes: 23
   trigger: Build me the House Bases structure
+  source: exports/2026-10-20-collection.xml
   lands:
     - from: House/1.1_warm_up
       to: deep_house_base/1_CRATES/1.1_warm_up
@@ -79,6 +80,7 @@
   principle: 5 shallow genre shelves (House, Techno, Deep House and 2 more) and your gig crates beside them; My Tags (Role, Body, Vibe, Status) sort inside them later.
   cost_minutes: 8
   trigger: Build me the Deep Facets structure
+  source: exports/2026-10-20-collection.xml
   lands:
     - from: House/1.1_warm_up
       to: genres/Deep House
@@ -126,6 +128,7 @@
   principle: A crate per residency or event (2 crates), everything else in an archive; new tracks wait in 0_INBOX.
   cost_minutes: 8
   trigger: Build me the Warehouse Gigs structure
+  source: exports/2026-10-20-collection.xml
   lands:
     - from: House/1.1_warm_up
       to: archive/1.1_warm_up

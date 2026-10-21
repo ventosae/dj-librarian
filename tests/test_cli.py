@@ -15,22 +15,26 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def sessions(monkeypatch, db):
-    """Replaces safety.open_db. sessions.log holds the `write` flag of every session."""
+def sessions(monkeypatch, db, live_master_db):
+    """Replaces safety.open_db. sessions.log holds the `write` flag of every session, sessions.paths
+    the db_path each one was opened with (a read: the snapshot copy; a write: None, the live file)."""
 
     class Sessions:
         log: list[bool] = []
+        paths: list = []
         running = False
         db = None
 
     s = Sessions()
-    s.log, s.db = [], db
+    s.log, s.paths, s.db = [], [], db
+    s.live = live_master_db
 
     @contextmanager
     def fake_open_db(write=False, db_path=None):
         if write and s.running:
             raise safety.RekordboxRunningError("rekordbox.exe is running.")
         s.log.append(write)
+        s.paths.append(db_path)
         yield s.db
 
     monkeypatch.setattr(safety, "open_db", fake_open_db)

@@ -14,7 +14,7 @@ import re
 import subprocess
 import sys
 import textwrap
-from datetime import date
+from datetime import date, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -187,7 +187,9 @@ def test_with_habits_md_the_narrative_is_shown(folder):
     text = report.render(folder, today=DAY).read_text(encoding="utf-8")
     who = section_html(text, "who")
     assert "Who you are as a DJ" not in who  # the title: the section has its own heading
-    assert '<p class="prov">Words by Claude, from profile/stats.md and profile/facts.json.</p>' in who
+    # W-30b: no "Words by Claude" caption in the hero or "How you work"; the colophon credits Claude
+    assert "Words by Claude" not in who and 'class="prov"' not in who
+    assert "Words about you by Claude, from profile/habits.md.</p>" in text
     assert "<strong>1970s to the 2020s</strong>" in who
     assert "your log" in who and "example.invalid" not in text  # a link keeps its text only
     assert "<li>five</li>" in who and "<li>six</li>" not in who and "and 1 more in profile/habits.md" in who
@@ -442,21 +444,23 @@ def test_markdown_lists_and_headings():
 # -- run_report, run_render, CLI, script ------------------------------------------------------------
 
 
-def test_run_report_writes_proposals_and_report_and_one_log_line(tmp_path):
+def test_run_report_writes_proposals_and_report_and_one_log_line(tmp_path, monkeypatch):
+    monkeypatch.setattr(libfolder, "_wall_clock", lambda: datetime(2026, 10, 21, 13, 20))  # Q-28: the wall clock
     root = make_library(tmp_path / "dj-library")
     result = report.run_report(root, today=DAY)
     assert list(result)[0] == "counts" and result["counts"] == {"proposals": 3, "files": 2}
     assert result["written"] == ["structure/proposals.yaml", REPORT] and result["report"] == REPORT
-    assert result["log"] == f"2026-10-20 00:00 report -> 3 proposals, 2 files; {REPORT}"
+    assert result["log"] == f"2026-10-20 13:20 report -> 3 proposals, 2 files; {REPORT}"
     assert [p["family"] for p in result["proposals"]] == ["bases", "facets", "gig-first"]
     page = (root / REPORT).read_text(encoding="utf-8")
     assert "No profile yet" in page and len(parsed(page).articles) == 3  # the report needs only the export
 
 
-def test_run_render_logs_one_line(folder):
+def test_run_render_logs_one_line(folder, monkeypatch):
+    monkeypatch.setattr(libfolder, "_wall_clock", lambda: datetime(2026, 10, 21, 13, 20))  # Q-28: the wall clock
     result = report.run_render(folder, today=DAY)
     assert result == {"counts": {"proposals": 3, "files": 1}, "report": "reports/2026-10-20-library-2.html",
-                      "log": "2026-10-20 00:00 report -> 3 proposals, 1 files; reports/2026-10-20-library-2.html"}
+                      "log": "2026-10-20 13:20 report -> 3 proposals, 1 files; reports/2026-10-20-library-2.html"}
 
 
 def test_cli_report_json_and_text(tmp_path):

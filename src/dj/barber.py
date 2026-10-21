@@ -47,6 +47,15 @@ What an answer writes (`record`), one dated line through `taste_files.append_ent
     pair       taste/vetoes.md    never pair: <A> + <B>      <!-- key:pair:<id1>,<id2> -->
                                   good pair: <A> + <B>       (same key: lifts an earlier one)
     gig        taste/feedback.md  what worked at <playlist>: <text>  <!-- key:gig:<playlist slug> -->
+                                  + <Artist - Title>: <note>  (worked; `-` = flopped: scored by Crate me)
+
+A gig answer in the signed shape (`+ Artist - Title: note` for a track that worked, `- Artist -
+Title: note` for one that flopped, several joined by `;`) is written as those lines themselves,
+one per track (keys `gig:<slug>`, `gig:<slug>:2` ...): the shape `taste_files.read_gig_feedback`
+reads, so Crate me adds +1 / -1 (R-702, Q-19). Any other answer is the remark line. A later answer
+to the same gig replaces the earlier one whole: its lines take the same keys in order, and each
+`gig:<slug>:N` the earlier answer had beyond the new one gets `withdrawn: not in the latest answer
+about <playlist>` (`entries_for`), so a track the DJ left out stops counting.
 
 The never lines are exactly what `taste_files.read_vetoes` reads, so Crate me honours them
 (R-702). The same answer twice adds nothing; a changed answer appends an `updated:` line. An
@@ -71,7 +80,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -94,6 +103,7 @@ from dj.taste_files import (
     canonical_key,
     read_keys,
     read_vetoes,
+    signed_feedback,
 )
 
 MODULE = "dj.barber"
@@ -111,6 +121,7 @@ ANCHORS_SHOWN = 3
 NAME_MAX = 60
 FEEDBACK_MAX = 300
 SKIP = "skip"
+WITHDRAWN = "withdrawn: "  # a gig line a later, shorter answer to the same gig no longer holds
 STATE_FILE = "barber.json"
 STATE_SCHEMA = 1
 
@@ -731,8 +742,43 @@ def entry_for(q: Question, value: str) -> Entry:
         a, b = q.tracks
         return Entry(q.key, f"{'never pair' if value == 'never' else 'good pair'}: {a.label} + {b.label}")
     if q.kind == "gig":
-        return Entry(q.key, f"what worked at {q.subject or 'the last gig'}: {value}")
+        return entries_for(q, value)[0]
     raise BarberError(f"unknown question kind {q.kind!r}")
+
+
+def gig_items(value: str) -> list[str] | None:
+    """A gig answer in the signed shape, one item per track: `+ Artist - Title: note` (worked) or
+    `- Artist - Title: note` (flopped), several joined by ";". None when any part is not signed
+    (then the answer is a remark)."""
+    parts = [part.strip() for part in value.split(";") if part.strip()]
+    if not parts or any(signed_feedback(part) is None for part in parts):
+        return None
+    return [_norm(part) for part in parts]
+
+
+def entries_for(q: Question, value: str, existing: Iterable[str] = ()) -> list[Entry]:
+    """The taste-file lines an answer becomes: one, except a signed gig answer, one per track.
+
+    A gig answer replaces the earlier answer to the same gig whole. `existing`: the canonical keys
+    already in `taste/feedback.md` (`taste_files.read_keys`); each `gig:<slug>:N` there beyond
+    this answer's lines gets a `withdrawn: ` line, so a track an earlier, longer answer named and
+    this one leaves out stops counting (its key's latest line is no longer signed)."""
+    if q.kind != "gig":
+        return [entry_for(q, value)]
+    gig = q.subject or "the last gig"
+    items = gig_items(value)
+    if items is None:
+        out = [Entry(q.key, f"what worked at {gig}: {value}")]
+    else:
+        out = [Entry(q.key if n == 1 else f"{q.key}:{n}", item) for n, item in enumerate(items, 1)]
+    prefix = canonical_key(q.key) + ":"
+    dropped = sorted(
+        (int(rest), key)
+        for key in existing
+        if key.startswith(prefix) and (rest := key[len(prefix):]).isascii() and rest.isdigit()
+        and int(rest) > len(out)
+    )  # fmt: skip
+    return out + [Entry(key, f"{WITHDRAWN}not in the latest answer about {gig}") for _n, key in dropped]
 
 
 def provenance_line(source: str, day: date) -> str:
@@ -776,7 +822,8 @@ def _record(
         path = folder.taste / name
         folder.taste.mkdir(exist_ok=True)
         provenance = "" if path.exists() else provenance_line(session.source, day)
-        added = append_entries(path, title, [entry_for(q, value)], today=day, provenance=provenance)
+        entries = entries_for(q, value, read_keys(path) if q.kind == "gig" else ())
+        added = append_entries(path, title, entries, today=day, provenance=provenance)
     previous = session.answers.get(q.n, {})
     session.answers[q.n] = {
         "status": "skipped" if value == SKIP else "answered",
@@ -786,9 +833,8 @@ def _record(
     save_session(folder, session)
     log = None
     if added:
-        when = datetime.combine(today, time()) if today else None
         counts = {"line added" if len(added) == 1 else "lines added": len(added)}
-        log = append_log(folder.root, "barber", counts, file=q.file, now=when)
+        log = append_log(folder.root, "barber", counts, file=q.file, today=today)
     return added, log
 
 

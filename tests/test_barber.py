@@ -14,7 +14,7 @@ import re
 import subprocess
 import sys
 import textwrap
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -506,7 +506,8 @@ def test_record_without_a_session_today_is_refused(lib_dir):
 # -- what is written, and what never is -----------------------------------------------------------
 
 
-def test_nothing_written_outside_taste_cache_and_log(lib_dir, tmp_path):
+def test_nothing_written_outside_taste_cache_and_log(lib_dir, tmp_path, monkeypatch):
+    monkeypatch.setattr(libfolder, "_wall_clock", lambda: datetime(2026, 10, 21, 13, 20))  # Q-28: the wall clock
     before = snapshot(tmp_path)
     run_session(lib_dir)
     barber.next_step(lib_dir, today=D1)
@@ -519,7 +520,7 @@ def test_nothing_written_outside_taste_cache_and_log(lib_dir, tmp_path):
     log = read(lib_dir / "log.md")
     assert log.startswith(before["dj-library/log.md"].decode("utf-8"))  # appended only (R-904)
     barber_lines = [line for line in log.splitlines() if " barber -> " in line]
-    assert len(barber_lines) == 8 and barber_lines[0].startswith("2026-10-21 00:00 barber -> 1 line added; taste/")
+    assert len(barber_lines) == 8 and barber_lines[0].startswith("2026-10-21 13:20 barber -> 1 line added; taste/")
     assert not list(tmp_path.rglob("*.tmp"))
 
 
@@ -559,7 +560,8 @@ def invoke(*args: str):
     return runner.invoke(cli.app, ["library", "barber", *args])
 
 
-def test_cli_next_and_record_json(lib_dir):
+def test_cli_next_and_record_json(lib_dir, monkeypatch):
+    monkeypatch.setattr(libfolder, "_wall_clock", lambda: datetime(2026, 10, 21, 13, 20))  # Q-28: the wall clock
     result = invoke("next", "--library", str(lib_dir), "--today", "2026-10-21", "--json")
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
@@ -573,7 +575,7 @@ def test_cli_next_and_record_json(lib_dir):
     assert list(out)[0] == "counts" and out["counts"]["lines_added"] == 1
     assert out["recorded"] == {"n": 1, "kind": q["kind"], "answer": answer, "status": "answered", "file": q["file"]}
     assert out["added"][q["file"]][0].startswith("- [2026-10-21] ")
-    assert out["log"].startswith("2026-10-21 00:00 barber -> 1 line added; taste/")
+    assert out["log"].startswith("2026-10-21 13:20 barber -> 1 line added; taste/")
     assert out["next"]["n"] == 2 and out["done"] is False
 
 

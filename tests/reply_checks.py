@@ -5,11 +5,11 @@ plugin/shared/adhd.md. Its Voice line points to plugin/shared/voice.md; the part
 regex can see is the Avoid column of its word table. Everything else on the checklist (first
 person, numbers from the tool, no tangents) is a reviewer's read.
 
-Used by tests/test_skills.py (W-19) on the style guide's own example. R-1003's acceptance, a spot
-check on 3 real outputs, is not met here: the outputs come later (the dj-report HTML from W-17, a
-generated MD file from W-14, a chat reply from the W-28 test session). Those items call
-`text_problems` / `reply_problems` on their real output. `report_sections` turns the dj-report
-HTML into the plain text of each section, the shape `text_problems` reads (W-17).
+Used by tests/test_skills.py (W-19) on the style guide's own example, and for R-1003's spot check
+on 3 real outputs: the dj-report HTML (W-17; `report_sections` turns it into the plain text of
+each section, the shape `text_problems` reads), and since W-30b the generated MD file
+docs/samples/profile/stats.md and the six replies of docs/samples/chat-session-1.md
+(`session_replies` reads them out, `step_reply_problems` checks each one).
 """
 
 from __future__ import annotations
@@ -35,6 +35,8 @@ TIME = re.compile(
 FILE_NAMED = re.compile(r"[\w./-]+\.(md|json|xml|yaml|html)\b")
 LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
 HEADING = re.compile(r"^\s*#{1,6} ")
+# dj-start's own rule: "Every reply starts with the step counter and a time estimate".
+LEAD = re.compile(r"^(?:Step|Question) \d+ of \d+ · ")
 
 
 @cache
@@ -84,6 +86,36 @@ def reply_problems(reply: str) -> list[str]:
     if not TIME.search(lines[-1]):
         problems.append("rules 3/6: last line has no concrete time estimate")
     return problems
+
+
+def step_reply_problems(reply: str) -> list[str]:
+    """`text_problems` plus the shape every reply of a step-by-step skill has (dj-start, Rules):
+    the lead line starts with the step counter ("Step 2 of 6 · ") and holds one concrete time
+    estimate. For the replies of a session, where `reply_problems` is too strict (a hello names
+    no file; an export card ends on its last numbered step, not on a time)."""
+    problems = text_problems(reply)
+    if problems == ["empty text"]:
+        return problems
+    lead = reply.strip().split("\n")[0]
+    if not LEAD.match(lead):
+        problems.append("rule 5: the lead line does not start with 'Step N of M · '")
+    if len(TIME.findall(lead)) != 1:
+        problems.append("rule 6: the lead line holds no time estimate, or more than one")
+    return problems
+
+
+def session_replies(md: str) -> list[tuple[str, list[str]]]:
+    """The replies of a sample session (docs/samples/chat-session-1.md): for each "## Reply"
+    section, (the reply as sent: its ```text block, the widgets that came with it: every list
+    item under the block)."""
+    out = []
+    for part in re.split(r"^## Reply \d+ of \d+\s*$", md.replace("\r\n", "\n"), flags=re.MULTILINE)[1:]:
+        m = re.search(r"```text\n(.*?)\n```(.*)\Z", part, re.DOTALL)
+        if not m:
+            raise ValueError("a reply without its ```text block")
+        widgets = [line.strip()[2:] for line in m.group(2).split("\n") if LIST_ITEM.match(line)]
+        out.append((m.group(1), widgets))
+    return out
 
 
 class _SectionText(HTMLParser):

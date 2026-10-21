@@ -84,3 +84,9 @@ Operating knowledge that is not a rule. Rules live in `CLAUDE.md`. Add a dated l
 - To add a package while the venv's `dj-mcp` binary is locked: `uv add --no-sync X`, then `uv pip install --python <venv>/Scripts/python.exe --link-mode=copy X`. Hardlinks from the uv cache into a venv on another volume fail with "os error 396".
 - MCP clients start servers with a stripped environment; `mcp_server.py` restores the variables pyrekordbox needs to find rekordbox.
 - 2026-10-20 The suite passes on WSL Ubuntu as a stand-in for the Linux and macOS CI runners: copy the tree into the WSL filesystem (tar, without `.git` and caches), `uv sync --group dev`, `uv run pytest`, with `UV_PROJECT_ENVIRONMENT` unset. From Git Bash, call `wsl.exe` with `MSYS_NO_PATHCONV=1`, or MSYS rewrites `/mnt/c/...` into `C:/Git/mnt/c/...`. Tests switch OS branches by monkeypatching `sys.platform` (`tests/test_platform.py`).
+
+## Platforms seen in the PM's runs
+
+- 2026-10-21 Cowork's device VM refuses `unlink` and rename in the connected folder: temp + `os.replace` left `.<name>.<rand>.tmp` siblings and a hardlinked target. Writers now fall back to writing the target directly and never leave a temp behind (W-30, Q-27).
+- 2026-10-21 GUI apps on macOS (Claude Desktop) start with a short PATH that has no `~/.local/bin`, so a bare `uv` is not found. The plugin's engine command is now a user setting (`uv_path`); the M1 card links uv into `/usr/local/bin`. Unverified until the first Mac test (Q-25).
+

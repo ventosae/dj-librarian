@@ -39,9 +39,9 @@ from dj.tidy import tags
 
 runner = CliRunner()
 
-POWER_MODE_LINE = ("REFUSED master.db writes are power mode (Windows only): add --power-mode. Only new folders and "
-                   "playlists have an XML to import instead (dj library build); inbox adds and copies have none "
-                   "in v0.1")  # fmt: skip
+POWER_MODE_LINE = ("REFUSED master.db writes are power mode (Windows only): add --power-mode. The default is an XML "
+                   "to import instead: --xml for inbox adds and copies (dj apply, dj copy), dj library build for "
+                   "new folders and playlists")  # fmt: skip
 NO_SUCH_ID = "0" * 12
 
 
@@ -570,10 +570,10 @@ def calls(monkeypatch, tmp_path):
 
 
 PID = "0123456789ab"
-DB_TOOLS = {
+DB_TOOLS = {  # apply and copy write master.db in mode "db" (their default is an XML: mode "xml")
     "dj_tree_apply": lambda pid, **kw: m.dj_tree_apply(preview_id=pid, file="bases.yaml", **kw),
-    "dj_apply_write": lambda pid, **kw: m.dj_apply_write("p.plan.json", preview_id=pid, **kw),
-    "dj_copy_apply": lambda pid, **kw: m.dj_copy_apply("a", "b", preview_id=pid, **kw),
+    "dj_apply_write": lambda pid, **kw: m.dj_apply_write("p.plan.json", preview_id=pid, mode="db", **kw),
+    "dj_copy_apply": lambda pid, **kw: m.dj_copy_apply("a", "b", preview_id=pid, mode="db", **kw),
 }
 OTHER_TOOLS = {
     "dj_push_apply": lambda pid: m.dj_push_apply("p", preview_id=pid),

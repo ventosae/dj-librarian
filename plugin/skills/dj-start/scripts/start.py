@@ -19,14 +19,18 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Any
 
-try:
-    import dj  # noqa: F401  (engine venv, or a future PyPI install)
-except ImportError:  # plugin inside a clone of the repo
-    sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+try:  # the dj core, in this order (D-22): importable (engine venv or PyPI), a clone, the plugin zip
+    import dj  # noqa: F401
+except ImportError:  # a clone of the repo keeps it in ../../../../src, the plugin zip in ../../../vendor
+    _here = Path(__file__).resolve().parent
+    for _core in (_here / "../../../../src", _here / "../../../vendor"):
+        if (_core / "dj" / "__init__.py").is_file():
+            sys.path.insert(0, str(_core.resolve()))
+            break
 
 try:
     from dj import onboarding
@@ -67,8 +71,8 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
     root = _library(args.library)
     xml = _xml_arg(root, args.xml) if args.xml else None
     return onboarding.init(
-        root, device=args.device, xml=xml, today=args.today, now=_now(args.today), dj_name=args.dj_name
-    )
+        root, device=args.device, xml=xml, today=args.today, dj_name=args.dj_name
+    )  # the log line: --today's date, the wall-clock time (Q-28, dj.libfolder.log_clock)
 
 
 def _xml_arg(root: Path, text: str) -> Path:
@@ -77,12 +81,6 @@ def _xml_arg(root: Path, text: str) -> Path:
         in_library = root / path
         path = in_library if in_library.is_file() else Path.cwd() / path
     return path  # a missing file is init's `xml` error
-
-
-def _now(today: date | None) -> datetime:
-    """The log time: now, on --today's date when one is given (tests pin the date)."""
-    now = datetime.now()
-    return now if today is None else datetime.combine(today, now.time())
 
 
 def _day(text: str) -> date:

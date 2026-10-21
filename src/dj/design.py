@@ -16,6 +16,12 @@ vision deficiency, contrast).
 
 `slot_hex(slot, mode)` gives a slot's hex (1..8), or the "Other" grey for None or anything
 outside 1..8.
+
+`MAX_SLOTS_PER_CHART` (D-26, Q-29): a single chart (a sleeve, the crate wall, a mini sleeve, any
+legend) shows at most 4 categorical slots. A lane keeps its slot (1..8 by BPM, slowest first, in
+profile/identity.json), but a chart draws only slots 1..4 in colour; a lane past slot 4 folds into
+"Other", the same rule as past eight, only sooner. So the light-mode tritan pair, yellow (slot 4)
+and magenta (slot 5), never sit side by side in one chart. `chart_slot(slot)` is that rule.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ from __future__ import annotations
 MODES = ("light", "dark")
 SLOT_NAMES = ("blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red")
 SLOTS = len(SLOT_NAMES)
+MAX_SLOTS_PER_CHART = 4  # D-26: at most 4 colours per chart; lanes past slot 4 are "Other"
 
 SURFACE = {"light": "#fcfcfb", "dark": "#1a1a19"}
 PAGE = {"light": "#f9f9f7", "dark": "#0d0d0d"}
@@ -56,6 +63,14 @@ def slot_hex(slot: int | None, mode: str = "dark") -> str:
     if isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= SLOTS:
         return OTHER[mode]
     return CATEGORICAL[mode][slot - 1]
+
+
+def chart_slot(slot: int | None) -> int | None:
+    """The slot a chart draws for a lane's `slot`: 1..MAX_SLOTS_PER_CHART as it is; None,
+    anything past MAX_SLOTS_PER_CHART or not a slot at all -> None, the "Other" grey (D-26)."""
+    if isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= MAX_SLOTS_PER_CHART:
+        return None
+    return slot
 
 
 def tokens() -> dict:

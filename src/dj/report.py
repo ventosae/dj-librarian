@@ -12,7 +12,8 @@ The page follows docs/design.md (R-408): colour tokens on `:root`, Day (light) a
 both selected, Booth the default (`<html data-theme="dark">`); two buttons in the header switch
 them and remember the choice in localStorage (inside try/catch); `#day` or `#booth` in the URL
 wins (the screenshots use it). The charts are dj.report_charts: thin marks, 2 px gaps, a lane
-keeps its slot colour everywhere, at most 4 direct labels per chart, a tooltip on every mark
+keeps its slot colour everywhere, at most 4 colours per chart (lanes past slot 4 are Other, and
+the page says so once where it happens: D-26), at most 4 direct labels per chart, a tooltip on every mark
 (hover and keyboard focus), a "table" link per chart to the file it was drawn from.
 
 What the page is made of (numbers from code, words from Claude, R-302):
@@ -24,7 +25,8 @@ What the page is made of (numbers from code, words from Claude, R-302):
   `profile/facts.json`, as a 3 + 2 grid. Narrower, the parts stack: the words, the sleeve and the
   axes, the stats. Then, full width, the narrative from `profile/habits.md` (Claude's; one line
   saying how to get it when missing). No `profile/identity.json`: the handle from `library.yaml` and one line saying how
-  to get the sleeve.
+  to get the sleeve. Claude's two files are shown without their "> Words by Claude, from ..."
+  line: the colophon is the one place that credits them (W-30b); the "table" links stay.
 - id="structure" (R-403): the first dj-structure reveal as the point, the crate wall (one row per
   top-level folder, a bar per playlist in the folder's lane colour, which the legend and the
   tooltips say, dumps hatched, empty playlists as outlines, the top overlaps as arcs; its table
@@ -64,6 +66,7 @@ aria-* values a library name ends up in, so a name like "Curl(ed) Up", "Bass src
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import date
 from html.parser import HTMLParser
@@ -267,11 +270,14 @@ def _inline(text: str) -> str:
 
 
 _LIST_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*)$")
+_PROVENANCE = re.compile(r"^>\s*(?:Words by|Measured by)\b", re.IGNORECASE)
 
 
-def markdown(text: str, more_where: str = HABITS_MD) -> str:
+def markdown(text: str, more_where: str = HABITS_MD, *, provenance: bool = True) -> str:
     """The Markdown Claude wrote as HTML: paragraphs, ## headings, lists (<= 5 shown), "> " lines
-    as a muted provenance line. The "# " title is left out (the page has its own headings)."""
+    as a muted provenance line. The "# " title is left out (the page has its own headings).
+    `provenance=False` also leaves out the file's own "> Words by ..." line: the hero and "How
+    you work" credit Claude in the colophon only (W-30b)."""
     out: list[str] = []
     para: list[str] = []
     items: list[str] = []
@@ -296,7 +302,8 @@ def markdown(text: str, more_where: str = HABITS_MD) -> str:
             out.append(f"<h3>{_inline(line.lstrip('#').strip())}</h3>")
         elif line.startswith(">"):
             flush()
-            out.append(f'<p class="prov">{_inline(line.lstrip(">").strip())}</p>')
+            if provenance or not _PROVENANCE.match(line):
+                out.append(f'<p class="prov">{_inline(line.lstrip(">").strip())}</p>')
         elif listed:
             if para:
                 flush()
@@ -324,6 +331,14 @@ def _handle_style(handle: str) -> str:
 SAY_SLEEVE = "Say \u201cdraw my sleeve\u201d and I run it and rebuild this report (about 2 minutes)."
 
 
+FOLDED = "a chart colours four lanes at most"  # D-26: said wherever a lane past slot 4 turns grey
+
+
+def _folds(identity: Mapping[str, Any] | None) -> bool:
+    """True when the page has lanes past slot MAX_SLOTS_PER_CHART: every chart draws them grey."""
+    return any(charts.folded(lane.get("slot")) for lane in charts.lane_rows(identity))
+
+
 def _sleeve_figure(identity: Mapping[str, Any] | None) -> str:
     if identity:
         try:
@@ -332,12 +347,16 @@ def _sleeve_figure(identity: Mapping[str, Any] | None) -> str:
         except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError):
             art = ""
         if art:
+            grey = "grey for tracks outside your lanes"
+            if _folds(identity):
+                grey += f" and for the lanes past the four slowest ({FOLDED})"
+            sparse = f"; {sleeve_mod.SPARSE_NOTE}" if sleeve_mod.sparse_rings(identity) else ""
             return (
                 '<figure class="sleeve">'
                 f'<div class="sleeve-wrap">{charts.defang(art.strip())}{hits}</div>'
                 "<figcaption>Your sleeve, drawn from the collection: rings are decades, oldest inside; "
-                "segments are BPM bands in the colour of your lanes, grey for tracks outside your lanes; "
-                f"the brighter the cell, the more tracks. {_table('sleeve')}</figcaption>"
+                f"segments are BPM bands in the colour of your lanes, {grey}; "
+                f"the brighter the cell, the more tracks{sparse}. {_table('sleeve')}</figcaption>"
                 "</figure>"
             )
     return '<figure class="sleeve"><div class="sleeve-empty"><p>No sleeve yet.</p></div></figure>'
@@ -382,7 +401,8 @@ def _stats(profile: Mapping[str, Any] | None, broken: bool) -> str:
 def _who(profile: Mapping[str, Any] | None, habits: str | None, identity: Mapping[str, Any] | None,
          liner: str | None, handle: str, broken: Sequence[str] = ()) -> str:  # fmt: skip
     archetype = (identity or {}).get("archetype") or {}
-    notes = markdown(liner, more_where=IDENTITY_MD) if liner and liner.strip() else ""
+    # Claude's words without their "Words by Claude, from ..." line: the colophon credits them
+    notes = markdown(liner, more_where=IDENTITY_MD, provenance=False) if liner and liner.strip() else ""
     text = ['<div class="hero-text">', f'<h2 class="handle" style="{_handle_style(handle)}">{esc(handle)}</h2>']
     if identity and archetype.get("name"):
         text.append(f'<p class="lead">{esc(archetype["name"])}</p>')
@@ -401,7 +421,7 @@ def _who(profile: Mapping[str, Any] | None, habits: str | None, identity: Mappin
         if notes:
             text.append(f'<div class="liner">{notes}</div>')
     text.append("</div>")
-    narrative = markdown(habits) if habits and habits.strip() else ""
+    narrative = markdown(habits, provenance=False) if habits and habits.strip() else ""
     if narrative:
         story = f'<div class="narrative card"><h3>How you work</h3>{narrative}</div>'
     else:
@@ -531,7 +551,8 @@ def _mini(n: int, nodes: Sequence[Any], identity: Mapping[str, Any] | None,
         art = sleeve_mod.mini_sleeve_svg(identity, slots, size=240, uid=f"p{n}-")
     except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError):
         return "", branches
-    owners = {band: b.name if b.slot else f"{b.name} (no lane colour of its own)" for b in branches for band in b.bands}
+    owners = {band: b.name if design.chart_slot(b.slot) else f"{b.name} (no lane colour of its own)"
+              for b in branches for band in b.bands}  # fmt: skip
     return (f'<div class="mini"><div class="sleeve-wrap">{charts.defang(art.strip())}'
             f"{charts.mini_hits(identity, owners)}</div></div>"), branches  # fmt: skip
 
@@ -543,7 +564,8 @@ def _bpm_line(b: charts.Branch) -> str:
     bands = charts.band_ranges(b.bands)
     parts = [f"bands {bands}"]
     if b.slot and b.lane:
-        parts = [f"lane {b.lane} BPM", f"bands {bands.removesuffix(' BPM')}"]
+        lane = f"lane {b.lane} BPM" + (" (Other)" if charts.folded(b.slot) else "")  # grey past slot 4 (D-26)
+        parts = [lane, f"bands {bands.removesuffix(' BPM')}"]
     return " · ".join(f"<span>{esc(part)}</span>" for part in parts)
 
 
@@ -604,10 +626,13 @@ def _proposals(entries: Sequence[Mapping[str, Any]], identity: Mapping[str, Any]
         "your playlists stay where they are in rekordbox.</p>"
     )
     if identity and charts.fingerprint_bands(identity):
+        own = "a branch with no lane colour of its own"
+        if _folds(identity):
+            own += f" (a lane past the four slowest is grey too: {FOLDED})"
         parts.append(
             '<p class="mini-note">On each mini sleeve, a tempo band takes the colour of the branch it lands in, '
             "and a branch wears the colour of the BPM lane that fills most of it. Grey: tracks no copied "
-            "playlist carries (they stay where they are), or a branch with no lane colour of its own. Outline: "
+            f"playlist carries (they stay where they are), or {own}. Outline: "
             "a branch no tempo band lands in, so it has no colour on the sleeve.</p>"
         )
     parts.append(f'<div class="cards cards-{len(entries)}">')
@@ -659,6 +684,29 @@ def token_css() -> str:
 
 
 SLOT_CSS = "".join(f".s{i}{{--lane:var(--c{i})}}" for i in range(1, design.SLOTS + 1)) + ".s0{--lane:var(--other)}"
+
+# The hero sleeve's decade labels (dj.sleeve, W-30b): at least DECADE_PX px tall wherever the hero
+# draws the sleeve. DECADE_SIZE units reach that from a sleeve DECADE_FULL px wide up (the hero of a
+# 1100 px page draws it 456 px wide); narrower (a two-column hero at mid width, a phone) the size in
+# units must grow as DECADE_PX x 1000 / width. The rule below is the chord of that curve from
+# DECADE_FULL down to DECADE_NARROW px (the hero on a 360 px phone: 360 - 2 x 16); the curve bends
+# under its chord, so the labels stay at least DECADE_PX px across that range. In an inline SVG a
+# CSS px is a user unit, and 1cqi is 1% of the .sleeve-wrap's width (its query container); a
+# browser without container units keeps the attribute's DECADE_SIZE.
+DECADE_PX = 11
+DECADE_NARROW = 328
+DECADE_FULL = math.ceil(DECADE_PX * sleeve_mod.VIEW / sleeve_mod.DECADE_SIZE)
+
+
+def decade_css() -> str:
+    """The CSS rule that keeps the hero sleeve's decade labels at least DECADE_PX px (see above)."""
+    narrow = math.ceil(DECADE_PX * sleeve_mod.VIEW / DECADE_NARROW * 10) / 10
+    slope = (narrow - sleeve_mod.DECADE_SIZE) / (DECADE_FULL - DECADE_NARROW)  # units per px of width
+    base = math.ceil((sleeve_mod.DECADE_SIZE + slope * DECADE_FULL) * 100) / 100
+    per_cqi = math.floor(slope * 100 * 100) / 100  # rounded so the line only rises
+    return (f".sleeve .sleeve-wrap{{container-type:inline-size}}\n.sleeve .decades{{font-size:"
+            f"max({sleeve_mod._num(sleeve_mod.DECADE_SIZE)}px,calc({base:.2f}px - {per_cqi:.2f}cqi))}}")  # fmt: skip
+
 
 CSS = """
 *{box-sizing:border-box}
@@ -716,7 +764,6 @@ background:var(--surface);border:1px solid var(--grid);border-radius:6px;color:v
 .meaning{font-size:17px;color:var(--text-2);margin:0 0 22px;max-width:36em}
 .liner{border-left:2px solid var(--grid);padding-left:16px;margin:0 0 26px;max-width:38em}
 .liner p{margin:0 0 10px}
-.liner .prov{font-size:12px;letter-spacing:.02em}
 p.liner{margin:0 0 26px}
 .stats-row{grid-area:stats;margin-top:8px}
 .stats-head{border-top:1px solid var(--grid);padding-top:12px}
@@ -1126,7 +1173,7 @@ def page(
         '<meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         f"<title>{esc(name)} · library report {day.isoformat()}</title>",
-        f"<style>\n{token_css()}\n{SLOT_CSS}\n{CSS}\n</style>",
+        f"<style>\n{token_css()}\n{SLOT_CSS}\n{CSS}\n{decade_css()}\n</style>",
         f"<script>\n{SCRIPT}\n</script>",
         "</head>",
         "<body>",
@@ -1192,8 +1239,7 @@ def run_render(folder: LibraryFolder | str | Path, *, today: date | None = None)
     report = render(folder, today=today)
     path = folder.root / proposals_mod.PROPOSALS_YAML
     shown = len(proposals_mod.load(path)) if path.is_file() else 0
-    line = append_log(folder.root, "report", {"proposals": shown, "files": 1}, report,
-                      now=proposals_mod.log_time(today))  # fmt: skip
+    line = append_log(folder.root, "report", {"proposals": shown, "files": 1}, report, today=today)
     return {"counts": {"proposals": shown, "files": 1}, "report": folder.relative(report), "log": line}
 
 
@@ -1209,7 +1255,7 @@ def run_report(
     paths = proposals_mod.write_proposals(folder, found, today, source=source)
     report = render(folder, today=today)
     counts = {"proposals": len(found), "files": len(paths) + 1}
-    line = append_log(folder.root, "report", counts, report, now=proposals_mod.log_time(today))
+    line = append_log(folder.root, "report", counts, report, today=today)
     return {
         "counts": counts,
         "source": source,

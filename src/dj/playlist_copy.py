@@ -117,8 +117,9 @@ def apply(db: Any, source: str, target: str) -> Plan:
     return out
 
 
-def write_report(done: Plan) -> Path:
-    report = done.as_dict() | {"applied_at": datetime.now().isoformat(timespec="seconds")}
+def write_report(done: Plan, extra: dict[str, Any] | None = None) -> Path:
+    """The copy's report in reports/. `extra`: what an XML copy adds (`mode`, `xml`, `in_xml`)."""
+    report = done.as_dict() | {"applied_at": datetime.now().isoformat(timespec="seconds")} | (extra or {})
     # create-only: a second copy into the same target on one day gets -2, the first report stays
     return libfolder.write_new_numbered(REPORT_DIR, f"{date.today().isoformat()}-copy-{slug(done.target)}",
                                         ".report.json", json.dumps(report, indent=2, ensure_ascii=False))

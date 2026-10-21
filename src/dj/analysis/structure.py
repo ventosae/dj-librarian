@@ -924,7 +924,7 @@ def run(
         "folders": counts["folders"],
         "files": len(paths),
     }
-    line = append_log(folder.root, "structure", log_counts, file="structure/analysis.md")
+    line = append_log(folder.root, "structure", log_counts, file="structure/analysis.md", today=today)
     return {
         "written": written,
         "kept": kept,

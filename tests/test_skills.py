@@ -4,8 +4,9 @@ R-1001 (voice.md, every skill references it, no book text: C-08) and R-1002 (adh
 rules and attribution: C-09, the pre-send checklist in each SKILL.md).
 
 R-1003's acceptance is a spot check on 3 real outputs (a report, an MD file, a chat reply). The
-report is checked by `test_r1003_spot_check_on_the_report` (W-17);
-`test_r1003_spot_check_on_real_output` names the item that supplies each of the other two. "Both checklists" = the one pre-send block: its Voice line covers voice.md,
+report is checked by `test_r1003_spot_check_on_the_report` (W-17), the MD file and the chat
+replies by `test_r1003_spot_check_on_an_md_file` and `test_r1003_spot_check_on_the_chat_replies`
+over docs/samples (W-30b, Q-15). "Both checklists" = the one pre-send block: its Voice line covers voice.md,
 the other lines cover adhd.md. The mechanical checks live in tests/reply_checks.py.
 """
 
@@ -275,18 +276,46 @@ def test_text_check_on_an_md_file():
     assert text_problems("  \n") == ["empty text"]
 
 
-# -- R-1003: spot check on 3 outputs. Not met by W-19; each slot names the item that supplies the
-# output, and that item replaces the skip with text_problems / reply_problems on the real output.
+# -- R-1003: spot check on 3 outputs: the report (W-17), a generated MD file and the chat replies of
+# session 1 (W-30b, Q-15: docs/samples, built by scripts/make_samples.py from the real scripts and
+# the dj-start reply templates).
 
-R1003_OUTPUTS = (
-    pytest.param("a generated MD file reviewed by hand (Q-15)", "W-28", id="md-file"),
-    pytest.param("a chat reply from the test session, without personal data", "W-28", id="chat-reply"),
-)
+SAMPLES = REPO / "docs" / "samples"
 
 
-@pytest.mark.parametrize(("output", "item"), R1003_OUTPUTS)
-def test_r1003_spot_check_on_real_output(output, item):
-    pytest.skip(f"R-1003 carry-over: {output} does not exist until {item}")
+def test_r1003_spot_check_on_an_md_file():
+    """A generated MD file: profile/stats.md of the sample library (dj-profile's own output)
+    passes the checklist: no pleasantry first, no list over 5, no word from the Avoid column."""
+    stats = _text(SAMPLES / "profile" / "stats.md")
+    assert stats.startswith("# Library profile\n\n> Measured by code: dj.analysis.profile")
+    assert text_problems(stats) == []
+
+
+def test_r1003_spot_check_on_the_chat_replies():
+    """The six dj-start replies of session 1, chips version (docs/samples/chat-session-1.md): each
+    passes the checklist and dj-start's shape (the step counter and one time estimate on the lead
+    line), widgets included (at most 5 chips or tasks); the steps run 1 to 6 in order, the hello
+    asks for the handle, the last reply names the report and offers each proposal's trigger. No
+    personal data: the sample handle only, no path outside the library folder, no address."""
+    from reply_checks import session_replies, step_reply_problems
+
+    chat = _text(SAMPLES / "chat-session-1.md")
+    replies = session_replies(chat)
+    assert len(replies) == 6
+    for text, widgets in replies:
+        assert step_reply_problems(text) == [], (text, step_reply_problems(text))
+        assert text_problems("\n".join([text, *(f"- {w}" for w in widgets)])) == []
+        assert len(widgets) <= 5
+    leads = [re.match(r"Step (\d) of 6", text).group(1) for text, _w in replies]
+    assert leads == ["1", "2", "3", "3", "4", "5"] and "\nStep 6 of 6 · under 2 minutes." in replies[5][0]
+    hello, chips = replies[0]
+    assert "What do they call you in the booth?" in hello and chips == ["Mac", "Windows"]
+    assert "DJ Sample" in chat and "*The DJ types: Windows, DJ Sample*" in chat
+    report, widgets = replies[5]
+    assert re.search(r"Your report: reports/\d{4}-\d{2}-\d{2}-library\.html", report)
+    assert widgets[1:] == [f"Build me the {n} structure" for n in ("House Bases", "Deep Facets", "Warehouse Gigs")] + ["not yet"]
+    assert widgets[0] in report  # the file card is the file the line names
+    assert not re.search(r"\b[A-Za-z]:[\\/]|/Users/|/home/|/tmp/|@|<[a-z]", chat)
 
 
 def test_r1003_spot_check_on_the_report(tmp_path):

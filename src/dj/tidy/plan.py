@@ -59,13 +59,12 @@ def undo_path_for(plan_path: Path, paths: Paths) -> Path:
 
 
 def _write_json_atomic(path: Path, data: Any) -> None:
+    """Temp file, fsync, os.replace through `libfolder.write_text(fsync=True)`. The fsync keeps
+    an undo record on disk before any audio file changes. It is written in place only when this
+    run saw its disk refuse a delete (the probe) or saw this write's own rename refused (Q-27);
+    a note from an earlier run, or a stray temp file, never sends it in place."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2, ensure_ascii=False)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    libfolder.write_text(path, json.dumps(data, indent=2, ensure_ascii=False), fsync=True)
 
 
 def _read_json(path: Path, default: Any) -> Any:

@@ -49,6 +49,9 @@ Score (whole numbers, so ties are exact; ties go to the lower track id):
 - genre: +8 for a genre equal to one asked for, +4 when it only holds it ("Deep House" for
   "House"). key: +8 the same key, +4 a neighbour. My Tags: +10 per tag asked for, at most +20.
 - rating: +4 per star. plays: +2 per binary digit of the play count (1 -> 2, 31 -> 10, 255+ -> 16).
+- gig feedback (`taste/feedback.md`, R-702): +1 for a track whose latest signed line says it worked
+  (`- [date] + Artist - Title: note`), -1 for one that flopped (`- [date] - Artist - Title: note`);
+  a line names the song, so every copy of it counts (`taste_files.feedback_scores`).
 
 Picks: the spec's anchors first (in spec order; a vetoed anchor, one without a file location or
 a second copy of an earlier anchor is left out with a warning; two anchors that are a
@@ -62,7 +65,8 @@ Spares (R-604): ceil(0.2 * size) more tracks from the rest of the pool, by score
 three energy tiers = BPM terciles of the pool (low <= the 1/3 quantile < mid <= the 2/3
 quantile < high). Each tier gets a third; what does not divide goes to mid, then high. A tier
 that runs short is filled from the others. Spares obey the same vetoes and pairs as picks (one
-crate). Fewer spares than asked -> a warning, not an error.
+crate). A track that flopped at a gig (feedback -1) is never a spare. Fewer spares than asked -> a
+warning, not an error.
 
 Order (R-602): flat = by score; warmup = BPM rising; peak = BPM rising to the top, then easing
 for the last fifth (the easing tracks are every other track of the top two fifths, so the peak
@@ -112,7 +116,7 @@ from dj.gate import Gate, GateError, preview_id_for, require_id
 from dj.libfolder import LibraryFolder, LibraryFolderError
 from dj.model import Library, LibraryError, Track, id_sort_key
 from dj.readers.xml import read_xml
-from dj.taste_files import Vetoes, read_vetoes
+from dj.taste_files import Vetoes, feedback_scores, read_gig_feedback, read_vetoes
 from dj.treeschema import TreeSchemaError
 from dj.writers.rekordbox_xml import BuildError, build_lists_xml, numbered, write_xml
 
@@ -144,6 +148,7 @@ CRATES_FOLDER = "Crates"
 SPARES_SUFFIX = " spares"
 SPEC_SUFFIX = ".spec.yaml"
 VETOES_FILE = "taste/vetoes.md"
+FEEDBACK_FILE = "taste/feedback.md"
 CURRENT_TREE = "structure/current-tree.yaml"
 TASTE_FACTS = "taste/facts.json"
 TASTE_PAIRS = "taste/cooccurrence.json"
@@ -164,6 +169,7 @@ W_KEY, W_KEY_NEAR = 8, 4
 W_TAG, MAX_TAG = 10, 20
 W_STAR = 4
 W_PLAYS = 2  # per binary digit of min(play count, 255)
+W_FEEDBACK = 1  # taste/feedback.md: + worked at a gig, - flopped (R-702, Q-19)
 
 FILTERS = ("bpm", "lanes", "genres", "exclude_genres", "keys", "min_rating")
 SPEC_KEYS = ("name", "size", "brief", "bpm", "lanes", "genres", "exclude_genres", "keys", "anchors",
@@ -647,9 +653,11 @@ class _Scorer:
         pairs: dict[tuple[str, str], int],
         refs: list[str],
         taste_anchors: set[str],
+        feedback: Mapping[str, int] | None = None,
     ) -> None:
         self.lib, self.spec, self.lanes, self.named, self.pairs = lib, spec, lanes, named, pairs
         self.refs, self.taste_anchors = refs, taste_anchors
+        self.feedback = feedback or {}
         if named:
             self.centres = [lane.centre for lane in named]
         elif spec.bpm:
@@ -709,6 +717,10 @@ class _Scorer:
         if t.play_count > 0:
             points += W_PLAYS * min(t.play_count, 255).bit_length()
             parts.append("played once" if t.play_count == 1 else f"played {t.play_count} times")
+        sign = self.feedback.get(t.id, 0)
+        if sign:
+            points += W_FEEDBACK * sign
+            parts.append("worked at a gig" if sign > 0 else "flopped at a gig")
         return _Scored(t, points, " · ".join(parts))
 
 
@@ -753,13 +765,17 @@ def select(
     spec: CrateSpec,
     taste_facts: Mapping[str, Any] | None = None,
     vetoes: Vetoes | None = None,
+    feedback: Mapping[str, int] | None = None,
 ) -> CrateResult:
     """Pick exactly `spec.size` tracks and ceil(0.2 * size) spares from `lib` (see the module
     docstring). Pure and deterministic: no files, no clock. Too few tracks fit ->
     NotEnoughTracks; an unknown anchor or lane, or two anchors that are a never-pair ->
     CrateError. A veto names the song: it holds for every copy of a vetoed track in `lib`
-    (`Vetoes.with_copies`), so the FLAC of a vetoed MP3 stays out too (R-702)."""
+    (`Vetoes.with_copies`), so the FLAC of a vetoed MP3 stays out too (R-702). `feedback`: track id
+    -> +1 (worked at a gig) / -1 (flopped), from `taste_files.feedback_scores`: added to the score;
+    a flopped track is never a spare."""
     named_vetoes = vetoes or Vetoes()
+    feedback = {str(k): v for k, v in (feedback or {}).items() if v}
     vetoes = named_vetoes.with_copies(lib.tracks.values())
     lanes, taste_anchor_list, pairs = _taste_parts(taste_facts)
     named = _named_lanes(spec, lanes)
@@ -821,7 +837,7 @@ def select(
 
     refs = [t.id for t in anchors] if spec.anchors else [a for a in taste_anchor_list if a in pool_ids]
     taste_anchors = set() if spec.anchors else set(refs)
-    scorer = _Scorer(lib, spec, lanes, named, pairs, refs, taste_anchors)
+    scorer = _Scorer(lib, spec, lanes, named, pairs, refs, taste_anchors, feedback)
     anchor_ids = {t.id for t in anchors}
     scored = {t.id: scorer.score(t) for t in pool}
     for t in anchors:
@@ -878,7 +894,8 @@ def select(
     bounds = (_quantile(bpms, 1 / 3), _quantile(bpms, 2 / 3)) if bpms else (0.0, 0.0)
     quota = _quotas(spec.spares)
     spares: list[_Scored] = []
-    rest = [s for s in ranked if s.track.id not in picks_ids]
+    # a track that flopped at a gig is never a spare (R-702); it can still be a pick, a point lower
+    rest = [s for s in ranked if s.track.id not in picks_ids and feedback.get(s.track.id, 0) >= 0]
     for s in rest:  # pass 1: by score, within each tier's share
         if len(spares) >= spec.spares:
             break
@@ -938,6 +955,8 @@ def select(
             "duplicates": duplicates,
             "no_file": counts["no_file"],
             "no_bpm": counts["no_bpm"],
+            "worked": sum(feedback.get(t.id, 0) > 0 for t in pool),
+            "flopped": sum(feedback.get(t.id, 0) < 0 for t in pool),
             "tracks": len(lib.tracks),
         },
         warnings=tuple(warnings),
@@ -1005,6 +1024,16 @@ def _vetoes(folder: LibraryFolder) -> Vetoes:
         raise CrateError(f"{VETOES_FILE}: {exc}") from exc
     except OSError as exc:
         raise CrateError(f"{VETOES_FILE}: cannot read it ({exc.strerror or exc}).") from exc
+
+
+def _feedback(folder: LibraryFolder, lib: Library) -> dict[str, int]:
+    """Track id -> +1 / -1 from the signed lines of taste/feedback.md (none when it is missing)."""
+    try:
+        return feedback_scores(read_gig_feedback(folder.root / FEEDBACK_FILE), lib.tracks.values())
+    except LibraryError as exc:
+        raise CrateError(f"{FEEDBACK_FILE}: {exc}") from exc
+    except OSError as exc:
+        raise CrateError(f"{FEEDBACK_FILE}: cannot read it ({exc.strerror or exc}).") from exc
 
 
 def _playlist_names(name: str, result: CrateResult) -> tuple[str, ...]:
@@ -1190,7 +1219,7 @@ def _state(folder: LibraryFolder, ref: str) -> _State:
     spec = load_spec(path, spec_file)
     lib, export = _library(folder)
     taste, taste_source, taste_warnings = load_taste(folder, lib, export)
-    result = select(lib, spec, taste, _vetoes(folder))
+    result = select(lib, spec, taste, _vetoes(folder), _feedback(folder, lib))
     names = _playlist_names(spec.name, result)
     tops, tree_warnings = _tops(folder, lib)
     folder_name, moves, blocked = _placement(tops, names, slug)
@@ -1478,10 +1507,10 @@ def apply(
     if result.counts.get("vetoed"):
         counts["vetoed"] = result.counts["vetoed"]
     try:
-        log_line = libfolder.append_log(folder.root, f"crate {state.slug}", counts, file=xml_path, now=now)
+        log_line = libfolder.append_log(folder.root, f"crate {state.slug}", counts, file=xml_path, now=now, today=today)
     except (LibraryFolderError, OSError) as exc:
         told = ", ".join(f"{n} {key}" for key, n in counts.items())
-        log_line = f"{(now or datetime.now()).strftime('%Y-%m-%d %H:%M')} crate {state.slug} -> {told}; {xml_file}"
+        log_line = f"{libfolder.log_clock(today, now)} crate {state.slug} -> {told}; {xml_file}"
         warnings.append(f"log.md: the crate line was not added ({exc}). Add it by hand: {log_line}")
     return CrateWriteResult(
         xml_path=xml_path,

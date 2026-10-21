@@ -7,5 +7,13 @@
   },
   "license": "Apache-2.0",
   "repository": "https://github.com/OWNER/dj-librarian",
-  "keywords": ["rekordbox", "dj", "spotify", "playlists", "music-library", "id3", "mcp"]
+  "keywords": ["rekordbox", "dj", "spotify", "playlists", "music-library", "id3", "mcp"],
+  "userConfig": {
+    "uv_path": {
+      "type": "string",
+      "title": "uv path",
+      "description": "The command that starts the engine. Leave it as uv; on a Mac where Claude cannot find uv, put the full path that `command -v uv` prints in Terminal.",
+      "default": "uv"
+    }
+  }
 }

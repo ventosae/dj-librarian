@@ -7,6 +7,9 @@ Read before changing anything: `docs/requirements.md` (numbered R-ids; authorita
 ## Hard rules
 
 1. Create and add only. Never delete, rename, move or reorder anything that exists in rekordbox, Spotify or on disk.
+   Two exceptions (D-20, `docs/permissions.md`):
+   - `dj tidy` renames audio files within their own folder only on the DJ's explicit request, after an undo record is written, with a Relocate list for rekordbox.
+   - Tools that write or append the DJ's own text files in the library folder (analysis, `dj_plan`, `dj_tidy_plan`, audit reports, barber answers, the shopping list, the dj-build preview yaml) need no preview id. The write-gate hook matches only `_apply`, `_write` and `_undo` tools.
 2. Dry-run is the default. Real writes only with `--apply`, and only after a preview the user said yes to. Silence is not a yes.
 3. Before any master.db write: rekordbox closed (process check), verified backup of `master.db` + `masterPlaylists6.xml` + `-wal`/`-shm`, one commit at the end, rollback on any exception.
 4. Default write path is rekordbox XML the user imports. Direct master.db writes are Windows power mode behind an explicit flag.

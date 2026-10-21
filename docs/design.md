@@ -99,6 +99,13 @@ theme. `body` always has an explicit background, so nothing shows through in eit
   of the lane, not its size), once per page, and keep that slot in every chart on the page.
   Filtering or sorting never repaints a lane.
 - Past eight, the rest fold into **Other** (`--other`), labelled "Other" with a count.
+- **At most 4 colours in one chart** (D-26, Q-29). A single chart (a sleeve, the crate wall, a
+  mini sleeve, any legend) draws only slots 1-4 in colour: a lane past slot 4 folds into Other
+  there, the same rule as past eight, only sooner, and its legend counts them ("Other (2
+  lanes)"); the tooltip still names the lane, and the sleeve's lane notes say it after the BPM
+  ("126-127 BPM · Other"). The lane keeps its slot in `profile/identity.json`, and the folded
+  lanes are the fastest ones (slots follow BPM), never chosen by size. So yellow (slot 4) and magenta (slot 5), the light-mode tritan pair, never sit
+  side by side in one chart. Code: `dj.design.MAX_SLOTS_PER_CHART` and `dj.design.chart_slot`.
 - A proposal's mini sleeve uses the same slots: a branch of the proposed tree wears the slot of
   the lane that fills most of it, a tempo band the slot of the branch it lands in. Two branches
   never share a slot (the one that takes more of the lane keeps it); a branch without a lane,
@@ -228,9 +235,24 @@ gets clipped.
 
 `profile/sleeve.svg` (dj-identity, R-1403) is an object, like a record sleeve on a table: it
 keeps its dark finish in both themes and colours its lanes with the **Booth** slot values. It
-follows the same rules otherwise: the lane slots of `profile/identity.json`, text in the dark
-text tokens, a 2 px gap between cells, no URL, no script, no font file, every id prefixed so
-several sleeves can sit in one page.
+follows the same rules otherwise: the lane slots of `profile/identity.json` (at most 4 colours,
+the rest Other), text in the dark text tokens, a 2 px gap between cells, no URL, no script, no
+font file, every id prefixed so several sleeves can sit in one page.
+
+- Each ring is named (its decade) along one spoke: the middle of the BPM band with the fewest
+  tracks (so the labels hide the least) among the bands within 45 degrees of the top or the
+  bottom, so the labels, which run along the rings, are never turned more than 45 degrees from
+  level; kept upright, haloed in the record's black. The oldest and the newest are always named,
+  and every ring when the room allows (two rings at the thinnest, side by side, are 28 units
+  apart centre to centre, the label pitch). The labels are 26 units tall: the report hero draws
+  the sleeve about 456 px wide on a 1100 px page, so they render at about 12 px. Where the hero
+  draws it narrower (a two-column hero at mid width, a phone), the report's CSS raises them so
+  they stay at least 11 px down to a 360 px phone (`dj.report.decade_css`).
+- Small collections still read as a full record: no ring is drawn thinner than 26 units (about
+  12 px in the hero); an empty cell is a faint groove on every ring; and in a ring that holds
+  fewer than 3 tracks the empty cells are one dim step lighter, which the caption and the
+  cell's tooltip say. A cell with tracks is never lifted: the brighter the cell, the more
+  tracks, on every ring.
 
 ## Validation
 
@@ -272,8 +294,10 @@ What it reports for this palette, and what that obliges:
   calibrated to those two simulations; tritanopia is rare and the fixed palette cannot clear
   it on Day without changing the brief's hexes. So the checker reports it and every chart that
   seats slots 4 and 5 (or 6 and 7) side by side carries relief: direct labels, or the table
-  link (every chart here has one). Open for the owner: accept this, or re-step yellow or
-  magenta.
+  link (every chart here has one). **Accepted (D-26, Q-29):** tritan stays a WARN with relief,
+  never a FAIL, and the relief includes the 4-slot cap: no chart shows slot 5 (magenta), so the
+  yellow / magenta pair never meets in one chart; green / violet (slots 6 and 7) never shows
+  either.
 - Contrast: on Day, aqua, yellow and magenta sit under 3:1 on the surface. A chart that uses
   them carries direct labels or the table link (again: every chart here has the link).
 - Muted and Other: Day muted is `#6e6d68` (5.1:1) and Day Other `#8f8e88` (3.2:1); Booth muted
@@ -291,6 +315,7 @@ Refuse these in review:
 - Colours by rank (the biggest lane gets blue): colour follows the lane, not its position.
 - A hue at the midpoint of a diverging scale: the midpoint is grey.
 - A ninth generated hue, or slots reused past eight: fold into Other.
+- A fifth colour in one chart: lanes past slot 4 fold into Other (D-26).
 - A status colour used as a series, or a series colour used for status.
 - Text in the series colour; dashed gridlines; outlines around marks.
 - A web font, an external script or image, any `http` reference.
@@ -302,7 +327,7 @@ Copy into the PR description and tick each line:
 ```markdown
 - [ ] Colours only through the tokens of docs/design.md; `uv run python scripts/check_palette.py docs/design.md` passes.
 - [ ] Booth (default) and Day both render; the toggle works; `body` has an explicit background.
-- [ ] Each lane keeps its slot in every chart; slots never cycle; past 8 is "Other".
+- [ ] Each lane keeps its slot in every chart; slots never cycle; at most 4 colours per chart, the rest "Other".
 - [ ] Thin marks, 2 px surface gaps, at most 4 direct labels per chart, one axis per chart.
 - [ ] Every chart: legend for 2+ series, hover and focus tooltip, a table link to its MD/JSON file.
 - [ ] Text in text tokens, never in a series colour; status only with icon + label.

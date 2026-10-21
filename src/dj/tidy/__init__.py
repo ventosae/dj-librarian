@@ -1,7 +1,7 @@
 """dj tidy: library hygiene for the audio files behind the rekordbox collection.
 
-Reads master.db only through `safety.open_db(write=False)` (never a write session, never a
-commit). Writes go to audio-file tags, same-directory renames, and repo files under
+Reads master.db only from a snapshot copy (`dj.readers.db.open_snapshot`, R-202): never the live
+file, never a write session, never a commit. Writes go to audio-file tags, same-directory renames, and repo files under
 plans/, reports/tidy/ and state/tidy/. Never deletes, never moves across folders.
 """
 

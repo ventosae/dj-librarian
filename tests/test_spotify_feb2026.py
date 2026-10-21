@@ -315,7 +315,7 @@ def test_build_dry_run_works_with_the_djs_own_app(own_app, server, tracklist, tm
     assert SECRET not in result.output and TOKEN not in result.output
 
 
-def test_push_dry_run_works_with_the_djs_own_app(own_app, server, monkeypatch, tmp_path):
+def test_push_dry_run_works_with_the_djs_own_app(own_app, server, monkeypatch, tmp_path, live_master_db):
     sessions = []
 
     @contextmanager

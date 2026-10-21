@@ -62,11 +62,25 @@ The plan needs an export in `exports/`; without one, `next` exits 1 and says so.
 | name_lane | What they call a lane (BPM range and 3 top tracks shown) | free text | `named lane <slug>: <name>` | `taste/lanes.md` |
 | veto | A track that sits oddly in its playlists: keep proposing it, or never | Keep proposing / Never | `never propose: <track>` or `keep proposing: <track>` | `taste/vetoes.md` |
 | pair | Two tracks they play together: good pair, or never pair | Good pair / Never pair | `never pair: <A> + <B>` or `good pair: <A> + <B>` | `taste/vetoes.md` |
-| gig | What worked at their last gig (optional) | free text | `what worked at <playlist>: <text>` | `taste/feedback.md` |
+| gig | What worked at their last gig (optional) | free text | `what worked at <playlist>: <text>`, or the signed lines below | `taste/feedback.md` |
 
 Each line is dated and keyed (`- [YYYY-MM-DD] <text> <!-- key:... -->`) and appended through
 `taste_files`: old lines are never rewritten (R-332). The same answer twice adds nothing; a
 changed answer adds an `updated:` line. "skip" writes no line.
+
+### Gig feedback Crate me scores (R-702)
+
+Under the gig question, add one line telling the DJ the two shapes, then pass their answer as given:
+
+- `+ Artist - Title: note` = the track worked. Crate me adds 1 to its score.
+- `- Artist - Title: note` = the track flopped. Crate me takes 1 off and never makes it a spare.
+
+Several tracks go in one answer, joined by `;`. The script writes one dated line per track in
+`taste/feedback.md`, the sign right after the date, for example
+`- [2026-10-22] + Kestrel Unit - Ballast: packed the floor <!-- key:gig:<slug> -->`. A track names
+the song, so every copy of it counts; the latest line for a song decides. A changed answer replaces
+the earlier answer for that gig whole: a track it leaves out stops counting. Any other answer is kept
+as the `what worked at` line and is not scored. Name tracks as the script shows them (`Artist - Title`).
 
 ## Asking
 
@@ -129,8 +143,9 @@ Goes to taste/vetoes.md. Reply 1 or 2, or say skip (under a minute).
   `keep proposing` / `good pair` on the same key lifts an earlier veto.
 - The first time a DJ vetoes in a session, say it once: "Crate me will never pick it. Say keep
   proposing it any time to lift that."
-- `taste/feedback.md` keeps the gig answers, dated, for the next crate and report
-  (`read_feedback`).
+- `taste/feedback.md` keeps the gig answers, dated (`read_feedback`). Its signed lines
+  (`read_gig_feedback`) score the next crate: +1 worked, -1 flopped, and a flopped track is never a
+  spare.
 
 ## Never
 

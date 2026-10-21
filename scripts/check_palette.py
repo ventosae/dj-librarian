@@ -9,8 +9,9 @@ Reads the one fenced ```yaml block that starts with `tokens:` and checks each mo
 - every adjacent pair of slots (1-2, 2-3 ... 7-8) under normal vision: Delta E >= 15    FAIL
 - the same pairs under simulated protanopia and deuteranopia (Machado, Oliveira and
   Fernandes 2009, severity 1.0, applied in linear sRGB): Delta E >= 8                  FAIL
-- the same pairs under simulated tritanopia: Delta E < 8 is a WARN. The chart that seats
-  such a pair must carry relief: direct labels, or the table link (docs/design.md)      WARN
+- the same pairs under simulated tritanopia: Delta E < 8 is a WARN, never a FAIL (D-26).
+  Relief: a chart shows at most 4 slots (dj.design.MAX_SLOTS_PER_CHART), so slots 4 and
+  5 never meet in one chart, plus direct labels or the table link (docs/design.md)    WARN
 - WCAG contrast of each slot against its surface: under 3:1 is a WARN that names the slots
   whose charts must carry direct labels or the table link                              WARN
 - text and secondary text against the surface: at least 4.5:1                          FAIL
@@ -297,6 +298,8 @@ def check_mode(block: dict[str, Any], names: list[str], mode: str) -> dict[str, 
         detail = f"worst adjacent {pair[key]:.1f} ({pair['names']}), floor {floor:g}"
         if status == "WARN":
             detail += ": relief required, direct labels or the table link"
+            if key == "tritan":
+                detail += "; at most 4 slots in one chart (D-26)"
         results.append(_result(f"adjacent Delta E, {key}", status, detail))
     dim = [s for s in slots if s["contrast"] < CONTRAST_FLOOR]
     results.append(_result(

@@ -73,7 +73,7 @@ import json
 import math
 import re
 from collections import Counter
-from datetime import date, datetime, time
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -741,8 +741,7 @@ def run(
         handle=handle_of(_meta(folder)), today=day, table=table,
     )  # fmt: skip
     written = write(folder, identity)
-    when = datetime.combine(today, time()) if today else None
     log = append_log(
-        folder.root, "identity", {"axes": len(AXES), "lanes": identity["counts"]["lanes"]}, IDENTITY_JSON, now=when
+        folder.root, "identity", {"axes": len(AXES), "lanes": identity["counts"]["lanes"]}, IDENTITY_JSON, today=today
     )
     return summary(folder, identity, written, log)

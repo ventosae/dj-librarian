@@ -155,13 +155,13 @@ Step 3 of 6 · about 1 minute. That folder won't hold the library: <error> Make 
 Step 3 of 6 · about 1 minute. Setting up the folder failed: <error> Check the folder is still connected, then say done.
 ```
 
-`core` (this skill's scripts cannot load where they run, Q-06). Reinstalling does not help: a
-plugin uploaded as a zip or added from a GitHub marketplace runs as a copy with no dj core next to
-it, and the core is not on PyPI yet (W-27). Until the core ships with the plugin, only a plugin
-that runs from a clone of the repo works (README, Install and Claude plugin):
+`core` (this skill's scripts cannot load where they run, Q-06). The scripts look for the core in
+an installed `dj`, then a clone of the repo, then the plugin zip's `vendor/` folder (D-22). This
+copy has none of them: it came from a GitHub marketplace, or from a zip built without the core.
+The plugin zip (`dj-librarian-plugin-<version>.zip`, README, Claude plugin) carries the core:
 
 ```text
-Step 3 of 6 · about 10 minutes. My scripts don't load here: <error> This copy of the plugin came without the part that runs my scripts. For now it runs only from a copy of the dj-librarian repo on your computer: README.md, Install. Set that up, open a new chat and say start.
+Step 3 of 6 · about 5 minutes. My scripts don't load here: <error> This copy of the plugin came without the part that runs my scripts. Upload the dj-librarian-plugin zip instead (Customize > Plugins > Add > Upload plugin), open a new chat and say start.
 ```
 
 `usage`: your own command was wrong. Fix it and run it again; nothing to tell the DJ.

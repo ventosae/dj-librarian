@@ -21,8 +21,8 @@ rekordbox is the truth. Spotify playlists are candidates. You only propose.
 | `dj pull <link>` | `dj_pull(link)` or `dj_pull(all_links=true)` |
 | `dj match <link>` | `dj_match(link)` |
 | `dj plan <link>` | `dj_plan(link)`, then edit the plan file yourself |
-| `dj apply <plan>` / `--apply` | `dj_apply_preview(plan_file)` / `dj_apply_write(plan_file, preview_id, power_mode=true)` |
-| `dj copy A B` / `--apply` | `dj_copy_preview(source, target)` / `dj_copy_apply(source, target, preview_id, power_mode=true)` |
+| `dj apply <plan>` / `--apply --xml` | `dj_apply_preview(plan_file)` / `dj_apply_write(plan_file, preview_id)` (mode `xml`; `mode="db", power_mode=true` for master.db) |
+| `dj copy A B` / `--apply --xml` | `dj_copy_preview(source, target)` / `dj_copy_apply(source, target, preview_id)` (mode `xml`; `mode="db", power_mode=true` for master.db) |
 | `dj push P` / `--apply` | `dj_push_preview(playlist)` / `dj_push_apply(playlist, preview_id)` |
 
 Every tool returns `{ok, exit_code, result | output, stderr}`. File arguments are paths
@@ -41,12 +41,14 @@ and only after their explicit yes call the write tool with that `preview_id` and
 arguments (`dj_push_preview` and `dj_push_apply` take the same `name` and `include_ambiguous`).
 The write refuses without the id, with another command's id, after anything changed since the
 preview, or with an id already used: preview again and show the new result. Never invent an id.
-Writes into master.db (`dj_tree_apply`, `dj_apply_write`, `dj_copy_apply`) are Windows power mode
-(R-205): they also need `power_mode=true` and refuse on a Mac. Pass it only on Windows, after the
-DJ said yes to a direct write. Off Windows, new folders and playlists go through the XML they
-import (dj-build). Inbox adds (`dj_apply_write`) and playlist copies (`dj_copy_apply`) have no
-import path in v0.1: say so plainly, and the DJ adds those tracks in rekordbox by hand (the
-preview lists them).
+The default write path is an XML the DJ imports (R-802). Inbox adds (`dj_apply_write`) and playlist
+copies (`dj_copy_apply`) write `proposals/<crate>-adds-<date>.xml` in mode `xml` (the default, any
+OS, master.db untouched): one playlist with the approved tracks. Give the DJ the 3 `import_steps`
+from the result, numbered; the last one is the one drag of those tracks onto the crate. About 2
+minutes. New folders and playlists go through dj-build. Writes into master.db (`dj_tree_apply`,
+and apply / copy with `mode="db"`) are Windows power mode (R-205): they also need `power_mode=true`
+and refuse on a Mac. Use them only on Windows, after the DJ asked for a direct write. One preview id
+serves either mode, once.
 `exit_code: 2` = rekordbox is open: ask them to close it, call again with the same `preview_id`.
 Never hand them a shell command when a tool exists.
 
@@ -93,10 +95,13 @@ is the same command with `--apply --preview-id <id>`, plus `--power-mode` for ma
 6. `uv run dj apply <plan> --json` is a DRY-RUN. Show `would_add` and the `adds` list (each
    add names the local file it puts in the crate, `local`); keep its `preview_id`. A `pick` the
    plan did not offer as a candidate is refused: run `dj plan` again.
-7. Ask: "add these to the crate? is rekordbox closed?" Wait for a yes. Then
-   `uv run dj apply <plan> --apply --power-mode --preview-id <preview_id> --json` (Windows only).
-   The CLI checks rekordbox itself and backs up master.db first. Exit code 2 means
-   rekordbox is open: tell them, wait, run the same command again. Never work around it.
+7. Ask: "add these to the crate?" Wait for a yes. Then
+   `uv run dj apply <plan> --apply --xml --preview-id <preview_id> --json`: it writes
+   `proposals/<crate>-adds-<date>.xml` and returns the import card (`import_steps`); show it, the
+   last step is the one drag into the crate. Only when the DJ asked for a direct write, on Windows
+   with rekordbox closed: `--apply --power-mode --preview-id <preview_id>` instead. The CLI checks
+   rekordbox itself and backs up master.db first; exit code 2 means rekordbox is open: tell them,
+   wait, run the same command again. Never work around it.
 8. Read the report named in the output. `yes` picks are now in the match memory
    (`match_cache.json`), `no` decisions in the declined list (`declined.json`), both in
    `.cache/state/` of the library folder (`state/` in the repo without one): neither is ever
@@ -146,6 +151,7 @@ tell the DJ in one line what held log.md. Lines look like:
 
     YYYY-MM-DD HH:MM plan <crate> -> N in crate, N proposed, N ambiguous, N missing, N declined; plans/<file>
     YYYY-MM-DD HH:MM apply <crate> -> N added, N no, N pending; reports/<file>
+    YYYY-MM-DD HH:MM apply <crate> as XML -> N in XML, N no, N pending; proposals/<file>.xml
     YYYY-MM-DD HH:MM push <rekordbox playlist> to Spotify -> N added, N already there, N missing; reports/<file>
 
 ## Pre-send checklist

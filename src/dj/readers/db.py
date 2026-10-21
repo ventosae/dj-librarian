@@ -24,7 +24,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
 from dj import safety
 from dj.library import to_track_info
@@ -257,11 +257,32 @@ def read_db(master_db: str | Path | None = None, *, read_at: str | None = None) 
     )
 
 
+def tracks_by_id(db: Any, ids: Iterable[str]) -> dict[str, Track]:
+    """The rows of `ids` that rekordbox has not soft-deleted, as Tracks (`to_track`: location,
+    BPM, key ...), for an XML the DJ imports (`dj apply --xml`, `dj copy --xml`). Reads the
+    content rows as `read_db` does; an id the library lacks is left out."""
+    wanted = {str(i) for i in ids}
+    out: dict[str, Track] = {}
+    if not wanted:
+        return out
+    for content in db.get_content().all():
+        if alive(content) and str(content.ID) in wanted:
+            out[str(content.ID)] = to_track(content)
+    return out
+
+
 @contextmanager
-def open_snapshot(master_db: Path) -> Iterator[Any]:
-    """The pyrekordbox database of a snapshot copy of `master_db`, read-only (R-202), for a
-    caller that needs the rows themselves (`dj status`). Same copy, log line and clean-up as
-    `read_db`; the live file is never opened. A copy that fails comes back as LibraryError."""
+def open_snapshot(master_db: Path | None = None) -> Iterator[Any]:
+    """The pyrekordbox database of a snapshot copy of `master_db` (found via
+    `safety.find_master_db()` when None), read-only (R-202), for a caller that needs the rows
+    themselves: `dj status` and every read-only pass of the CLI (dry-runs, match, plan, push,
+    tidy audit / plan / dupes, the tree print after a write). Same copy, log line and clean-up as
+    `read_db`; the live file is never opened. No master.db, or a copy that fails -> LibraryError."""
+    if master_db is None:
+        try:
+            master_db = safety.find_master_db()
+        except FileNotFoundError as exc:
+            raise LibraryError(str(exc)) from exc
     with tempfile.TemporaryDirectory(prefix="dj-snapshot-") as tmp:
         try:
             copy = snapshot(master_db, Path(tmp))

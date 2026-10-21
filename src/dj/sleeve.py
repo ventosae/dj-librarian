@@ -1,22 +1,37 @@
 """The sleeve: a 12-inch record sleeve drawn from profile/identity.json (R-1403, docs/design.md).
 
-Door 1: stdlib only. Two functions, both pure and deterministic:
+Door 1: stdlib only. Two drawing functions, both pure and deterministic:
 
     sleeve_svg(identity, *, inline=False, uid="", small_print=True) -> str
         The full sleeve, square viewBox 0 0 1000 1000: a dark finish with a fine grain, the
-        radial fingerprint as the artwork (rings = decades, oldest inside; segments = BPM
-        bands; ring thickness follows the decade's share, cell opacity the cell's share; cell
-        colour = the slot of the lane that owns the band, in the Booth values of dj.design),
-        a centre label, the DJ's handle in heavy display type, the archetype under it and the
-        three biggest lanes as liner notes. `small_print=False` leaves out the two kinds of
-        text that only read on a big sleeve, the tempo dial at the edge of the disc and the
-        detail line under each lane: the report draws its hero copy at about 40% of the
-        viewBox and states both elsewhere (the tooltips, the crate wall legend). Every text
-        that stays is at least 16 units tall, the header and the lane labels 24.
+        radial fingerprint as the artwork (rings = decades, oldest inside, each named along
+        the spoke of the emptiest band near level; segments = BPM bands; ring thickness follows the
+        decade's share, cell opacity the cell's share; cell colour = the slot of the lane that
+        owns the band, in the Booth values of dj.design), a centre label, the DJ's handle in
+        heavy display type, the archetype under it and the three biggest lanes as liner notes.
+        `small_print=False` leaves out the two kinds of text that only read on a big sleeve,
+        the tempo dial at the edge of the disc and the detail line under each lane: the report
+        draws its hero copy at about 46% of the viewBox and states both elsewhere (the
+        tooltips, the crate wall legend). Every text that stays is at least 16 units tall, the
+        header and the lane labels 24, the decade labels DECADE_SIZE (at least 11 px in the
+        hero).
     mini_sleeve_svg(identity, slots, *, size=240, uid="") -> str
         The fingerprint alone at `size` px, re-coloured: `slots` maps a band name (BANDS of
         dj.analysis.identity, e.g. "118-122") to a palette slot 1..8, or None for the Other
         grey; bands not named keep the identity's own slot. For proposal cards.
+    ring_bounds(identity) -> (ring names, (inner, outer) radius per ring, counts)
+        The rings exactly as the disc draws them (the report's hover cells sit on them);
+        decade_labels and label_spoke say which rings are named and along which spoke.
+
+Small collections (W-30b): a ring is never thinner than MIN_RING, so a decade with one track
+still reads as a ring; an empty cell is a faint groove (EMPTY_OPACITY) on every ring, and in a
+ring that holds fewer than SPARSE_TRACKS tracks the empty cells are one dim step (DIM_STEP)
+lighter (SPARSE_NOTE says so), so the fingerprint reads as a full record even for a 50-track
+library. A cell with tracks is never lifted: the brighter the cell, the more tracks. Every ring
+is named when the room allows (DECADE_PITCH = MIN_RING + GAP), along a spoke within 45 degrees
+of level. Colour (D-26): a chart shows at most dj.design.MAX_SLOTS_PER_CHART slots, so a band or
+a lane whose slot is past it wears the Other grey, on the disc and in the lane notes alike
+(dj.design.chart_slot), and its lane note says "Other" after the BPM.
 
 Every variation (the disc's rotation, the grain, the wear ring) comes from a small PRNG seeded
 only by identity["seed"], so the same export gives the same bytes. Nothing outside the document
@@ -54,6 +69,23 @@ HANDLE_LEAD = 1.0  # line pitch of a two-line handle, in em
 SUB_SIZE = 34.0  # the archetype line under the handle
 SUB_BASE = 884.0  # its baseline; the rule under it sits at 908
 OTHER_DIM = 0.7  # an unowned band (Other) recedes behind the lanes
+EMPTY_OPACITY = 0.07  # a cell without tracks: the bare groove, faint but there on every ring
+MIN_RING = 26.0  # the thinnest ring (units): about 12 px in the report hero
+SPARSE_TRACKS = 3  # a ring with fewer tracks than this has its empty cells one dim step lighter
+DIM_STEP = 0.06  # one dim step: added to the opacity of the empty cells of a sparse ring
+# said wherever the sleeve is explained and a ring is sparse (its desc, the report's caption)
+SPARSE_NOTE = f"a decade with under {SPARSE_TRACKS} tracks has its empty cells drawn a step lighter, so it shows"
+# The decade labels: the report hero draws the sleeve in a column (1100 - 2 x 32 - 44) x 46%
+# = 456 px wide on a 1100 px page (docs/design.md, Layout; dj.report CSS), 0.456 px a unit, so
+# 26 units are 11.9 px there (at least 11 px, the brief); where the hero sleeve is drawn narrower
+# (a phone, a mid-width two-column hero) the report's CSS raises them (dj.report, DECADE_CSS). A
+# label closer than DECADE_PITCH (centre to centre) to one already placed is left out; the oldest
+# and the newest are always named. DECADE_PITCH = MIN_RING + GAP, so two rings at the floor, side
+# by side, are both named.
+DECADE_SIZE = 26.0
+DECADE_PITCH = MIN_RING + GAP
+LABEL_SPREAD = math.pi / 4  # the label spoke stays within 45 degrees of the top or the bottom
+DISC = "#0b0b0a"  # the record's own black, under the cells; the decade labels' halo
 GRAIN = 900
 MINI_GRAIN = 160
 BAND_EDGES = (100, 110, 118, 122, 125, 128, 135)  # as dj.analysis.identity; the dial labels
@@ -195,8 +227,10 @@ def _rings(identity: Mapping[str, Any]) -> tuple[list[str], list[float], list[li
 
 
 def _slots(identity: Mapping[str, Any], overrides: Mapping[str, int | None] | None) -> list[int | None]:
+    """The slot each band is drawn in: the band's lane slot (or the override), folded by the
+    chart cap (dj.design.chart_slot: past MAX_SLOTS_PER_CHART, or none, is Other)."""
     bands = (identity.get("fingerprint") or {}).get("bands") or []
-    slots = [b.get("slot") for b in bands] or [None] * BANDS_DEFAULT
+    slots = [design.chart_slot(b.get("slot")) for b in bands] or [None] * BANDS_DEFAULT
     if overrides:
         names = [str(b.get("band")) for b in bands]
         for key, slot in overrides.items():
@@ -204,8 +238,37 @@ def _slots(identity: Mapping[str, Any], overrides: Mapping[str, int | None] | No
                 raise ValueError(f"no BPM band {key!r} in this identity (bands: {', '.join(names)})")
             if slot is not None and (isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= design.SLOTS):
                 raise ValueError(f"slot for {key} must be 1..{design.SLOTS} or None, got {slot!r}")
-            slots[names.index(key)] = slot
+            slots[names.index(key)] = design.chart_slot(slot)
     return slots
+
+
+def ring_bounds(identity: Mapping[str, Any]) -> tuple[list[str], list[tuple[float, float]], list[list[int]]]:
+    """(ring names, (inner, outer) radius per ring, counts rows x bands): the rings as drawn.
+
+    A ring's thickness follows its decade's share (0.3 of the room shared evenly, 0.7 by share),
+    but never drops under MIN_RING: the rings that would are drawn at it and the others share
+    what is left in proportion, so the order of thickness still follows the order of shares.
+    With more rings than MIN_RING leaves room for, every ring gets an equal part."""
+    names, shares, counts = _rings(identity)
+    n = len(names)
+    space = R_OUT - R_LABEL - LABEL_GAP - GAP * (n - 1)
+    total = sum(shares) or 1.0
+    raw = [0.3 / n + 0.7 * s / total for s in shares]
+    floor = min(MIN_RING, space / n)
+    fixed: set[int] = set()
+    while True:  # ends: `fixed` grows every round, and n rounds fix every ring
+        free = [i for i in range(n) if i not in fixed]
+        scale = (space - floor * len(fixed)) / (sum(raw[i] for i in free) or 1.0)
+        under = {i for i in free if raw[i] * scale < floor}
+        if not under:
+            break
+        fixed |= under
+    bounds, r0 = [], R_LABEL + LABEL_GAP
+    for i in range(n):
+        width = floor if i in fixed else raw[i] * scale
+        bounds.append((r0, r0 + width))
+        r0 += width + GAP
+    return names, bounds, counts
 
 
 def rotation_of(identity: Mapping[str, Any], n_bands: int = BANDS_DEFAULT) -> float:
@@ -213,20 +276,27 @@ def rotation_of(identity: Mapping[str, Any], n_bands: int = BANDS_DEFAULT) -> fl
     return math.radians(_Rand(identity.get("seed", ""), salt=1).between(0, 360 / max(n_bands, 1)))
 
 
+def sparse_rings(identity: Mapping[str, Any]) -> list[int]:
+    """The indexes of the rings that hold fewer than SPARSE_TRACKS tracks (none without release
+    years): their empty cells are drawn one dim step lighter."""
+    names, _shares, counts = _rings(identity)
+    if names == ["all years"]:
+        return []
+    return [i for i, row in enumerate(counts) if sum(int(c or 0) for c in row) < SPARSE_TRACKS]
+
+
 def _disc(identity: Mapping[str, Any], slots: Sequence[int | None], rotation: float, *, grooves: bool = True) -> list[str]:
-    """The fingerprint: cells, grooves and the edge."""
-    names, shares, counts = _rings(identity)
-    n_rings, n_bands = len(names), len(slots)
-    space = R_OUT - R_LABEL - LABEL_GAP - GAP * (n_rings - 1)
-    total = sum(shares) or 1.0
-    widths = [space * (0.3 / n_rings + 0.7 * s / total) for s in shares]
-    widths = [w * space / (sum(widths) or 1.0) for w in widths]
+    """The fingerprint: cells, grooves and the edge. In a ring that holds fewer than SPARSE_TRACKS
+    tracks the empty cells are drawn DIM_STEP lighter, so the ring reads as there; a cell with
+    tracks keeps its brightness, so the brighter the cell, the more tracks, on every ring."""
+    _names, bounds, counts = ring_bounds(identity)
+    sparse = set(sparse_rings(identity))
+    n_bands = len(slots)
     step = 2 * math.pi / n_bands
     biggest = max((c for row in counts for c in row), default=0)
-    out = [f'<circle cx="{_num(CX)}" cy="{_num(CY)}" r="{_num(R_OUT + 10)}" fill="#0b0b0a"/>']
-    r0 = R_LABEL + LABEL_GAP
-    for ring, width in enumerate(widths):
-        r1 = r0 + width
+    out = [f'<circle cx="{_num(CX)}" cy="{_num(CY)}" r="{_num(R_OUT + 10)}" fill="{DISC}"/>']
+    for ring, (r0, r1) in enumerate(bounds):
+        empty = EMPTY_OPACITY + (DIM_STEP if ring in sparse else 0.0)
         for band in range(n_bands):
             a0 = -math.pi / 2 + rotation + band * step
             path = _cell(r0, r1, a0, a0 + step)
@@ -237,9 +307,8 @@ def _disc(identity: Mapping[str, Any], slots: Sequence[int | None], rotation: fl
                 colour = design.slot_hex(slots[band], DARK)
                 opacity = (0.3 + 0.7 * count / biggest) * (1.0 if slots[band] else OTHER_DIM)
             else:
-                colour, opacity = INK, 0.04
-            out.append(f'<path d="{path}" fill="{colour}" fill-opacity="{opacity:.2f}"/>')
-        r0 = r1 + GAP
+                colour, opacity = INK, empty
+            out.append(f'<path d="{path}" fill="{colour}" fill-opacity="{min(1.0, opacity):.2f}"/>')
     if grooves:
         r = R_LABEL + LABEL_GAP + 3
         rings = []
@@ -250,6 +319,62 @@ def _disc(identity: Mapping[str, Any], slots: Sequence[int | None], rotation: fl
     out.append(f'<circle cx="{_num(CX)}" cy="{_num(CY)}" r="{_num(R_OUT + 10)}" fill="none" stroke="{INK}" '
                f'stroke-opacity="0.14" stroke-width="1"/>')  # fmt: skip
     return out
+
+
+def decade_labels(identity: Mapping[str, Any]) -> list[tuple[str, float]]:
+    """(decade, the radius of the middle of its ring) for each ring that gets a label: the
+    oldest and the newest always, the rest when DECADE_PITCH from every label already placed.
+    No labels for a sleeve without release years (its one ring is "all years")."""
+    names, bounds, _counts = ring_bounds(identity)
+    if not names or names == ["all years"]:
+        return []
+    mids = [(r0 + r1) / 2 for r0, r1 in bounds]
+    picked: list[int] = []
+    for i in dict.fromkeys([0, len(mids) - 1, *range(1, len(mids) - 1)]):
+        if all(abs(mids[i] - mids[j]) >= DECADE_PITCH for j in picked):
+            picked.append(i)
+    return [(names[i], mids[i]) for i in sorted(picked)]
+
+
+def label_spoke(identity: Mapping[str, Any], rotation: float, n_bands: int) -> float:
+    """The angle (radians) the decade labels run along: the middle of the BPM band that holds the
+    fewest tracks over all rings, so the labels cover the least of the fingerprint, among the
+    bands whose middle lies within LABEL_SPREAD of the top or the bottom of the disc, so the
+    labels (which run along the rings) are never turned more than 45 degrees from level; ties go
+    to the band nearest the top, then the earlier band. With no band that near (a disc of one or
+    two bands), every band is a candidate."""
+    _names, _bounds, counts = ring_bounds(identity)
+    step = 2 * math.pi / max(n_bands, 1)
+    totals = [sum(int(row[k] or 0) for row in counts if k < len(row)) for k in range(n_bands)]
+
+    def off_top(k: int) -> float:
+        d = (rotation + (k + 0.5) * step) % (2 * math.pi)  # from the top, clockwise
+        return min(d, 2 * math.pi - d)
+
+    level = [k for k in range(n_bands) if min(off_top(k), math.pi - off_top(k)) <= LABEL_SPREAD + 1e-9]
+    best = min(level or range(n_bands), key=lambda k: (totals[k], round(off_top(k), 9), k))
+    return -math.pi / 2 + rotation + (best + 0.5) * step
+
+
+def _decades(identity: Mapping[str, Any], rotation: float, n_bands: int) -> list[str]:
+    """The decade labels along one spoke (label_spoke): each sits on its ring (the digits' middle
+    on the ring's middle), turned to run along the ring and kept upright, haloed in the record's
+    black so it reads over the cells. The group's class "decades" lets a page that draws the
+    sleeve small raise their size (dj.report)."""
+    labels = decade_labels(identity)
+    if not labels:
+        return []
+    angle = label_spoke(identity, rotation, n_bands)
+    upper = math.sin(angle) <= 0  # top half: the text's "down" points to the centre
+    turn = math.degrees(angle) + (90 if upper else -90)
+    texts = []
+    for name, mid in labels:
+        r = mid - DECADE_SIZE * 0.36 if upper else mid + DECADE_SIZE * 0.36  # the baseline
+        x, y = _point(r, angle)
+        texts.append(f'<text x="{_num(x)}" y="{_num(y)}" transform="rotate({_num(turn)} {_num(x)} {_num(y)})">'
+                     f"{esc(name)}</text>")  # fmt: skip
+    return [f'<g class="decades" text-anchor="middle" font-size="{_num(DECADE_SIZE)}" font-weight="700" fill="{INK_2}" '
+            f'stroke="{DISC}" stroke-width="6" stroke-linejoin="round" paint-order="stroke">{"".join(texts)}</g>']  # fmt: skip
 
 
 def _grain(rand: _Rand, dots: int) -> list[str]:
@@ -308,9 +433,11 @@ def _description(identity: Mapping[str, Any]) -> str:
     else:
         rings = "one ring, no release years"
     lanes = _lane_lines(identity)
-    lane_text = "; ".join(f"{l.get('label')} BPM, {l.get('tracks', 0)} tracks" for l in lanes) or "no BPM lanes yet"
+    lane_text = "; ".join(f"{l.get('label')} BPM{'' if design.chart_slot(l.get('slot')) else ' (Other)'}, "
+                          f"{l.get('tracks', 0)} tracks" for l in lanes) or "no BPM lanes yet"  # fmt: skip
+    sparse = f" {SPARSE_NOTE[:1].upper()}{SPARSE_NOTE[1:]}." if sparse_rings(identity) else ""
     return (f"Record sleeve drawn from the library: {rings}; segments are BPM bands; the brighter "
-            f"the cell, the more tracks. Biggest lanes: {lane_text}.")  # fmt: skip
+            f"the cell, the more tracks.{sparse} Biggest lanes: {lane_text}.")  # fmt: skip
 
 
 def _check_uid(uid: str) -> str:
@@ -336,10 +463,11 @@ def sleeve_svg(identity: Mapping[str, Any], *, inline: bool = False, uid: str = 
     slots = _slots(identity, None)
     rotation = rotation_of(identity, len(slots))
     out += _disc(identity, slots, rotation)
+    out += _decades(identity, rotation, len(slots))
 
     lanes = _lane_lines(identity)
     home = lanes[0] if lanes else None
-    ring = design.slot_hex(home.get("slot"), DARK) if home else design.OTHER[DARK]
+    ring = design.slot_hex(design.chart_slot(home.get("slot")), DARK) if home else design.OTHER[DARK]
     out.append(f'<circle cx="{_num(CX)}" cy="{_num(CY)}" r="{_num(R_LABEL)}" fill="{design.SURFACE[DARK]}" '
                f'stroke="{ring}" stroke-width="5"/>')  # fmt: skip
     big, small = (str(home.get("label", "")), "BPM") if home else (str(counts.get("tracks", 0)), "TRACKS")
@@ -386,13 +514,12 @@ def sleeve_svg(identity: Mapping[str, Any], *, inline: bool = False, uid: str = 
     col = TEXT_W / 3
     for n, lane in enumerate(lanes):
         x = MARGIN + n * col
-        colour = design.slot_hex(lane.get("slot"), DARK)
+        colour = design.slot_hex(design.chart_slot(lane.get("slot")), DARK)  # past the cap: Other, as on the disc
         playlists = list(lane.get("playlists") or [])
         where = _leaf(playlists[0]) if playlists else ""
         if len(playlists) > 1:
             where += f" +{len(playlists) - 1}"
-        label = str(lane.get("label", "")) + " BPM"
-        label = label if text_em(label, 0.0) * 24 <= col - 36 else _cut(label, col - 36, 24)
+        label = _lane_label(lane, col - 36, 24)
         base = 944 if small_print else 952
         out.append(f'<rect x="{_num(x)}" y="{base - 17}" width="16" height="16" rx="3" fill="{colour}"/>')
         out.append(f'<text x="{_num(x + 26)}" y="{base}" font-size="24" font-weight="700" fill="{INK}">'
@@ -407,6 +534,23 @@ def sleeve_svg(identity: Mapping[str, Any], *, inline: bool = False, uid: str = 
                    "No BPM lanes yet: playlists need 3 or more BPM-tagged tracks.</text>")  # fmt: skip
     out.append("</svg>")
     return "\n".join(out) + "\n"
+
+
+FOLDED_NOTE = " · Other"  # after the BPM of a lane note whose lane wears the Other grey (D-26)
+
+
+def _lane_label(lane: Mapping[str, Any], width: float, size: float) -> str:
+    """A lane note's label, "119-121 BPM", within `width` at `size`. A lane past the chart's
+    colour cap (dj.design.chart_slot) is drawn in the Other grey, so its label says so: "126-127
+    BPM · Other", or "126-127 · Other" when that does not fit; the word "Other" is never cut."""
+    name = str(lane.get("label", ""))
+    if design.chart_slot(lane.get("slot")) is not None:
+        label = name + " BPM"
+        return label if text_em(label, 0.0) * size <= width else _cut(label, width, size)
+    for label in (name + " BPM" + FOLDED_NOTE, name + FOLDED_NOTE):
+        if text_em(label, 0.0) * size <= width:
+            return label
+    return _cut(name, width - text_em(FOLDED_NOTE, 0.0) * size, size) + FOLDED_NOTE
 
 
 def _cut(text: str, width: float, size: float) -> str:

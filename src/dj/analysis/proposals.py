@@ -88,7 +88,11 @@ minute per folder to create (F), a minute per two playlists to import and check 
 per dump to split by hand (D dumps that land in an inbox). At least 1.
 
 structure/proposals.yaml is a list of mappings: slug, name, family, principle, cost_minutes,
-trigger, lands, tree (the node list of the one tree schema, R-903). Four comment lines come
+trigger, source, lands, tree (the node list of the one tree schema, R-903). `source` is the
+library read the proposals were made from (Q-17): the export, relative to the folder
+(`exports/<date>-collection.xml`), or `master.db (snapshot read <ISO time>)` for a master.db read
+(`db_source`); dj-build compares it with the export it reads (`dj.build_structure`). It is optional
+on load: a file written before it existed still reads. Four comment lines come
 first; the last is a fingerprint of everything else, so the next run can tell whether the DJ or
 Claude edited the file. An edited file is first kept, byte for byte, as
 structure/proposals.edited-<date>.yaml (create only: -2, -3 ...), then the file is written anew.
@@ -102,13 +106,13 @@ import os
 import re
 from collections import Counter
 from dataclasses import dataclass, replace
-from datetime import date, datetime, time
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
 
-from dj import treeschema
+from dj import libfolder, treeschema
 from dj.analysis import structure as structure_analysis
 from dj.analysis import taste as taste_analysis
 from dj.analysis.common import fold, library_folder, pct, resolve_xml
@@ -130,6 +134,10 @@ FAMILIES = ("bases", "facets", "gig-first")
 NOUNS = {"bases": "Bases", "facets": "Facets", "gig-first": "Gigs"}
 FALLBACK_NAMES = {"bases": "Genre Bases", "facets": "Genre Facets", "gig-first": "Gig-First"}
 KEYS = ("slug", "name", "family", "principle", "cost_minutes", "trigger", "lands", "tree")
+SOURCE_KEY = "source"  # optional on load (Q-17): the library read the proposals were made from
+WRITTEN_KEYS = (*KEYS[:6], SOURCE_KEY, *KEYS[6:])  # the keys of an entry this module writes, in order
+DB_SOURCE = "master.db"
+_DB_SOURCE = re.compile(r"^master\.db(?: \(snapshot read (.+)\))?$")
 SLUG = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 STAYS = "stays where it is"
 INBOX, CRATES, SETS = "0_INBOX", "1_CRATES", "2_SETS"
@@ -833,9 +841,33 @@ def _fingerprint(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
+def db_source(read_at: str) -> str:
+    """How structure/proposals.yaml names a master.db read: `master.db (snapshot read <ISO time>)`."""
+    stamp = " ".join(str(read_at or "").split())
+    return f"{DB_SOURCE} (snapshot read {stamp})" if stamp else DB_SOURCE
+
+
+def parse_source(text: str) -> tuple[str, str | datetime | None]:
+    """A proposal's `source` -> ("db", the snapshot time or None) or ("export", the relative path)."""
+    m = _DB_SOURCE.match(" ".join(str(text).split()))
+    if not m:
+        return "export", str(text).strip()
+    try:
+        when = datetime.fromisoformat(m.group(1)) if m.group(1) else None
+    except ValueError:
+        when = None
+    return "db", when
+
+
+def _with_source(entry: dict[str, Any], source: str) -> dict[str, Any]:
+    """The entry with `source` after `trigger` (WRITTEN_KEYS order)."""
+    return {key: (source if key == SOURCE_KEY else entry[key]) for key in WRITTEN_KEYS}
+
+
 def dumps(proposals: Sequence[Proposal], *, source: str, today: date) -> str:
-    """The text of structure/proposals.yaml. Checked: it reads back as the same proposals."""
-    data = [p.data() for p in proposals]
+    """The text of structure/proposals.yaml. Checked: it reads back as the same proposals. Each
+    entry records `source` (Q-17)."""
+    data = [_with_source(p.data(), _norm(source)) for p in proposals]
     body = yaml.dump(data, Dumper=_Dumper, sort_keys=False, allow_unicode=True, default_flow_style=False, width=4096)
     back = yaml.safe_load(body)
     for proposal, entry in zip(proposals, back or []):
@@ -938,7 +970,7 @@ def load(path: str | Path) -> list[dict[str, Any]]:
         if not isinstance(entry, dict):
             raise ProposalsError(f"{where}: expected a mapping with {', '.join(KEYS)}")
         missing = [k for k in KEYS if k not in entry]
-        unknown = sorted(map(str, set(entry) - set(KEYS)))
+        unknown = sorted(map(str, set(entry) - set(KEYS) - {SOURCE_KEY}))
         if missing or unknown:
             parts = ([f"missing {', '.join(missing)}"] if missing else []) + (
                 [f"unknown {', '.join(unknown)}"] if unknown else [])  # fmt: skip
@@ -974,10 +1006,13 @@ def load(path: str | Path) -> list[dict[str, Any]]:
             tree = treeschema.parse(entry["tree"], where)
         except TreeSchemaError as exc:
             raise ProposalsError(str(exc)) from exc
-        out.append({
+        item = {
             "slug": slug, "name": name, "family": entry["family"], "principle": principle,
             "cost_minutes": cost, "trigger": entry["trigger"], "lands": lands, "tree": tree,
-        })  # fmt: skip
+        }  # fmt: skip
+        if SOURCE_KEY in entry:
+            item[SOURCE_KEY] = _one_line(entry[SOURCE_KEY], where, SOURCE_KEY)
+        out.append(item)
     return out
 
 
@@ -999,7 +1034,9 @@ def read_export(folder: LibraryFolder, xml: str | Path | None = None) -> tuple[L
 
 
 def log_time(today: date | None) -> datetime | None:
-    return datetime.combine(today, time()) if today else None
+    """A log moment for callers that pass `now`: `today`'s date at the local wall-clock time
+    (Q-28), None without a date. New code passes `today=` to append_log instead."""
+    return datetime.combine(today, libfolder._wall_clock().time()) if today else None
 
 
 def run(folder: LibraryFolder | str | Path, *, xml: str | Path | None = None, today: date | None = None) -> dict[str, Any]:
@@ -1010,7 +1047,7 @@ def run(folder: LibraryFolder | str | Path, *, xml: str | Path | None = None, to
     lib, source = read_export(folder, xml)
     proposals = candidates(lib)
     paths = write_proposals(folder, proposals, today, source=source)
-    line = append_log(folder.root, "proposals", {"proposals": len(proposals)}, PROPOSALS_YAML, now=log_time(today))
+    line = append_log(folder.root, "proposals", {"proposals": len(proposals)}, PROPOSALS_YAML, today=today)
     return {
         "counts": {"proposals": len(proposals), "files": len(paths)},
         "source": source,

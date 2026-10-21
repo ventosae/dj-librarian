@@ -31,6 +31,14 @@ The digest the gate checks = the canonical proposal YAML + the current tree YAML
 (its path and tree) + the track ids of every playlist the XML will hold. Any change between
 preview and apply -> refused.
 
+Which library read the proposals came from (Q-17): each `structure/proposals.yaml` entry records
+`source` (`dj.analysis.proposals`): the export, relative to the folder, or `master.db (snapshot
+read <time>)`. The build reads the latest export, so it is blocked (no preview id; `apply` refuses)
+when the export the entry names is gone from the folder, when the export the build reads is older
+(file time) than that export, or, for a master.db read, older than the snapshot: playlists made
+since would be missing. The line ends with `EXPORT_AGAIN`. An entry without `source` (a file from
+before, a hand-made proposal) is not checked.
+
 `apply` checks that `log.md` and `library.yaml` can take their change before it writes the XML.
 Once the XML is written the build counts as done: a later failure (marking the preview used, the
 log line, `structure.chosen`) comes back as a warning next to the written file, never as an error.
@@ -42,7 +50,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from itertools import zip_longest
 from pathlib import Path
 from typing import Any, Iterable
@@ -50,6 +58,7 @@ from typing import Any, Iterable
 import yaml
 
 from dj import libfolder, treeschema
+from dj.analysis.proposals import parse_source
 from dj.gate import Gate, GateError, require_id
 from dj.libfolder import LibraryFolder, LibraryFolderError
 from dj.model import Library, LibraryError
@@ -97,6 +106,7 @@ QUOTES = "\"'`“”‘’«»"
 ROWS_LIMIT = 60  # rows in a JSON result; the rest are counted (NFR-03)
 SHOWN = 5  # names in a message (lists <= 5)
 MENU = {"mac": "rekordbox menu > Preferences", "windows": "File > Preferences"}
+EXPORT_AGAIN = "Export again, then say the trigger prompt."
 
 
 # -- finding the proposal ------------------------------------------------------------------
@@ -117,6 +127,7 @@ class FoundProposal:
     cost_minutes: int | None = None
     trigger: str = ""
     warnings: tuple[str, ...] = ()
+    made_from: str = ""  # the entry's `source` in structure/proposals.yaml: the read it was made from
 
 
 def _folder(folder: LibraryFolder | str | Path) -> LibraryFolder:
@@ -259,6 +270,7 @@ def find_proposal(folder: LibraryFolder | str | Path, ref: str) -> FoundProposal
     else:
         doc, source = _entry_doc(entry), PROPOSALS_FILE
     cost = entry.get("cost_minutes")
+    made_from = entry.get("source")
     warnings: tuple[str, ...] = ()
     if broken is not None:  # one line: a YAML error spans several
         warnings = (f"{' '.join(str(broken).split())} Read {source} alone.",)
@@ -274,6 +286,7 @@ def find_proposal(folder: LibraryFolder | str | Path, ref: str) -> FoundProposal
         cost_minutes=cost if isinstance(cost, int) and not isinstance(cost, bool) else None,
         trigger=str(entry.get("trigger") or f"Build me the {doc.meta.get('name') or slug} structure"),
         warnings=warnings,
+        made_from=" ".join(made_from.split()) if isinstance(made_from, str) else "",
     )
 
 
@@ -309,6 +322,41 @@ def _library(folder: LibraryFolder) -> tuple[Library, str]:
         return read_xml(export), folder.relative(export)
     except (LibraryFolderError, LibraryError) as exc:
         raise BuildError(str(exc)) from exc
+
+
+def _source_block(folder: LibraryFolder, made_from: str, export: str) -> str | None:
+    """Why the proposal cannot be built from `export` (the export the build reads, relative), or
+    None (Q-17, see the module docstring).
+
+    Times are the files' modification times. `libfolder.import_export` keeps the time rekordbox
+    wrote the export, so an old export imported late still reads as old. The limit: a file put
+    into exports/ by other means carries whatever time that copy gave it."""
+    if not made_from:
+        return None
+    read = folder.root / export
+    kind, value = parse_source(made_from)
+    if kind == "db":
+        mtime = datetime.fromtimestamp(read.stat().st_mtime, tz=timezone.utc)
+        when = value if isinstance(value, datetime) else None
+        if when is not None and when.tzinfo is None:
+            when = when.astimezone()  # a naive time is this computer's local time
+        if when is None or mtime < when:
+            stamp = _local(when.isoformat()) if when else "a time it does not say"
+            return (
+                f"{PROPOSALS_FILE} was made from master.db (read {stamp}), after the newest export "
+                f"({export}): a playlist made since that export is not in it. {EXPORT_AGAIN}"
+            )
+        return None
+    rel = Path(str(value))
+    named = folder.root / rel
+    if rel.is_absolute() or ".." in rel.parts or not named.is_file():
+        return f"{PROPOSALS_FILE} was made from {value}, which is not in exports/ any more. {EXPORT_AGAIN}"
+    if named.resolve() != read.resolve() and read.stat().st_mtime_ns < named.stat().st_mtime_ns:
+        return (
+            f"{PROPOSALS_FILE} was made from {value}, which is newer than the export dj-build reads "
+            f"({export}). {EXPORT_AGAIN}"
+        )
+    return None
 
 
 def _vetoed(folder: LibraryFolder, lib: Library) -> frozenset[str]:
@@ -581,7 +629,7 @@ def preview(
     doc = _load_proposal(found.yaml_path, folder)  # the file wins, also over what we just wrote
 
     state = _state(found.slug, doc, current, lib, export, _vetoed(folder, lib))
-    preview_id, blocked = None, state.blocked
+    preview_id, blocked = None, _source_block(folder, found.made_from, export) or state.blocked
     if blocked is None:
         gate = Gate(folder.cache)
         preview_id = gate.record(KIND, {"proposal": found.slug}, state.digest, now=now)
@@ -649,8 +697,11 @@ def drags(rows: Iterable[DiffRow]) -> list[dict[str, str]]:
     return out
 
 
-def import_steps(device: str, xml_file: str, moves: list[dict[str, str]] | None = None) -> tuple[str, ...]:
-    """The import card for the DJ's OS (R-502): three steps."""
+def import_steps(
+    device: str, xml_file: str, moves: list[dict[str, str]] | None = None, *, folder: str = "your dj-library folder"
+) -> tuple[str, ...]:
+    """The import card for the DJ's OS (R-502): three steps. `folder` names where `xml_file`
+    sits (the inbox loop's XML can sit in the dj-librarian folder, `dj.writers.adds_xml`)."""
     if device not in MENU:
         raise BuildError(f"device must be one of {', '.join(MENU)}, got {device!r}")
     moves = list(moves or [])
@@ -659,7 +710,7 @@ def import_steps(device: str, xml_file: str, moves: list[dict[str, str]] | None 
     where = f": {shown}{more}" if moves else ""
     return (
         f"In rekordbox open {MENU[device]} > Advanced > Database > rekordbox xml > Imported Library "
-        f"> Browse, pick {xml_file} in your dj-library folder, close Preferences.",
+        f"> Browse, pick {xml_file} in {folder}, close Preferences.",
         'In the tree view turn on "rekordbox xml" and open it.',
         f"Drag the new playlists into Playlists{where}.",
     )
@@ -702,26 +753,34 @@ def _preflight(folder: LibraryFolder, slug: str) -> None:
             ) from exc
 
 
-def _log_text(slug: str, counts: dict[str, int], xml_file: str, now: datetime | None) -> str:
+def _log_text(slug: str, counts: dict[str, int], xml_file: str, now: datetime | None, today: date | None = None) -> str:
     """The log.md line `append_log` writes, for the warning when it could not be written."""
     told = ", ".join(f"{n} {key}" for key, n in counts.items())
-    return f"{(now or datetime.now()).strftime('%Y-%m-%d %H:%M')} build {slug} -> {told}; {xml_file}"
+    return f"{libfolder.log_clock(today, now)} build {slug} -> {told}; {xml_file}"
 
 
 def product_version() -> str:
-    """dj-librarian's version for the XML's PRODUCT line (installed package, else pyproject)."""
+    """dj-librarian's version for the XML's PRODUCT line: the installed package, else the
+    clone's pyproject.toml, else the plugin's plugin.json (the core vendored in the plugin zip
+    sits in `<plugin>/vendor/dj/`, D-22)."""
     from importlib import metadata
 
     try:
         return metadata.version("dj-librarian")
     except metadata.PackageNotFoundError:
         pass
+    above = Path(__file__).resolve().parents[2]  # the clone, or the plugin folder
     try:
-        import tomllib
+        import tomllib  # Python 3.11+; Cowork's sandbox may run 3.10
 
-        pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        pyproject = above / "pyproject.toml"
         return str(tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"])
-    except (OSError, KeyError, ValueError):
+    except (ImportError, OSError, KeyError, ValueError):
+        pass
+    try:
+        manifest = json.loads((above / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        return str(manifest["version"])
+    except (OSError, KeyError, TypeError, ValueError):
         return "unknown"
 
 
@@ -747,8 +806,9 @@ def apply(
         raise BuildError(f"proposals/{found.slug}.yaml is missing: run the preview first.")
     lib, export = _library(folder)
     state = _state(found.slug, found.doc, current, lib, export, _vetoed(folder, lib))
-    if state.blocked:
-        raise BuildError(state.blocked + " Nothing was written.")
+    blocked = _source_block(folder, found.made_from, export) or state.blocked
+    if blocked:
+        raise BuildError(blocked + " Nothing was written.")
     gate = Gate(folder.cache)
     gate.check(preview_id, KIND, {"proposal": found.slug}, state.digest, now=now)
     _preflight(folder, found.slug)
@@ -766,9 +826,9 @@ def apply(
     except (GateError, OSError) as exc:
         warnings.append(f"Preview {preview_id} could not be marked used ({exc}). Do not use it again.")
     try:
-        log_line = libfolder.append_log(folder.root, f"build {found.slug}", counts, file=xml_path, now=now)
+        log_line = libfolder.append_log(folder.root, f"build {found.slug}", counts, file=xml_path, now=now, today=today)
     except (LibraryFolderError, OSError) as exc:
-        log_line = _log_text(found.slug, counts, xml_file, now)
+        log_line = _log_text(found.slug, counts, xml_file, now, today)
         warnings.append(f"log.md: the build line was not added ({exc}). Add it by hand: {log_line}")
     try:
         libfolder.update_meta(

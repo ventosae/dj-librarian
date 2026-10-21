@@ -43,6 +43,10 @@ If `blocked` is set, there is no preview id. Say why in one line and offer Chang
 
 - A `CONFLICT`, or nothing to create: change `proposals/<slug>.yaml` with the DJ.
 - `current-tree.yaml is older than the latest export`: run dj-structure, then preview again.
+- `Export again, then say the trigger prompt.`: the proposals were made from a newer read than the
+  export the build reads (a newer export, or master.db), or from an export that is gone. Say that
+  line; the DJ exports the collection again (dj-start brings it in and rebuilds the proposals), then
+  says "Build me the <name> structure" again.
 - `Already built on ...`: that XML holds this exact build. Point to the file and the import card; a new build needs a changed proposal.
 
 If `warnings` is not empty, state each one in one line (for example: `structure/proposals.yaml` could not be read, so the DJ's own file was used).

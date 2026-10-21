@@ -65,7 +65,7 @@ import json
 import math
 import re
 from collections import Counter
-from datetime import date, datetime, time
+from datetime import date
 from fractions import Fraction
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Iterable
@@ -895,7 +895,6 @@ def run(
     source = _source_of(folder, path)
     lib = read_xml(path)
     data = facts(lib, today=today)
-    when = datetime.combine(today, time()) if today else None
     try:
         result = write(folder, data, source=source, today=today, rebuild=rebuild)
     except TasteWriteError as exc:
@@ -904,10 +903,10 @@ def run(
             "files written": len(exc.written),
             "files not written": len(FILES) + 2 - len(exc.written),  # the MD files and the 2 JSON files
         }
-        append_log(folder.root, "taste", counts, file=folder.taste, now=when)
+        append_log(folder.root, "taste", counts, file=folder.taste, today=today)
         raise
     added = sum(len(lines) for lines in result["added"].values())
-    log = append_log(folder.root, "taste", _log_counts(added, rebuild, result["backup"]), file=folder.taste, now=when)
+    log = append_log(folder.root, "taste", _log_counts(added, rebuild, result["backup"]), file=folder.taste, today=today)
     return {
         "counts": {
             "tracks": data["tracks"],

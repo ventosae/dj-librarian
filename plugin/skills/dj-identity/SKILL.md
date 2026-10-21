@@ -64,17 +64,22 @@ Step 2 of 2, about 2 minutes. The script never writes this file; you do.
 
 1. Read `profile/identity.json`: `archetype` (name, meaning, booth_line), `top`, and each axis
    `score` with its `inputs`. Read nothing else for this file.
-2. Write `profile/identity.md`: the liner notes, at most 120 words, in the voice, with the
-   template below. Talk to the DJ as "you".
-3. Every number is copied from `identity.json` exactly as it stands there (R-302): a score, or
-   a count such as `decades`, `oldest`/`newest`, `median_decade`, `lossless`, `at_320`,
-   `under_256`, `genres`, `lanes`, `added_last_365_days`, or a Memory percentage (`rating`,
-   `colour`, `comment`). Never quote a derived input (`effective_*`, `*_share`, `pace`,
-   `freshness`): a DJ does not recognise it. No number of your own, no rounding, no estimate.
-   Say "tracks", not "files".
-4. If `profile/identity.md` already exists, the DJ may have edited it. Leave it alone during the
+2. Write `profile/identity.md`: the liner notes, at most 120 words and at most four lines under
+   the heading, in the voice, with the template below. Talk to the DJ as "you".
+3. Every number is copied from `identity.json` exactly as it stands there (R-302): a count such
+   as `decades`, `oldest`/`newest`, `median_decade`, `lossless`, `at_320`, `under_256`,
+   `genres`, `lanes`, `added_last_365_days`, `days_since_last_add`, or a Memory percentage
+   (`rating`, `colour`, `comment`). A count that opens a sentence is written as a word ("Six
+   decades"), still the value from the file. Never quote a derived input (`effective_*`,
+   `*_share`, `pace`, `freshness`): a DJ does not recognise it. No number of your own, no
+   rounding, no estimate. Say "tracks", not "files".
+4. Booth words, not the chart: never an axis name and a number in the same sentence, and no
+   score at all ("Depth 94: the middle of the crates sits in the 2000s" becomes "Six decades in
+   the crates, centred on the 2000s"). The report prints the six scores in the chart right next
+   to the notes.
+5. If `profile/identity.md` already exists, the DJ may have edited it. Leave it alone during the
    work phase; afterwards ask once whether to rewrite it from the new identity.
-5. The DJ asked from the report ("draw my sleeve", "write my liner notes"): when this is done,
+6. The DJ asked from the report ("draw my sleeve", "write my liner notes"): when this is done,
    render the report again (`python3 ../dj-report/scripts/report.py render --library <folder>`)
    and hand them the new file it names.
 
@@ -83,21 +88,24 @@ Step 2 of 2, about 2 minutes. The script never writes this file; you do.
 
 > Words by Claude, from profile/identity.json.
 
-<One line: the fact from the top two axes that earns the name. Don't repeat the archetype name
-or its meaning: the report prints the name right above the notes, and the notes take the place
-of the meaning.>
+<Line 1: the two strong axes (`top`) in booth words, one fact each from their inputs, no axis
+name: "Six decades in the crates, centred on the 2000s, and 5 genres across 3 BPM lanes." Don't
+repeat the archetype name or its meaning: the report prints the name right above the notes.>
 
-<Two or three short lines: the two top axes with their scores ("Depth 94"), each with the one
-input behind it a DJ recognises (the decades, the lossless files, the tracks added in the last
-365 days). Don't repeat a fact from the first line.>
+<Line 2: the archetype's booth line, in quotes.>
 
-<One line: the archetype's booth line, in quotes.>
+<Line 3: the weakest axis (the lowest score; ties go to the earlier axis) as a fact, and that
+what to do about it is the DJ's call: "The soft spot is the files: 4 tracks under 256 kbps.
+Better copies or not, your call.">
 
-<One line: the lowest axis and its score, as a fact. What to do about it is the DJ's call.>
+<Line 4: what this library is good at on a floor, from the strongest axis, standing on its own
+(it follows the soft spot, so no "that" pointing back): "On a floor: an answer to any request
+back to the 1970s.">
 ```
 
-The heading and the "Words by Claude" line are fixed. The report hero shows the sleeve, the
-archetype and these notes (R-1405); Style Barber names the archetype once per session.
+Four lines, no more. The heading and the "Words by Claude" line are fixed (the report shows the
+notes without that line and credits Claude in its footer). The report hero shows the sleeve,
+the archetype and these notes (R-1405); Style Barber names the archetype once per session.
 
 ## What this skill never does
 

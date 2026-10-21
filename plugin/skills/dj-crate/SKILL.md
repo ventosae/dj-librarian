@@ -28,6 +28,21 @@ playlists in. master.db is never opened.
 - The tracks come from the latest export in `exports/`. `taste/` comes from dj-taste; without it
   the preview measures lanes and anchors from the export and says so in `warnings`.
 
+### Gig feedback (R-702)
+
+`taste/feedback.md` scores the picks. Two dated line shapes count; the sign sits right after the date:
+
+- `+ Artist - Title: note` (`- [2026-10-22] + Kestrel Unit - Ballast: packed the floor`): the track
+  worked at a gig. +1 to its score; its reason says "worked at a gig".
+- `- Artist - Title: note` (`- [2026-10-22] - Grid Saint - Pressure Vessel: cleared the floor`):
+  it flopped. -1, "flopped at a gig", and it is never a spare.
+
+A line names the song: every copy of it counts, and the latest line for a song decides. A line
+typed with `+` as its bullet (`+ [2026-10-22] Artist - Title: note`) counts as worked; a flop needs
+the `-` sign after the date. Other lines are remarks and do not count. dj-barber's gig question writes these lines; the DJ may add one by
+hand. `counts` says how many candidates `worked` and `flopped`. A change to the file changes the
+crate, so preview again before a write.
+
 ## The flow: 5 steps, two questions at most
 
 ### Step 1 of 5: the brief (C1)

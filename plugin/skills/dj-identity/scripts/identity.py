@@ -19,10 +19,14 @@ import json
 import sys
 from pathlib import Path
 
-try:
-    import dj  # noqa: F401  (engine venv, or a future PyPI install)
-except ImportError:  # plugin inside a clone of the repo
-    sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+try:  # the dj core, in this order (D-22): importable (engine venv or PyPI), a clone, the plugin zip
+    import dj  # noqa: F401
+except ImportError:  # a clone of the repo keeps it in ../../../../src, the plugin zip in ../../../vendor
+    _here = Path(__file__).resolve().parent
+    for _core in (_here / "../../../../src", _here / "../../../vendor"):
+        if (_core / "dj" / "__init__.py").is_file():
+            sys.path.insert(0, str(_core.resolve()))
+            break
 
 EXIT_OK, EXIT_ERROR, EXIT_REFUSED = 0, 1, 2
 ARCHETYPES = Path(__file__).resolve().parents[1] / "archetypes.yaml"  # this skill's own table

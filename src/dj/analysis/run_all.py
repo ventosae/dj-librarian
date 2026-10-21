@@ -65,7 +65,6 @@ def analyze(
     common.NotALibraryFolder before anything is read or written."""
     folder = library_folder(folder)
     lib, label = read_library(folder, source=source, xml=xml)
-    when = proposals_mod.log_time(today)
     written: list[str] = []
     kept: list[str] = []
     logs: list[str] = []
@@ -87,7 +86,7 @@ def analyze(
         paths = profile.write(folder, profile_facts, source=label, today=today)
         written.extend(folder.relative(p) for p in paths)
         counts = {"tracks": profile_facts["size"]["tracks"], "duplicates": profile_facts["duplicates"]["groups"]}
-        logs.append(append_log(folder.root, "profile", counts, profile.STATS_MD, now=when))
+        logs.append(append_log(folder.root, "profile", counts, profile.STATS_MD, today=today))
 
     def do_structure() -> None:
         doc = treeschema.from_library(lib, today=today)
@@ -96,7 +95,7 @@ def analyze(
         kept.extend(folder.relative(p) for p in paths[len(structure.FILES):])
         c = structure_facts["counts"]
         counts = {"playlists": c["playlists"] + c["smart"], "folders": c["folders"], "files": len(paths)}
-        logs.append(append_log(folder.root, "structure", counts, "structure/analysis.md", now=when))
+        logs.append(append_log(folder.root, "structure", counts, "structure/analysis.md", today=today))
 
     def do_taste() -> None:
         try:
@@ -104,11 +103,11 @@ def analyze(
         except taste.TasteWriteError as exc:
             written.extend(exc.written)
             counts = {"lines added": sum(len(v) for v in exc.added.values()), "files written": len(exc.written)}
-            logs.append(append_log(folder.root, "taste", counts, file=folder.taste, now=when))
+            logs.append(append_log(folder.root, "taste", counts, file=folder.taste, today=today))
             raise
         written.extend(result["written"])
         added = sum(len(lines) for lines in result["added"].values())
-        logs.append(append_log(folder.root, "taste", {"lines added": added}, file=folder.taste, now=when))
+        logs.append(append_log(folder.root, "taste", {"lines added": added}, file=folder.taste, today=today))
 
     def do_identity() -> None:
         made, paths = identity.from_library(
@@ -116,17 +115,19 @@ def analyze(
         )
         written.extend(folder.relative(p) for p in paths)
         counts = {"axes": len(identity.AXES), "lanes": made["counts"]["lanes"]}
-        logs.append(append_log(folder.root, "identity", counts, identity.IDENTITY_JSON, now=when))
+        logs.append(append_log(folder.root, "identity", counts, identity.IDENTITY_JSON, today=today))
 
     def do_report() -> None:
-        paths = proposals_mod.write_proposals(folder, found, today, source=label)
+        # Q-17: a master.db read is named with its snapshot time, so dj-build can tell an older export
+        made_from = proposals_mod.db_source(lib.read_at) if source == "db" else label
+        paths = proposals_mod.write_proposals(folder, found, today, source=made_from)
         written.append(folder.relative(paths[0]))
         kept.extend(folder.relative(p) for p in paths[1:])
         path = report_mod.render(folder, today=today)
         report["path"] = folder.relative(path)
         written.append(report["path"])
         counts = {"proposals": len(found), "files": len(paths) + 1}
-        logs.append(append_log(folder.root, "report", counts, path, now=when))
+        logs.append(append_log(folder.root, "report", counts, path, today=today))
 
     for name, work in zip(STEPS, (do_profile, do_structure, do_taste, do_identity, do_report)):
         step(name, work)

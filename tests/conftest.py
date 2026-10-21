@@ -142,6 +142,20 @@ def no_real_db_no_network(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", local_names_only)
 
 
+@pytest.fixture
+def live_master_db(monkeypatch, tmp_path_factory):
+    """For a test whose fake `safety.open_db` serves the CLI's reads: a small file standing in for
+    the live master.db, returned by `safety.find_master_db`. Every read-only pass copies it to a
+    snapshot (`dj.readers.db.open_snapshot`, R-202) and opens only the copy, so a fake open_db sees
+    `db_path` = the copy. Its bytes are only copied, never read. Returns its path."""
+    from dj import safety
+
+    path = tmp_path_factory.mktemp("live-rekordbox") / "master.db"
+    path.write_bytes(b"stands in for the live master.db: copied, never opened")
+    monkeypatch.setattr(safety, "find_master_db", lambda: path)
+    return path
+
+
 @pytest.fixture(autouse=True)
 def no_real_library_folder(monkeypatch, tmp_path_factory):
     """The DJ's own dj-library folder is real data too. Since W-25 (R-802) the inbox loop follows

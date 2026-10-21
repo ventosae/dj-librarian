@@ -11,7 +11,7 @@ Status: early (0.1.0, unreleased). Windows is the tested platform. macOS is port
 - **Create and add only.** Nothing that exists in rekordbox, on Spotify or on disk is ever deleted, renamed, moved or reordered.
 - **Dry-run is the default.** Every command that writes to rekordbox, Spotify or your audio files shows what it would do and prints a preview id first. Real writes need `--apply --preview-id <id>`: the id of the dry-run you said yes to. If anything changed since, the write is refused. Text files in your own folders (plans, reports, analysis, proposals, the shopping list) are written directly, without a preview id.
 - **Preview, then yes.** Through Claude, every write tool has a preview tool and needs its `preview_id`, and Claude asks you before it writes. Silence is not a yes. Which tools to leave on "ask every time": [docs/permissions.md](docs/permissions.md).
-- **Import, don't inject.** The default write path is a rekordbox XML file that you import yourself: `dj library build` writes a new playlist structure as `proposals/<slug>.xml`, `dj library crate` a crate as `proposals/crate-<slug>.xml`. Direct writes to rekordbox's `master.db` are a Windows power mode behind `--power-mode`: rekordbox must be closed, a verified backup is taken first, everything lands in one commit, and any error rolls back. `dj tree`, `dj apply` and `dj copy` with `--apply` use this power mode; v0.1 has no XML route for inbox adds or playlist copies.
+- **Import, don't inject.** The default write path is a rekordbox XML file that you import yourself: `dj library build` writes a new playlist structure as `proposals/<slug>.xml`, `dj library crate` a crate as `proposals/crate-<slug>.xml`. Direct writes to rekordbox's `master.db` are a Windows power mode behind `--power-mode`: rekordbox must be closed, a verified backup is taken first, everything lands in one commit, and any error rolls back. `dj tree --apply` uses this power mode. Inbox adds and playlist copies write an XML too: `dj apply` and `dj copy` with `--apply --xml` write `proposals/<crate>-adds-<date>.xml` (any OS; you import it and drag the tracks onto the crate), or master.db with `--apply --power-mode`.
 - **Idempotent.** A folder or playlist that exists at the same level is skipped. Running a command twice adds nothing the second time.
 
 The full rules are in [CLAUDE.md](CLAUDE.md) and [docs/requirements.md](docs/requirements.md).
@@ -88,11 +88,21 @@ claude plugin marketplace add ./
 claude plugin install dj-librarian@dj-librarian
 ```
 
-A marketplace added from GitHub (`OWNER/dj-librarian`), or the plugin uploaded as a zip, runs a cached copy of the plugin with no engine next to it. The skill scripts then cannot load either: they answer with a one-line error that the dj-librarian core does not load, until the core ships with the plugin or on PyPI.
+A marketplace added from GitHub (`OWNER/dj-librarian`), or the plugin uploaded as a zip, runs a cached copy of the plugin with no engine next to it. The skills that need no engine (dj-start through the report, crates, builds, Style Barber) still run from the plugin zip: `uv run python scripts/build_plugin_zip.py` writes `dist/dj-librarian-plugin-<version>.zip`, which carries their core in `vendor/` (D-22). A copy without it (a GitHub marketplace, until the core is on PyPI) answers with a one-line error that the dj-librarian core does not load. The skill scripts look for the core in this order: an importable `dj` (the engine's venv), a clone of the repo, the zip's `vendor/`.
 
 - **Claude desktop app:** Customize → Plugins → Add → Add marketplace. Whether the plugin's MCP server then starts from your clone is not verified yet (open question Q-08). If `dj_status` does not answer, register the engine by hand as below.
 
-On macOS, an app started from the Dock or Finder gets a short `PATH`, and the plugin starts its engine (and, in Claude Code, its write-gate hook) with a bare `uv`. Where `uv` sits in `~/.local/bin` or Homebrew's folder, the engine may not start, and a hook that cannot run blocks every write tool. This is not yet checked on a Mac. If `dj_status` does not answer, register the engine by hand with the full path to `uv` (below). The plugin's engine also gets no `UV_PROJECT_ENVIRONMENT` from `~/.zshrc`: on a Mac, keep the clone out of cloud-synced folders so uv uses `.venv/` inside it.
+On macOS, an app started from the Dock or Finder gets a short `PATH`. Where `uv` sits in `~/.local/bin` or Homebrew's folder, the engine may not start, and a hook that cannot run blocks every write tool. Two fixes, both unverified until the first Mac test (Q-25):
+
+- Link `uv` into `/usr/local/bin`, which apps started from the Dock usually see. In Terminal:
+
+```bash
+sudo mkdir -p /usr/local/bin && sudo ln -sf "$(command -v uv)" /usr/local/bin/uv
+```
+
+- The plugin starts its engine with its `uv path` option (default `uv`). Set it to the full path `command -v uv` prints (Claude Code: `/plugin configure dj-librarian`). The write-gate hook keeps a bare `uv`, so it needs the link.
+
+If `dj_status` still does not answer, register the engine by hand with the full path to `uv` (below). The plugin's engine also gets no `UV_PROJECT_ENVIRONMENT` from `~/.zshrc`: on a Mac, keep the clone out of cloud-synced folders so uv uses `.venv/` inside it.
 
 Optional: [templates/project/instructions.md](templates/project/instructions.md) is a Cowork Project template you can paste into a new Project's instructions; the plugin works without it.
 

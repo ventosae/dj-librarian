@@ -49,9 +49,10 @@ server = MCPServer(
         "propose. Read the dj-sync skill first. Every *_apply / *_write / *_undo tool "
         "needs the preview_id its preview tool returned: call the preview, show the DJ the result, "
         "ask, and only after their explicit yes pass that preview_id. Direct master.db writes "
-        "(dj_tree_apply, dj_apply_write, dj_copy_apply) also need power_mode=true and run on Windows "
-        "only; the default write path is an XML the DJ imports, for new structures and crates "
-        "(dj_structure_preview / dj_structure_write, dj_crate_preview / dj_crate_write). "
+        "(dj_tree_apply, dj_apply_write and dj_copy_apply with mode=\"db\") also need power_mode=true and "
+        "run on Windows only; the default write path is an XML the DJ imports: for new structures and "
+        "crates (dj_structure_preview / dj_structure_write, dj_crate_preview / dj_crate_write), and for "
+        "inbox adds and copies (dj_apply_write / dj_copy_apply with mode=\"xml\"). "
         "exit_code 2 = refused: the `hint` says why. Usually rekordbox is open: ask "
         "them to close it, then retry the same call; a library folder that is not set up needs "
         "dj-start first. Never ask for a way around a refusal. The dj_tidy_* tools work on the audio files "
@@ -522,16 +523,32 @@ def preview_id_arg(preview_id: Any, preview_tool: str) -> str:
 
 POWER_MODE_REFUSAL = (
     "master.db writes are power mode (Windows only): pass power_mode=true only when the DJ asked for a "
-    "direct write. New folders and playlists can go through an XML to import instead "
-    "(dj_structure_preview / dj_structure_write); inbox adds and copies have no import path in v0.1 "
-    "(the DJ adds those tracks in rekordbox by hand)."
+    "direct write. The default write path is an XML to import instead: mode=\"xml\" for inbox adds and "
+    "copies (dj_apply_write, dj_copy_apply), dj_structure_preview / dj_structure_write for new folders "
+    "and playlists."
 )
+ADD_MODES = ("xml", "db")
 
 
 def power_mode_arg(power_mode: Any) -> None:
     """R-205: a direct master.db write needs power_mode=true, checked before the preview id."""
     if power_mode is not True:
         raise ToolInputError(POWER_MODE_REFUSAL)
+
+
+def add_mode_flags(mode: Any, power_mode: Any) -> list[str]:
+    """dj_apply_write / dj_copy_apply (R-802, R-205): "xml" writes an XML the DJ imports (any OS,
+    no power_mode); "db" writes master.db and needs power_mode=true. Empty: "db" when
+    power_mode=true, else "xml" (the default write path). Checked before the preview id."""
+    if not isinstance(mode, str) or mode.strip() not in ("", *ADD_MODES):
+        raise ToolInputError(f"mode must be one of {', '.join(ADD_MODES)}, got {mode!r}.")
+    chosen = mode.strip() or ("db" if power_mode is True else "xml")
+    if chosen == "xml":
+        if power_mode is True:
+            raise ToolInputError('mode="xml" writes an XML to import and needs no power_mode: pass one of the two.')
+        return ["--xml"]
+    power_mode_arg(power_mode)
+    return ["--power-mode"]
 
 
 # -- read-only ---------------------------------------------------------------------------
@@ -729,37 +746,41 @@ def dj_tree_apply(preview_id: str, file: str = "tree.yaml", power_mode: bool = F
 
 @server.tool(annotations=WRITE)
 @guarded
-def dj_apply_write(plan_file: str, preview_id: str, power_mode: bool = False) -> str:
-    """WRITES to rekordbox master.db: append the `decision: yes` tracks of a plan to its crate.
-    Backup first, one commit, exit_code 2 while rekordbox is open. Then updates
-    the match cache and the declined list and writes a report (reports/apply/ in a library folder). Windows power mode (R-205):
-    needs power_mode=true, else refused. The default write path is an XML the DJ imports, but only for
-    new structures and crates (dj_structure_write, dj_crate_write): v0.1 has no XML for inbox adds, so
-    off Windows the DJ adds the plan's tracks in rekordbox by hand. Call dj_apply_preview, show the DJ the result,
-    ask, and only after their explicit yes pass its preview_id (same `plan_file`; a bare name is
-    looked up in plans/: "2026-10-20-house.plan.json" -> plans/2026-10-20-house.plan.json).
-    Appends one log.md line itself. A long list comes back as its first page;
-    `paging.<list>.rest_in` names the report with all of it."""
-    power_mode_arg(power_mode)
+def dj_apply_write(plan_file: str, preview_id: str, power_mode: bool = False, mode: str = "") -> str:
+    """WRITES the `decision: yes` tracks of a plan for its crate. The default write path is an XML
+    the DJ imports (mode="xml", any OS, no power_mode): proposals/<crate>-adds-<date>.xml with one
+    playlist of those tracks, master.db never opened for writing; the result gives the import card
+    (`import_steps`) ending in the one drag of those tracks onto the crate. mode="db" appends them to
+    the crate in rekordbox master.db: Windows power mode (R-205), needs power_mode=true, else refused;
+    backup first, one commit, exit_code 2 while rekordbox is open. mode empty = "db" with
+    power_mode=true, else "xml". Either way it then updates the match cache and the declined list
+    and writes a report (reports/apply/ in a library folder). Call dj_apply_preview, show the DJ the
+    result, ask, and only after their explicit yes pass its preview_id (one preview id serves both
+    modes; same `plan_file`; a bare name is looked up in plans/: "2026-10-20-house.plan.json" ->
+    plans/2026-10-20-house.plan.json). Appends one log.md line itself. A long list comes back as its
+    first page; `paging.<list>.rest_in` names the report with all of it."""
+    flags = add_mode_flags(mode, power_mode)
     pid = preview_id_arg(preview_id, "dj_apply_preview")
     plan = library_file(plan_file, (".json",), folder=PLANS)
-    return run_paged(["apply", "--apply", "--power-mode", "--preview-id", pid], (plan,), **WRITTEN_LISTS)
+    return run_paged(["apply", "--apply", *flags, "--preview-id", pid], (plan,), **WRITTEN_LISTS)
 
 
 @server.tool(annotations=WRITE)
 @guarded
-def dj_copy_apply(source: str, target: str, preview_id: str, power_mode: bool = False) -> str:
-    """WRITES to rekordbox master.db: append the tracks of playlist `source` to `target` (skips
-    tracks already there). Backup first, one commit, exit_code 2 while rekordbox is open.
-    Windows power mode (R-205): needs power_mode=true, else refused. The default write path is an
-    XML the DJ imports, but only for new structures and crates (dj_structure_write, dj_crate_write):
-    v0.1 has no XML for a copy, so off Windows the DJ copies the tracks in rekordbox by hand. Call dj_copy_preview, show
-    the DJ the result, ask, and only after their explicit yes pass its preview_id (same source
-    and target). Appends one log.md line itself. A long list comes back as its first page;
-    `paging.<list>.rest_in` names the report with all of it."""
-    power_mode_arg(power_mode)
+def dj_copy_apply(source: str, target: str, preview_id: str, power_mode: bool = False, mode: str = "") -> str:
+    """WRITES the tracks of playlist `source` that `target` lacks, for `target`. The default write
+    path is an XML the DJ imports (mode="xml", any OS, no power_mode): proposals/<target>-adds-<date>.xml
+    with one playlist of those tracks, master.db never opened for writing; the result gives the import
+    card (`import_steps`) ending in the one drag onto `target`. mode="db" appends them in rekordbox
+    master.db: Windows power mode (R-205), needs power_mode=true, else refused; backup first, one
+    commit, exit_code 2 while rekordbox is open. mode empty = "db" with power_mode=true, else "xml".
+    Call dj_copy_preview, show the DJ the result, ask, and only after their explicit yes pass its
+    preview_id (one preview id serves both modes; same source and target). Appends one log.md line
+    itself. A long list comes back as its first page; `paging.<list>.rest_in` names the report with
+    all of it."""
+    flags = add_mode_flags(mode, power_mode)
     pid = preview_id_arg(preview_id, "dj_copy_preview")
-    return run_paged(["copy", "--apply", "--power-mode", "--preview-id", pid], (source, target), **WRITTEN_LISTS)
+    return run_paged(["copy", "--apply", *flags, "--preview-id", pid], (source, target), **WRITTEN_LISTS)
 
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))

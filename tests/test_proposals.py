@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -457,9 +457,11 @@ def test_write_and_load(folder, found):
     assert lines[0] == f"# Restructure proposals for your library, generated from {EXPORT} on 2026-10-20."
     assert re.match(r"^# fingerprint: [0-9a-f]{12}$", lines[3])
     data = yaml.safe_load(text)
-    assert [list(entry) for entry in data] == [list(P.KEYS)] * 3
+    assert [list(entry) for entry in data] == [list(P.WRITTEN_KEYS)] * 3
     assert [entry["slug"] for entry in data] == [p.slug for p in found]
+    assert {entry["source"] for entry in data} == {EXPORT}  # Q-17: what dj-build checks
     back = P.load(path)
+    assert {b["source"] for b in back} == {EXPORT}
     assert [b["tree"] for b in back] == [treeschema.TreeDoc(p.tree.nodes) for p in found]
     assert [(b["name"], b["trigger"], b["cost_minutes"]) for b in back] == [
         (p.name, p.trigger, p.cost_minutes) for p in found]  # fmt: skip
@@ -562,12 +564,13 @@ def test_load_refuses_a_name_or_trigger_used_twice(folder, found):
 # -- run ----------------------------------------------------------------------------------------------
 
 
-def test_run_writes_the_file_and_one_log_line(folder):
+def test_run_writes_the_file_and_one_log_line(folder, monkeypatch):
+    monkeypatch.setattr(libfolder, "_wall_clock", lambda: datetime(2026, 10, 21, 13, 20))  # Q-28: the wall clock
     result = P.run(folder, today=DAY)
     assert list(result) == ["counts", "source", "proposals", "written", "kept", "log"]
     assert result["counts"] == {"proposals": 3, "files": 1}
     assert result["written"] == ["structure/proposals.yaml"] and result["source"] == EXPORT
-    assert result["log"] == "2026-10-20 00:00 proposals -> 3 proposals; structure/proposals.yaml"
+    assert result["log"] == "2026-10-20 13:20 proposals -> 3 proposals; structure/proposals.yaml"
     assert (folder / "log.md").read_text(encoding="utf-8").endswith(result["log"] + "\n")
     assert json.loads(json.dumps(result)) == result
 

@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import yaml
 
@@ -486,12 +486,26 @@ def add_to_crate(db: Any, plan: dict[str, Any]) -> list[dict[str, Any]]:
     return adds
 
 
-def record(plan: dict[str, Any], plan_path: Path, added: list[dict[str, Any]], paths: Paths) -> Path:
+def record(
+    plan: dict[str, Any],
+    plan_path: Path,
+    added: list[dict[str, Any]],
+    paths: Paths,
+    *,
+    in_xml: list[dict[str, Any]] | None = None,
+    xml: str | None = None,
+    left_out: Sequence[dict[str, Any]] = (),
+) -> Path:
     """After the commit: yes picks -> match_cache, no -> declined, write the report.
 
     In a library folder the state is read through `state_source` (the repo's state/ until the
     library has its own) and always written to the library: the first apply carries it over.
     The repo files are only read, never changed.
+
+    `in_xml` (with `xml`, the file): `dj apply --xml` put these yes items in an XML for the DJ to
+    import instead of the crate (`added` is then empty); `left_out`: yes items the XML could not
+    carry (no file location). The decisions are recorded the same way: a yes pick is the DJ's
+    match whether it reached the crate by a write or by their drag.
     """
     by_decision = decisions(plan)
     cache = _read_json(paths.state_source(paths.cache), {})
@@ -515,11 +529,17 @@ def record(plan: dict[str, Any], plan_path: Path, added: list[dict[str, Any]], p
         "added": [{"spotify": i["spotify"], "rb_content_id": str(i["pick"])} for i in added],
         "counts": {
             "added": len(added),
-            "yes_already_in_crate": len(by_decision[YES]) - len(added),
+            "yes_already_in_crate": len(by_decision[YES]) - len(added) - len(in_xml or []) - len(left_out),
             "declined": len(by_decision[NO]),
             "still_pending": len(by_decision[PENDING]),
         },
     }
+    if in_xml is not None:  # dj apply --xml: the yes tracks wait in an XML for the DJ's import
+        report["mode"] = "xml"
+        report["xml"] = xml
+        report["in_xml"] = [{"spotify": i["spotify"], "rb_content_id": str(i["pick"])} for i in in_xml]
+        report["left_out"] = [{"spotify": i["spotify"], "rb_content_id": str(i["pick"])} for i in left_out]
+        report["counts"] = {"in_xml": len(in_xml), "left_out": len(left_out), **report["counts"]}
     # create-only: a second apply on the same day is <date>-<crate>-2.report.json, the first stays
     return libfolder.write_new_numbered(paths.reports, f"{date.today().isoformat()}-{slug(plan['crate'])}",
                                         ".report.json", json.dumps(report, indent=2, ensure_ascii=False))

@@ -89,7 +89,7 @@ def lib(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def world(monkeypatch):
+def world(monkeypatch, live_master_db):
     """Fake rekordbox (read sessions only) and a Spotify behind a MockTransport."""
     state = {"writes": [], "requests": []}
 

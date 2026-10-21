@@ -363,7 +363,7 @@ def init(
     except LibraryFolderError as exc:
         if made.created or made.gitignore_added:  # the scaffold is a change: it gets its line
             libfolder.append_log(
-                root, "start", {"created": len(made.created), "skipped": len(made.skipped)}, now=now
+                root, "start", {"created": len(made.created), "skipped": len(made.skipped)}, now=now, today=today
             )
         raise OnboardingError(str(exc), "xml") from None
 
@@ -390,6 +390,7 @@ def init(
             {"created": len(created), "skipped": len(skipped), "tracks": counts["tracks"]},
             file=export,
             now=now,
+            today=today,
         )
     return {
         "created": created,

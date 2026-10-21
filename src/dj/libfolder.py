@@ -13,6 +13,11 @@ Rules this module keeps:
   Absolute paths live only in `exports/*.xml` and `proposals/*.xml`, which the scaffolded
   `.gitignore` keeps out of git (R-905), together with temp files (`*.tmp`).
 - `library.yaml` is the one file that may name this computer (device, rekordbox version).
+- A disk that refuses deletes and renames (Cowork's device VM, Q-27): a probe finds it before
+  the first temp file, and files on it are then written in place, never through a temp file
+  and never hard-linked. Other disks keep the temp-file route. See "-- writing --".
+- One clock for log.md (Q-28): the date is the run's `--today` when given, else the local
+  date; the time is always the local wall clock. See `log_clock`.
 """
 
 from __future__ import annotations
@@ -22,7 +27,9 @@ import hashlib
 import os
 import re
 import shutil
+import sys
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -198,9 +205,13 @@ rekordbox until you import a file yourself.
 The folder is ready for git: `git init`, `git add .`, `git commit`. The XML files in
 `exports/` and `proposals/` hold the paths of your music on this computer, so they are
 gitignored (`exports/*.xml`, `proposals/*.xml`), and so is any XML you drop at the top.
-`.cache/` is the tool's scratch space, `.env` holds secrets and `*.tmp` is a half-written
-file left by a crash: all gitignored too. Everything else is text you can commit, diff and
-back up.
+`.cache/` is the tool's scratch space, `.env` holds secrets and `*.tmp` is a temp file left
+by a crash, or by a disk that does not let files be deleted: all gitignored too. Everything
+else is text you can commit, diff and back up.
+
+On a disk that does not let files be deleted (Claude's Cowork can mount your folder that way)
+the tool writes each file in place instead of through a temp file, and says so in
+`.cache/no-delete-disks.txt`. Your own computer checks its own disk and is not affected.
 """
 
 LINKS_TEXT = """\
@@ -681,17 +692,37 @@ def _copy_new(source: Path, digest: str, folder: LibraryFolder, day: date) -> Pa
     """Copy `source` to the first free dated name in exports/. Source only read.
 
     Copied to a temp file, checked against `digest` (the bytes that were parsed), then linked
-    into place: a name another import took in the meantime is never overwritten.
+    into place: a name another import took in the meantime is never overwritten. The copy keeps
+    the source's file time, so exports/ dates each export by when rekordbox wrote it, not by when
+    it was imported (dj-build compares those times, Q-17). On a disk that refuses deletes (Q-27)
+    the bytes are read and checked first, then written straight to the first free name with an
+    exclusive create: no temp file, nothing to remove.
     """
+    if _writes_direct(folder.exports):
+        data = source.read_bytes()
+        if hashlib.sha256(data).hexdigest() != digest:
+            raise LibraryFolderError(
+                f"{source.name} changed while it was being copied. Nothing was copied. "
+                "Wait for rekordbox to finish the export and try again."
+            )
+        stamp = source.stat()
+        for candidate in _export_names(folder, day):  # ends: some -N is always free
+            if _create_direct(candidate, data):
+                with contextlib.suppress(OSError):  # keep the export's own time (Q-17)
+                    os.utime(candidate, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+                return candidate
     fd, tmp = _temp_next_to(folder.exports / "collection.xml")
     try:
         with os.fdopen(fd, "wb") as out, open(source, "rb") as src:
             shutil.copyfileobj(src, out, _CHUNK)
+            written = os.fstat(src.fileno())
         if sha256(tmp) != digest:
             raise LibraryFolderError(
                 f"{source.name} changed while it was being copied. Nothing was copied. "
                 "Wait for rekordbox to finish the export and try again."
             )
+        with contextlib.suppress(OSError):  # a disk that keeps no times: the copy's own time
+            os.utime(tmp, ns=(written.st_atime_ns, written.st_mtime_ns))
         for candidate in _export_names(folder, day):  # ends: some -N is always free
             if _place_new(tmp, candidate):
                 return candidate
@@ -703,22 +734,43 @@ def _copy_new(source: Path, digest: str, folder: LibraryFolder, day: date) -> Pa
 # -- log.md (R-904) ------------------------------------------------------------------------
 
 
+def _wall_clock() -> datetime:
+    """The local wall clock. One function, so a test can pin it (Q-28)."""
+    return datetime.now()
+
+
+def log_clock(today: date | None = None, now: datetime | None = None) -> str:
+    """`YYYY-MM-DD HH:MM`, the start of every log.md line: one clock for all of them (Q-28).
+
+    The date is `today` (a run's `--today`) when given, else the local date. The time is always
+    the local wall clock: `now` when given (an aware moment is shown in local time, so a UTC
+    gate time reads as the DJ's clock), else the clock itself. Never a made-up 00:00."""
+    moment = now if now is not None else _wall_clock()
+    if moment.tzinfo is not None:
+        moment = moment.astimezone()
+    day = today or moment.date()
+    return f"{day.isoformat()} {moment.strftime('%H:%M')}"
+
+
 def append_log(
     root: str | Path,
     action: str,
     counts: Mapping[str, int] | None = None,
     file: str | Path | None = None,
     now: datetime | None = None,
+    *,
+    today: date | None = None,
 ) -> str:
     """Append `YYYY-MM-DD HH:MM <action> -> <n> <key>, <n> <key>; <file>` and return it.
 
     ` -> ...` is left out without counts, `; <file>` without a file. The file is written
-    relative to the folder. log.md is created with its title line when missing.
+    relative to the folder. log.md is created with its title line when missing. The time stamp
+    is `log_clock(today, now)`: pass the run's `--today` as `today`.
     """
     folder = LibraryFolder(Path(root))
     if not folder.root.is_dir():
         raise LibraryFolderError("The library folder does not exist. Scaffold it first.")
-    line = f"{(now or datetime.now()).strftime('%Y-%m-%d %H:%M')} {_one_line(action, 'action')}"
+    line = f"{log_clock(today, now)} {_one_line(action, 'action')}"
     if counts:
         parts = []
         for key, n in counts.items():
@@ -846,20 +898,85 @@ def relative(root: str | Path, path: str | Path) -> str:
 
 
 # -- writing -------------------------------------------------------------------------------
+#
+# Every file the tool writes goes through write_text (replace) or write_new_text (create only).
+# On a normal disk: a temp file `.<name>.<random>.tmp` next to the target, then os.replace or a
+# hard link, so a crash never leaves half a file under the real name.
+#
+# Some disks refuse deletes and renames but let a program create and write files: Cowork's
+# device VM mounts the connected folder that way (Q-27). There a temp file can never be removed
+# by anyone, and os.replace fails. So (decided in W-30, revised in its review):
+# - The probe. The first time a run is about to make a temp file on a disk (a device number),
+#   it makes an empty `.dj-probe.<random>.tmp` there and removes it. Removed: the disk deletes,
+#   and every write on it keeps the temp-file route for the rest of the run. Refused (after a
+#   few tries on Windows, where a scanner can hold a new file for a moment): the disk does not
+#   delete, and every write on it for the rest of the run goes straight to the target, in every
+#   folder, with no temp file. The probe comes before any temp file, so on such a disk no temp
+#   file is ever made, and none is ever hard-linked to a real file.
+# - Straight to the target means `open(path, "w")`; create-only writers use `open(path, "x")`,
+#   so they still never overwrite. Nothing is removed, nothing is hard-linked.
+# - On a disk the probe passed, os.replace, os.link or a temp's removal can still raise OSError
+#   (a file held open, a scanner): that write goes in place, nothing else is removed, and a
+#   refused removal sends the rest of the run's writes on that disk in place. That is never
+#   remembered after the run. (A removal refused right after a create-only hard link leaves that
+#   one temp linked to its file: possible only on a disk that deletes, never on a no-delete one.)
+# - Later runs. A refused probe is written down in the library folder's
+#   `.cache/no-delete-disks.txt` (gitignored) as `<platform> <device number> <date>`. A later run
+#   on the same platform and device writes in place from the start: no probe, no new file. Any
+#   other computer reading the same folder (the DJ's own Mac or PC) does not match, checks its
+#   own disk and keeps the temp-file route. An undo record (`fsync=True`) never trusts the note:
+#   it goes in place only after a delete or its own rename was refused in this run.
+# - A temp file of ours from an earlier run (a crash) means nothing here: it never switches a
+#   folder to in-place writes, and it is never removed (hard rule 1).
+# - The cost on such a disk: the one empty probe file nothing can remove, per library folder and
+#   device (once per session if the VM's device number changes between sessions), and the note;
+#   plus one more empty probe per run that writes an undo record, since that never trusts the note.
+# Audio files are not written here: `dj tidy` keeps its temp copy + os.replace (CLAUDE.md) and
+# fails loudly on such a disk rather than write an audio file in place.
+
+NO_DELETE_NOTE = "no-delete-disks.txt"  # in the library folder's .cache/ (Q-27)
+_NOTE_HEADER = (
+    "# dj-librarian: disks where this folder could not delete a file (Q-27, e.g. Cowork's device VM).\n"
+    "# On a computer that matches a line (same platform, same device number) the tool writes the\n"
+    "# files here in place, without a temp file, so a crash mid-write can leave half a file.\n"
+    "# Other computers check their own disk and keep the safe route. Line: platform device date.\n"
+)
+_PROBE_PREFIX = ".dj-probe."
+_PROBE_TRIES = 3 if os.name == "nt" else 1  # POSIX: a refused unlink is final
+_PROBE_PAUSE = 0.05  # seconds between tries
+
+# What this run knows about each disk (device number). Never carried to the next run.
+_REFUSED: set[int] = set()  # a delete was refused here in this run: write in place
+_PROBE_REFUSED: set[int] = set()  # ...by the probe itself: worth writing down in the note
+_DELETES: set[int] = set()  # the probe was removed in this run: the temp-file route
+_TRUSTED: set[int] = set()  # a library's note names this disk (from an earlier run)
+_NOTES: dict[str, frozenset[str]] = {}  # library folder -> the disks its note names, read once
+_WRITTEN_DOWN: set[tuple[str, int]] = set()  # (library folder, disk) already in its note
 
 
-def write_text(path: str | Path, text: str) -> Path:
-    """UTF-8, LF line ends. Written to a temp file next to `path`, then os.replace.
+def write_text(path: str | Path, text: str, *, fsync: bool = False) -> Path:
+    """UTF-8, LF line ends. Written to a temp file next to `path`, then os.replace; on a disk
+    that refuses that, written in place (Q-27, see above). `fsync=True` flushes the bytes to
+    disk before the file takes its name (an undo record).
 
     Replaces an existing file: only for files the tool owns and rewrites (library.yaml, the
     state file, its own tree files). A file that must never be overwritten: write_new_text.
     """
     path = Path(path)
+    if _writes_direct(path.parent, fsync=fsync):
+        _write_direct(path, text, fsync=fsync)
+        return path
     fd, tmp = _temp_next_to(path)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
-        os.replace(tmp, path)
+            if fsync:
+                fh.flush()
+                os.fsync(fh.fileno())
+        try:
+            os.replace(tmp, path)
+        except OSError:  # a disk that refuses renames (Q-27): write the target in place
+            _write_direct(path, text, fsync=fsync)
     finally:
         _discard(tmp)
     return path
@@ -869,9 +986,12 @@ def write_new_text(path: str | Path, text: str) -> bool:
     """Create `path` with `text` (UTF-8, LF) only if no file has that name. False = it existed.
 
     The existence check and the creation are one step (see _place_new), so a file that
-    appears in the meantime is kept, never overwritten.
+    appears in the meantime is kept, never overwritten. On a disk that refuses deletes (Q-27)
+    the file is created in place with an exclusive create: still never an overwrite.
     """
     path = Path(path)
+    if _writes_direct(path.parent):
+        return _create_direct(path, text.encode("utf-8"))
     fd, tmp = _temp_next_to(path)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
@@ -908,6 +1028,8 @@ def _place_new(tmp: Path, target: Path) -> bool:
     A hard link fails when the name exists, so check and create are one step. A disk that
     cannot hard-link (FAT, exFAT, some network shares) gets the name reserved with O_EXCL
     first; the temp file then replaces our own empty reservation, never someone else's file.
+    A disk that refuses that rename too (Q-27): the temp's bytes are written into our own
+    reservation in place.
     """
     try:
         os.link(tmp, target)
@@ -923,6 +1045,8 @@ def _place_new(tmp: Path, target: Path) -> bool:
     os.close(fd)
     try:
         os.replace(tmp, target)
+    except OSError:  # Q-27: the reservation is ours; fill it in place, remove nothing
+        return _fill_reservation(tmp, target)
     except BaseException:
         with contextlib.suppress(OSError):
             if target.stat().st_size == 0:  # still our own empty reservation
@@ -931,7 +1055,176 @@ def _place_new(tmp: Path, target: Path) -> bool:
     return True
 
 
+def _fill_reservation(tmp: Path, target: Path) -> bool:
+    """Copy our temp file's bytes into `target`, the empty file we just created with O_EXCL.
+    False when it is no longer empty (someone else wrote it meanwhile): theirs is kept."""
+    with open(target, "r+b") as out:
+        if os.fstat(out.fileno()).st_size:
+            return False
+        with open(tmp, "rb") as src:
+            shutil.copyfileobj(src, out, _CHUNK)
+    return True
+
+
 def _discard(tmp: Path) -> None:
-    """Remove our own temp file if it is still there. A failure leaves a gitignored *.tmp."""
-    with contextlib.suppress(OSError):
+    """Remove our own temp file if it is still there. A refusal (on a disk the probe passed: a
+    file held open, a scanner) sends the rest of this run's writes on that disk in place, so no
+    more temp files pile up. Not written down: the next run probes again (Q-27)."""
+    try:
         tmp.unlink(missing_ok=True)
+    except OSError:
+        dev = _device(tmp.parent)
+        if dev is not None:
+            _REFUSED.add(dev)
+
+
+def _write_direct(path: Path, text: str, *, fsync: bool = False) -> None:
+    """Write `text` into `path` in place (UTF-8, LF): the fallback for a disk that refuses
+    renames and deletes (Q-27). No temp file, no link, nothing removed."""
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+        if fsync:
+            fh.flush()
+            os.fsync(fh.fileno())
+
+
+def _create_direct(path: Path, data: bytes) -> bool:
+    """Create `path` with `data` only if no file has that name (exclusive create, "x"): the
+    create-only fallback (Q-27). False = it existed and is kept."""
+    try:
+        with open(path, "xb") as fh:
+            fh.write(data)
+    except FileExistsError:
+        return False
+    return True
+
+
+def _key(directory: Path) -> str:
+    try:
+        return str(directory.resolve())
+    except OSError:
+        return str(directory.absolute())
+
+
+def _device(directory: Path) -> int | None:
+    """The device number of the disk `directory` is on; None when it cannot be read."""
+    try:
+        return os.stat(directory).st_dev
+    except OSError:
+        return None
+
+
+def _disk_id(dev: int) -> str:
+    """`<platform> <device number>`: a disk as one computer sees it (the note's key, Q-27)."""
+    return f"{sys.platform} {dev}"
+
+
+def _owning_library(directory: Path) -> Path | None:
+    """The library folder (the one holding library.yaml) `directory` is in, at most three levels
+    up; None outside a library folder."""
+    directory = directory.absolute()
+    for folder in (directory, *list(directory.parents)[:3]):
+        if (folder / "library.yaml").is_file():
+            return folder
+    return None
+
+
+def _note_disks(text: str) -> frozenset[str]:
+    """The `<platform> <device>` keys of a note's lines (comments and blank lines skipped)."""
+    keys = set()
+    for line in text.splitlines():
+        words = line.split()
+        if len(words) >= 2 and not words[0].startswith("#"):
+            keys.add(f"{words[0]} {words[1]}")
+    return frozenset(keys)
+
+
+def _read_note(root: Path) -> frozenset[str]:
+    key = _key(root)
+    if key not in _NOTES:
+        try:
+            text = (root / ".cache" / NO_DELETE_NOTE).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            text = ""
+        _NOTES[key] = _note_disks(text)
+    return _NOTES[key]
+
+
+def _noted(directory: Path, dev: int) -> bool:
+    """True when the note of `directory`'s library folder names this disk on this platform."""
+    if dev in _TRUSTED:
+        return True
+    root = _owning_library(directory)
+    if root is None or _disk_id(dev) not in _read_note(root):
+        return False
+    _TRUSTED.add(dev)
+    return True
+
+
+def _write_down(directory: Path, dev: int) -> None:
+    """Add this disk to the note of `directory`'s library folder, once (a refused probe, Q-27).
+    Appended, never rewritten; nothing outside a library folder. Best effort: a note that cannot
+    be written only costs the next run one more probe."""
+    root = _owning_library(directory)
+    if root is None or (_key(root), dev) in _WRITTEN_DOWN:
+        return
+    _WRITTEN_DOWN.add((_key(root), dev))
+    note = root / ".cache" / NO_DELETE_NOTE
+    with contextlib.suppress(OSError, UnicodeDecodeError):
+        known = note.read_text(encoding="utf-8") if note.is_file() else ""
+        if _disk_id(dev) in _note_disks(known):
+            return
+        note.parent.mkdir(exist_ok=True)
+        lead = _NOTE_HEADER if not known else ("" if known.endswith("\n") else "\n")
+        with open(note, "a", encoding="utf-8", newline="\n") as fh:
+            fh.write(f"{lead}{_disk_id(dev)} {date.today().isoformat()}\n")
+        _NOTES.pop(_key(root), None)
+
+
+def _probe_deletes(directory: Path) -> bool | None:
+    """Make an empty `.dj-probe.<random>.tmp` in `directory` and remove it (Q-27). True = removed,
+    False = the disk refused (the file stays: nothing can remove it), None = nothing could be
+    made here (the write itself then says why)."""
+    try:
+        fd, name = tempfile.mkstemp(dir=directory, prefix=_PROBE_PREFIX, suffix=".tmp")
+    except OSError:
+        return None
+    os.close(fd)
+    for attempt in range(_PROBE_TRIES):
+        if attempt:
+            time.sleep(_PROBE_PAUSE)
+        try:
+            os.unlink(name)
+        except FileNotFoundError:
+            return True
+        except OSError:
+            continue
+        return True
+    return False
+
+
+def _writes_direct(directory: Path, *, fsync: bool = False) -> bool:
+    """Write in place, with no temp file, in `directory` (Q-27): its disk refused a delete in
+    this run, or the library folder's note names this disk (not for an `fsync` undo record,
+    which needs a refusal seen in this run). Otherwise the probe decides, once a run a disk."""
+    dev = _device(directory)
+    if dev is None:
+        return False  # no such folder: the temp-file route raises the plain error
+    if dev in _REFUSED:
+        if dev in _PROBE_REFUSED:
+            _write_down(directory, dev)  # a library folder made after the probe refused
+        return True
+    if dev in _DELETES:
+        return False
+    if not fsync and _noted(directory, dev):
+        return True
+    deletes = _probe_deletes(directory)
+    if deletes is None:
+        return False
+    if deletes:
+        _DELETES.add(dev)
+        return False
+    _REFUSED.add(dev)
+    _PROBE_REFUSED.add(dev)
+    _write_down(directory, dev)
+    return True

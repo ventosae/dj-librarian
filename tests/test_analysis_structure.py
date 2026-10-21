@@ -870,8 +870,8 @@ def test_script_errors_are_one_json_object_and_exit_1(tmp_path):
 def test_script_shim_points_at_the_repo_src():
     assert (SCRIPT.resolve().parents[4] / "src" / "dj" / "analysis" / "structure.py").is_file()
     text = SCRIPT.read_text(encoding="utf-8")
-    assert "    import dj  # noqa: F401  (engine venv, or a future PyPI install)\n" in text
-    assert 'sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))' in text
+    assert "    import dj  # noqa: F401\n" in text  # an importable dj first (engine venv or PyPI)
+    assert '(_here / "../../../../src", _here / "../../../vendor")' in text  # then the clone, then the zip (D-22)
 
 
 def test_script_runs_without_the_engine_packages(folder):

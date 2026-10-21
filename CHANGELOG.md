@@ -27,6 +27,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - Optional Cowork Project template `templates/project/instructions.md`: voice, the 10 reply rules, safety, the `dj-library/` folder conventions (W-26).
 - `dj-identity` skill (W-31): six measured axes (Depth, Selectivity, Discipline, Breadth, Momentum, Memory), an archetype picked by code from `archetypes.yaml`, and the sleeve, a deterministic 12-inch SVG fingerprint of the library (`profile/identity.json`, `profile/sleeve.svg`); Claude writes the liner notes (`profile/identity.md`). dj-start asks the DJ's handle (`library.yaml` `dj_name`); Style Barber names the archetype once.
 - Report redesign (W-31): the sleeve hero with handle, archetype, liner notes and the 5 stats; a crate wall with hatched dumps and the overlap arc; three proposal cards with mini sleeves; a sticky Next bar; Booth (dark, default) and Day themes; hover tooltips and a table link on every chart; phone and print layouts. `docs/design.md` is the design system and `scripts/check_palette.py` validates it in CI. `docs/samples/` with `report-booth.png` and `report-day.png`, made by `scripts/make_samples.py`.
+- `dj apply --xml` and `dj copy --xml`: approved inbox adds and copies as a rekordbox XML to import, on any OS; MCP `dj_apply_write` / `dj_copy_apply` take `mode` (W-30, Q-22).
+- `scripts/build_plugin_zip.py`: the plugin zip with the Door-1 core vendored in `plugin/vendor/dj/`; skill scripts find the core in an install, the clone or the zip (W-30, D-22).
+- `plugin.json` `userConfig.uv_path`: the engine command is a user setting for macOS GUI apps (W-30, Q-25, unverified on a Mac).
+- Gig feedback scores Crate me: `+` lines add a point, `-` lines take one off and never make a spare (W-30, Q-19).
+- `docs/samples/chat-session-1.md`: the six dj-start replies, checked against the reply rules (W-30, Q-15).
 
 ### Changed
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.
@@ -36,6 +41,9 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ### Fixed
 - `.gitignore`: the personal-state folders (`plans/`, `reports/`, …) are ignored at the repo root only, so `docs/prompts/plans/` is tracked.
 - v0.1 verification pass: a plan's pick is checked against the offered candidates (cache matches included); soft-deleted picks are refused; `dj status` counts only rows that are not soft-deleted; the process check reads a localized tasklist; `dj push/build` never create a second Spotify playlist on a 5xx, network or 429 error; reports are create-only; `dj tidy apply/undo` never write outside the tidy.yaml roots and tidy renames never overwrite; mounted volume roots are refused as a library folder; `dj_tidy_audit` is a library-text tool; tests also block DNS and UDP; skill scripts answer with a JSON `core` error when the core is missing; skills call `python3`; three real playlist names removed from CLI help and tests; README, CONTRIBUTING, permissions and several skills brought up to date.
+- W-30: every read-only pass reads a master.db snapshot, never the live file (Q-18); writes on a disk that refuses deletes go in place without temp files (Q-27); one clock for every `log.md` line (Q-28); dj-build refuses proposals made from a newer source than the export it reads (Q-17); CI's personal-data check covers `.claude-plugin/`, `templates/` and `docs/samples/` (Q-26).
+- W-31 polish: no "Words by Claude" captions in the hero; four-line liner notes; at most 4 colours per chart, extra lanes in Other (D-26); sparse sleeve rings drawn wider and lighter, decade labels on the sleeve.
+- CLAUDE.md hard rule 1 names its two exceptions (D-20); D-19 to D-23 and D-26 recorded.
 
 ## [0.1.0] — unreleased
 

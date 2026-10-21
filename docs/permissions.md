@@ -14,8 +14,9 @@ A write needs a preview, then your explicit yes, then the write tool with the pr
 | Claude Code | The same: write tools on ask (see the settings below). | Plus the plugin's PreToolUse hook (`plugin/hooks/`): a write tool called without a `preview_id` is denied before it runs. |
 
 Plugin hooks are not a Cowork component (C-10, Q-03), so in Cowork the permission setting is the
-hard gate. Direct master.db writes (`dj_tree_apply`, `dj_apply_write`, `dj_copy_apply`) are a
-Windows power mode on top: they also need `power_mode=true` (R-205).
+hard gate. Direct master.db writes (`dj_tree_apply`, and `dj_apply_write` / `dj_copy_apply` with
+`mode="db"`) are a Windows power mode on top: they also need `power_mode=true` (R-205). Inbox adds
+and copies default to `mode="xml"`: an XML you import, any OS.
 
 ## Read tools: Allow (or Ask, your call)
 
@@ -58,8 +59,8 @@ rekordbox, Spotify or audio files.
 | `dj_structure_write` | `proposals/<slug>.xml`, a rekordbox XML you import | `dj_structure_preview` |
 | `dj_crate_write` | `proposals/crate-<slug>.xml` (a rekordbox XML you import) and `crates/<slug>.md` | `dj_crate_preview` |
 | `dj_tree_apply` | rekordbox master.db (power mode, Windows) | `dj_tree_preview` |
-| `dj_apply_write` | rekordbox master.db (power mode, Windows) | `dj_apply_preview` |
-| `dj_copy_apply` | rekordbox master.db (power mode, Windows) | `dj_copy_preview` |
+| `dj_apply_write` | `proposals/<crate>-adds-<date>.xml`, a rekordbox XML you import (mode `xml`, default); or rekordbox master.db (mode `db`: power mode, Windows) | `dj_apply_preview` |
+| `dj_copy_apply` | `proposals/<target>-adds-<date>.xml`, a rekordbox XML you import (mode `xml`, default); or rekordbox master.db (mode `db`: power mode, Windows) | `dj_copy_preview` |
 | `dj_push_apply` | Spotify (a private playlist, adds only) | `dj_push_preview` |
 | `dj_build_apply` | Spotify (a private playlist, adds only) | `dj_build_preview` |
 | `dj_tidy_apply` | your audio files' tags and names (undo record first) | `dj_tidy_apply_preview` |

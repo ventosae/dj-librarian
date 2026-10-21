@@ -7,7 +7,10 @@ carries classes, never a colour, so the Booth and Day themes of docs/design.md r
 
 Colour classes: `s1` ... `s8` set `--lane` to categorical slot 1..8, `s0` to the Other grey. A
 lane keeps its slot everywhere on the page (dj.analysis.identity gives lanes their slots by BPM,
-slowest first). Marks never carry text in their colour; labels use the text classes.
+slowest first). Marks never carry text in their colour; labels use the text classes. A chart
+shows at most dj.design.MAX_SLOTS_PER_CHART (4) colours (D-26, Q-29): `slot_class` draws a lane
+past slot 4 as `s0`, so it folds into Other, and a legend counts those lanes in its grey key
+("Other (2 lanes)"); tooltips still name the lane.
 
     crate_wall(graph, structure, identity) -> Wall (svg, legend entries, rows, labels, arcs)
         One row per top-level folder (and one "Top level" row for loose playlists), one bar per
@@ -112,10 +115,23 @@ def _n(x: float) -> str:
 
 
 def slot_class(slot: Any) -> str:
-    """The colour class of a slot: s1..s8, or s0 (Other) for None and anything past 8."""
-    if isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= design.SLOTS:
-        return "s0"
-    return f"s{slot}"
+    """The colour class a chart draws for a lane's slot: s1..s4, or s0 (Other) for None and
+    anything past dj.design.MAX_SLOTS_PER_CHART (D-26: at most 4 colours in one chart)."""
+    shown = design.chart_slot(slot)
+    return f"s{shown}" if shown else "s0"
+
+
+def folded(slot: Any) -> bool:
+    """True for a lane slot (1..8) that a chart folds into Other (past MAX_SLOTS_PER_CHART)."""
+    return isinstance(slot, int) and not isinstance(slot, bool) and design.MAX_SLOTS_PER_CHART < slot <= design.SLOTS
+
+
+def other_label(lanes: int, no_lane: bool) -> str:
+    """The legend label of the Other grey: "Other (2 lanes)", "no lane", or both."""
+    parts = [f"Other ({plural(lanes, 'lane')})"] if lanes else []
+    if no_lane:
+        parts.append("no lane")
+    return ", or ".join(parts) if parts else "no lane"
 
 
 def bar_path(x: float, y: float, w: float, h: float, round_end: bool = True, r: float = 4.0) -> str:
@@ -661,11 +677,15 @@ def crate_wall(graph: Mapping[str, Any], structure: Mapping[str, Any] | None,
 
     # the legend: what a bar's colour means, the lanes that show (slot order), then the marks.
     # A grey dump or a grey outline is keyed by "dump" or "empty or smart": the solid grey "no
-    # lane" key shows only when a solid grey bar is drawn.
+    # lane" key shows only when a solid grey bar is drawn. At most MAX_SLOTS_PER_CHART colours
+    # (D-26): a lane past them is drawn grey and counted in the one grey key, "Other (N lanes)".
     def slot(b: Bar) -> int:
-        return b.slot if isinstance(b.slot, int) and 1 <= b.slot <= design.SLOTS else 0
+        return design.chart_slot(b.slot) or 0
 
-    shown = sorted({slot(b) for b in bars if slot(b) or not (b.dump or b.outline)}, key=lambda s: (s == 0, s))
+    gone = {b.slot for b in bars if folded(b.slot)}  # lanes this chart folds into Other
+    no_lane = any(not folded(b.slot) and not slot(b) for b in bars if not (b.dump or b.outline))
+    shown = sorted({slot(b) for b in bars if slot(b)} | ({0} if gone or no_lane else set()))
+    shown = shown[1:] + shown[:1] if shown and shown[0] == 0 else shown  # grey last
     legend: list[tuple[str, str]] = []
     lanes = {lane.get("slot"): lane for lane in lane_rows(identity)}
     if lanes and len(shown) >= 2:
@@ -675,7 +695,10 @@ def crate_wall(graph: Mapping[str, Any], structure: Mapping[str, Any] | None,
             head += " (a loose playlist: its own)"
         legend.append(("head", head))
         for s in shown:
-            legend.append((f"s{s}", f"{lanes[s].get('label', '?')} BPM") if s in lanes else ("s0", "no lane"))
+            if s:
+                legend.append((f"s{s}", f"{lanes[s].get('label', '?')} BPM" if s in lanes else "no lane"))
+            else:
+                legend.append(("s0", other_label(len(gone), no_lane)))
     if any(b.dump for b in bars):
         legend.append(("dump", "dump"))
     if any(b.outline for b in bars):
@@ -759,19 +782,9 @@ def _sector(r0: float, r1: float, a0: float, a1: float) -> str:
 
 
 def _ring_bounds(identity: Mapping[str, Any]) -> tuple[list[str], list[tuple[float, float]], list[list[int]]]:
-    """(ring names, (inner, outer) radius per ring, counts) exactly as dj.sleeve draws the disc."""
-    names, shares, counts = sleeve_mod._rings(identity)  # the sleeve's own reading of the rings
-    n_rings = len(names)
-    space = sleeve_mod.R_OUT - sleeve_mod.R_LABEL - sleeve_mod.LABEL_GAP - sleeve_mod.GAP * (n_rings - 1)
-    total = sum(shares) or 1.0
-    widths = [space * (0.3 / n_rings + 0.7 * s / total) for s in shares]
-    widths = [w * space / (sum(widths) or 1.0) for w in widths]
-    bounds = []
-    r0 = sleeve_mod.R_LABEL + sleeve_mod.LABEL_GAP
-    for width in widths:
-        bounds.append((r0, r0 + width))
-        r0 += width + sleeve_mod.GAP
-    return names, bounds, counts
+    """(ring names, (inner, outer) radius per ring, counts) exactly as dj.sleeve draws the disc
+    (its own function: the ring floor for small collections included)."""
+    return sleeve_mod.ring_bounds(identity)
 
 
 def fingerprint_bands(identity: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -794,6 +807,7 @@ def sleeve_hits(identity: Mapping[str, Any]) -> str:
     if not bands:
         return ""
     names, bounds, counts = _ring_bounds(identity)
+    sparse = set(sleeve_mod.sparse_rings(identity))
     n_bands = len(bands)
     step = 2 * math.pi / n_bands
     rotation = sleeve_mod.rotation_of(identity, n_bands)
@@ -806,6 +820,8 @@ def sleeve_hits(identity: Mapping[str, Any]) -> str:
             a0 = -math.pi / 2 + rotation + k * step
             lane = f"lane {band.get('lane')}" if band.get("lane") else "no lane"
             tip = f"{plural(int(count or 0), 'track')} · {names[ring]} · {band_words(str(band.get('band', '')))} · {lane}"
+            if not count and ring in sparse:  # the lifted empty cell says why it is lighter (dj.sleeve)
+                tip += f" · drawn a step lighter: the decade has under {sleeve_mod.SPARSE_TRACKS} tracks"
             out.append(_hit_cell("cell", tip, _sector(r0, outer, a0, a0 + step), bool(count)))
     out.append("</svg>")
     return "".join(out)

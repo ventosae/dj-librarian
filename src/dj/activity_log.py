@@ -30,7 +30,7 @@ Adopting it in a new writing command (W-23, W-25): after the write succeeded,
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Mapping
 
@@ -114,6 +114,7 @@ def log_write(
     file: str | Path | None = None,
     *,
     now: datetime | None = None,
+    today: date | None = None,
 ) -> Logged:
     """Append one log.md line for a write that is done (R-904). Never raises: the write it records
     is done by then, so whatever goes wrong here (finding the folder, an unreadable library.yaml,
@@ -122,7 +123,9 @@ def log_write(
     try:
         root = log_root()
         log = root / "log.md"
-        line = libfolder.append_log(root, one_line(action), dict(counts or {}) or None, file_text(root, file), now=now)
+        line = libfolder.append_log(
+            root, one_line(action), dict(counts or {}) or None, file_text(root, file), now=now, today=today
+        )
     except Exception as exc:  # noqa: BLE001 - the log must never undo the report of a finished write
         return Logged(None, log, f"log.md line not written ({type(exc).__name__}: {exc}); the write itself is done.")
     return Logged(line, log)

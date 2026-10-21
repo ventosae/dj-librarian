@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 import textwrap
-from datetime import date
+from datetime import date, datetime
 from itertools import combinations
 from pathlib import Path
 
@@ -384,7 +384,8 @@ def test_facts_on_an_empty_library(tmp_path):
 # -- the files (R-332, R-302)
 
 
-def test_run_writes_the_taste_files(lib_dir):
+def test_run_writes_the_taste_files(lib_dir, monkeypatch):
+    monkeypatch.setattr(libfolder, "_wall_clock", lambda: datetime(2026, 10, 21, 13, 20))  # Q-28: the wall clock
     result = taste.run(lib_dir, today=D1)
     assert result["written"] == ALL_FILES
     assert result["source"] == "exports/2026-10-20-collection.xml"
@@ -426,7 +427,7 @@ def test_run_writes_the_taste_files(lib_dir):
     assert len(pairs_json["pairs"]) == 45 and pairs_json["pairs"][0] == ["1", "2", 3]
     assert pairs_json["measured"] == facts_json["measured"] and pairs_json["count"] == pairs_json["kept"] == 45
     log = read(lib_dir / "log.md").strip().split("\n")[-1]
-    assert log == f"2026-10-20 00:00 taste -> {result['counts']['lines_added']} lines added; taste"
+    assert log == f"2026-10-20 13:20 taste -> {result['counts']['lines_added']} lines added; taste"
 
 
 def test_same_export_gives_the_same_files(tmp_path):
@@ -497,7 +498,8 @@ def test_changed_library_appends_updated_entries(lib_dir, tmp_path):
         assert log[len(before[rel]):].strip().split("\n") == (added[rel] or [""])
 
 
-def test_hand_written_lines_survive_and_rebuild_needs_the_flag(lib_dir):
+def test_hand_written_lines_survive_and_rebuild_needs_the_flag(lib_dir, monkeypatch):
+    monkeypatch.setattr(libfolder, "_wall_clock", lambda: datetime(2026, 10, 21, 13, 20))  # Q-28: the wall clock
     taste.run(lib_dir, today=D1)
     lanes = lib_dir / "taste/lanes.md"
     mine = "- [2026-10-21] Sunday sets never go above 122. My own line."
@@ -520,7 +522,7 @@ def test_hand_written_lines_survive_and_rebuild_needs_the_flag(lib_dir):
         assert (lib_dir / backup / rel.split("/")[1]).read_bytes() == old[rel]
     assert mine in read(lib_dir / backup / "lanes.md").split("\n")
     last = read(lib_dir / "log.md").strip().split("\n")[-1]
-    assert last == f"2026-10-27 00:00 taste -> {n} lines added, 4 files rebuilt, 4 old files kept in {backup}; taste"
+    assert last == f"2026-10-27 13:20 taste -> {n} lines added, 4 files rebuilt, 4 old files kept in {backup}; taste"
 
     again = taste.run(lib_dir, today=D2, rebuild=True)  # a second rebuild that day: a new folder
     assert again["backup"]["folder"] == backup + "-2"
@@ -645,6 +647,7 @@ def test_a_bad_taste_file_stops_the_run_before_anything_is_written(lib_dir):
 
 
 def test_a_write_that_fails_part_way_names_what_was_written_and_logs_it(lib_dir, monkeypatch):
+    monkeypatch.setattr(libfolder, "_wall_clock", lambda: datetime(2026, 10, 21, 13, 20))  # Q-28: the wall clock
     real = taste.write_plan
 
     def fail_on_anchors(plan):
@@ -664,7 +667,7 @@ def test_a_write_that_fails_part_way_names_what_was_written_and_logs_it(lib_dir,
     assert not (lib_dir / "taste/anchors.md").exists() and not (lib_dir / "taste/facts.json").exists()
     n = sum(len(v) for v in err.added.values())
     last = read(lib_dir / "log.md").strip().split("\n")[-1]
-    assert last == f"2026-10-20 00:00 taste -> {n} lines added, 2 files written, 4 files not written; taste"
+    assert last == f"2026-10-20 13:20 taste -> {n} lines added, 2 files written, 4 files not written; taste"
 
 
 def test_cli_shows_the_lines_of_a_run_that_failed_part_way(lib_dir, monkeypatch):

@@ -244,7 +244,7 @@ def shop(
     log_line = None
     if library:
         log_line = libfolder.append_log(root, f"wishlist shop {crate}", {"missing": len(found)},
-                                        file=target, now=now)
+                                        file=target, now=now, today=today)
     return {
         "missing": len(found),
         "labels": [{"label": name, "tracks": n} for name, n in top_labels(found)],

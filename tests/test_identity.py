@@ -16,7 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -75,7 +75,8 @@ def _read(root: Path, rel: str) -> dict:
 # -- the fixture library ----------------------------------------------------------------------
 
 
-def test_run_writes_identity_and_sleeve_and_one_log_line(lib_dir):
+def test_run_writes_identity_and_sleeve_and_one_log_line(lib_dir, monkeypatch):
+    monkeypatch.setattr(libfolder, "_wall_clock", lambda: datetime(2026, 10, 21, 13, 20))  # Q-28: the wall clock
     before = (lib_dir / "log.md").read_text(encoding="utf-8").splitlines()
     result = identity.run(lib_dir, today=DAY)
     assert list(result)[0] == "counts"
@@ -84,7 +85,7 @@ def test_run_writes_identity_and_sleeve_and_one_log_line(lib_dir):
     assert result["source"] == EXPORT and result["handle"] == "You"
     after = (lib_dir / "log.md").read_text(encoding="utf-8").splitlines()
     assert after[: len(before)] == before and after[len(before):] == [result["log"]]
-    assert result["log"] == "2026-10-20 00:00 identity -> 6 axes, 3 lanes; profile/identity.json"
+    assert result["log"] == "2026-10-20 13:20 identity -> 6 axes, 3 lanes; profile/identity.json"
 
 
 def test_fixture_scores_and_archetype(lib_dir):
@@ -181,7 +182,8 @@ def test_band_slots_for_the_mini_sleeve(lib_dir):
     other = identity.band_slots([{"lo": 126, "hi": 133, "slot": 5}, {"lo": 108, "hi": 116, "slot": 4}])
     assert other["128-135"] == 5 and other["110-118"] == 4 and other["<100"] is None
     svg = sleeve.mini_sleeve_svg(data, other, uid="card1")
-    assert "#d55181" in svg and 'id="card1mini-title"' in svg  # slot 5 in its Booth value
+    assert "#c98500" in svg and 'id="card1mini-title"' in svg  # slot 4 in its Booth value
+    assert "#d55181" not in svg  # slot 5 folds into Other: at most 4 colours in one chart (D-26)
 
 
 def test_lanes_past_eight_fold_into_other():
