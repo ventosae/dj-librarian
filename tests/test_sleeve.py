@@ -248,7 +248,8 @@ def test_mini_recolours_bands_by_the_slots_given():
     assert design.slot_hex(4) not in plain and design.slot_hex(4) in recoloured
     # Other cells: plain = bands 110-118, 128-135, 135+ (7 cells with tracks); recoloured = <100, 135+ (4)
     assert (plain.count(design.OTHER["dark"]), recoloured.count(design.OTHER["dark"])) == (7, 4)
-    # slot 5 is a valid slot but past the 4 a chart shows (D-26): its band wears the Other grey
+    # slot 5 is a palette slot but past the 4 a chart shows: the guard (dj.design.chart_slot, D-26)
+    # draws its band in the Other grey (identity.json itself never gives a lane slot 5, D-27)
     folded = sleeve.mini_sleeve_svg(_identity(), {"110-118": 4, "128-135": 5, "<100": None}, uid="a")
     assert design.slot_hex(5) not in folded and folded.count(design.OTHER["dark"]) == 7  # <100, 128-135, 135+
 

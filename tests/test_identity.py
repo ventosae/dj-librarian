@@ -140,7 +140,8 @@ def test_memory_averages_only_what_the_xml_carries(lib_dir):
     assert memory["score"] == 75  # (83 + 71 + 71) / 3
 
 
-def test_lanes_take_slots_by_bpm(lib_dir):
+def test_three_lanes_all_take_a_slot_in_bpm_order(lib_dir):
+    """Q-30 (D-27): the four biggest lanes get a colour, numbered by BPM; the fixture has three."""
     identity.run(lib_dir, today=DAY)
     lanes = _read(lib_dir, identity.IDENTITY_JSON)["lanes"]
     assert [(lane["label"], lane["slot"]) for lane in lanes] == [("100-109", 1), ("119-122", 2), ("122-127", 3)]
@@ -183,13 +184,15 @@ def test_band_slots_for_the_mini_sleeve(lib_dir):
     assert other["128-135"] == 5 and other["110-118"] == 4 and other["<100"] is None
     svg = sleeve.mini_sleeve_svg(data, other, uid="card1")
     assert "#c98500" in svg and 'id="card1mini-title"' in svg  # slot 4 in its Booth value
-    assert "#d55181" not in svg  # slot 5 folds into Other: at most 4 colours in one chart (D-26)
+    assert "#d55181" not in svg  # slot 5 is not one a chart draws: the guard of the 4-colour cap (D-26)
 
 
-def test_lanes_past_eight_fold_into_other():
+def test_lanes_past_the_four_biggest_are_other():
+    """Q-30 (D-27; was "past eight fold into Other" before W-32): ten lanes of the same size, so
+    the ties go to the slower lanes: the four slowest take slots 1-4, the other six are Other."""
     rows = [{"label": f"{80 + 10 * n}-{84 + 10 * n}", "lo": 80 + 10 * n, "hi": 84 + 10 * n} for n in range(10)]
     slots = [lane["slot"] for lane in identity.lanes({"lanes": list(reversed(rows))})]
-    assert slots == [1, 2, 3, 4, 5, 6, 7, 8, None, None]
+    assert slots == [1, 2, 3, 4, None, None, None, None, None, None]
 
 
 def test_handle_comes_from_library_yaml(lib_dir):

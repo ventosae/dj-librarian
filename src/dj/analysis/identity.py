@@ -10,6 +10,7 @@ line, all inside the library folder. Never rekordbox, Spotify or audio files (R-
     axes(profile, structure, taste, shape, today=...)  -> six axes, each {name, score, inputs, formula}
     pick(scores, table)                 -> (the two top axes, the archetype)
     build(...)                          -> the identity dict (profile/identity.json)
+    lanes(taste)                        -> the lanes in BPM order, each with its slot (by size)
     band_slots(lanes)                   -> {BPM band: slot} for any lanes (mini sleeve recolouring)
     run(folder, xml=None, today=None, archetypes=None)  -> write both files, one log line
 
@@ -49,16 +50,23 @@ package (`dj/analysis/archetypes.yaml`), so `dj library analyze` finds it in any
 dj-identity skill script passes the skill's own copy (plugin/skills/dj-identity/), and a test
 keeps the two files the same.
 
-Lanes: taste lanes ordered by BPM (low end, then high end, then label), slots 1..8 in that
-order (dj.design); past 8 the slot is null ("Other"). The slot follows the lane, never its size.
+Lanes and their colours (Q-30, D-27): the lanes list is the taste lanes in BPM order (low end,
+then high end, then label). Slots are assigned here, once, and every chart reads them from
+identity.json (the sleeve, the crate wall, the proposal cards); none re-derives or re-folds them.
+The COLOURED (4, dj.design.MAX_SLOTS_PER_CHART) lanes with the most tracks get a colour (ties:
+the slower lane first, by the BPM order above, then the label); those four take slots 1..4 in
+BPM order, the slowest of them slot 1, so size picks which lanes are coloured and BPM picks
+which colour, never rank. Every other lane is "Other": `slot: null`, the Other grey of
+dj.design. So a DJ's biggest lane always has a colour, and the same lane has the same slot on
+every chart of the page and on the sleeve.
 
 Fingerprint: rings = the decades of profile eras that hold tracks, oldest (inner) first;
 segments = the fixed BPM bands BANDS (edges 100, 110, 118, 122, 125, 128, 135: the house and
 techno range gets the narrow bands, everything under 100 or from 135 up shares one band
 each); a cell = tracks of that decade in that band / tracks with both a year and a BPM. A
 band is owned by the lane whose range (each end widened by half a BPM, since lane ends are
-rounded) overlaps it most (ties: the slower lane); a band no lane touches has no owner and
-draws in the Other grey.
+rounded) overlaps it most (ties: the slower lane) and carries that lane's slot; a band no lane
+touches has no owner, and it draws in the Other grey, as does a band owned by an Other lane.
 
 Seed: the sha256 of the export's bytes, so the sleeve changes only when the library does. A
 master.db read (dj library analyze --source db) has no export file; its seed is the sha256 of
@@ -114,6 +122,7 @@ SKILL_ARCHETYPES_YAML = REPO_ROOT / "plugin" / "skills" / "dj-identity" / "arche
 BAND_EDGES = (100, 110, 118, 122, 125, 128, 135)
 BANDS = ("<100", "100-110", "110-118", "118-122", "122-125", "125-128", "128-135", "135+")
 BAND_FLOOR = 0.05  # a band "used" by Breadth holds at least this share of BPM-tagged tracks
+COLOURED = design.MAX_SLOTS_PER_CHART  # Q-30, D-27: the biggest lanes that get a colour; the rest are Other
 MEMORY_FIELDS = ("rating", "colour", "comment", "my_tags")
 DEFAULT_HANDLE = "You"
 HANDLE_MAX = DJ_NAME_MAX  # characters, as library.yaml allows
@@ -460,11 +469,24 @@ def pick(scores: Mapping[str, int], table: Sequence[Mapping[str, Any]]) -> tuple
 # -- lanes and the fingerprint -------------------------------------------------------------------
 
 
+def bpm_key(lane: Mapping[str, Any]) -> tuple[float, float, str]:
+    """The BPM order of lanes: low end, then high end, then label (slowest first)."""
+    return (lane.get("lo") or 0, lane.get("hi") or 0, str(lane.get("label", "")))
+
+
+def size_key(lane: Mapping[str, Any]) -> tuple[float, float, float, str]:
+    """The size order of lanes: most tracks first, ties to the slower lane, then the label."""
+    return (-(lane.get("tracks") or 0), *bpm_key(lane))
+
+
 def lanes(taste: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Taste lanes by BPM, low to high, each with its palette slot (1..8, None = Other)."""
-    rows = sorted(taste.get("lanes", []), key=lambda l: (l.get("lo", 0), l.get("hi", 0), str(l.get("label", ""))))
+    """Taste lanes by BPM, low to high, each with its palette slot: the COLOURED biggest lanes
+    (size_key) take slots 1..COLOURED in BPM order, every other lane None ("Other")."""
+    rows = sorted(taste.get("lanes", []), key=bpm_key)
+    coloured = sorted(sorted(range(len(rows)), key=lambda n: size_key(rows[n]))[:COLOURED])  # BPM order
+    slots = {n: k for k, n in enumerate(coloured, 1)}
     out = []
-    for n, lane in enumerate(rows, 1):
+    for n, lane in enumerate(rows):
         out.append({
             "label": str(lane.get("label", "")),
             "lo": lane.get("lo"),
@@ -473,7 +495,7 @@ def lanes(taste: Mapping[str, Any]) -> list[dict[str, Any]]:
             "tracks": lane.get("tracks", 0),
             "median": lane.get("median"),
             "playlists": list(lane.get("playlists", [])),
-            "slot": n if n <= design.SLOTS else None,
+            "slot": slots.get(n),
         })  # fmt: skip
     return out
 

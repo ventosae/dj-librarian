@@ -161,7 +161,7 @@ copy has none of them: it came from a GitHub marketplace, or from a zip built wi
 The plugin zip (`dj-librarian-plugin-<version>.zip`, README, Claude plugin) carries the core:
 
 ```text
-Step 3 of 6 · about 5 minutes. My scripts don't load here: <error> This copy of the plugin came without the part that runs my scripts. Upload the dj-librarian-plugin zip instead (Customize > Plugins > Add > Upload plugin), open a new chat and say start.
+Step 3 of 6 · about 5 minutes. My scripts don't load here: <error> This copy of the plugin came without the part that runs my scripts. Upload the dj-librarian-plugin zip instead (Customize > Plugins > Add > Upload plugin), open a new Cowork task and say start.
 ```
 
 `usage`: your own command was wrong. Fix it and run it again; nothing to tell the DJ.

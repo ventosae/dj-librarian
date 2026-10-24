@@ -6,8 +6,9 @@ values, and `scripts/check_palette.py` validates the block (OKLab distance, simu
 vision deficiency, contrast).
 
 - `CATEGORICAL[mode]`: the eight categorical hexes in their fixed slot order (slot 1 first).
-  A slot follows the thing it names (a BPM lane) everywhere on a page; it is never assigned by
-  rank and never cycled. Past eight, things fold into `OTHER`.
+  A slot follows the thing it names (a BPM lane) everywhere on a page; it is never cycled.
+  Lanes get theirs once, in profile/identity.json (dj.analysis.identity, Q-30, D-27): the four
+  biggest lanes take slots 1..4 in BPM order, every other lane is `OTHER` (slot None).
 - `SEQUENTIAL[mode]`: one blue ramp for magnitude, low to high. In the light mode low is the
   lightest step; in the dark mode the ramp is reversed so low recedes into the dark surface.
 - `STATUS`: good / warning / critical, mode-invariant, always shown with an icon and a label,
@@ -18,10 +19,11 @@ vision deficiency, contrast).
 outside 1..8.
 
 `MAX_SLOTS_PER_CHART` (D-26, Q-29): a single chart (a sleeve, the crate wall, a mini sleeve, any
-legend) shows at most 4 categorical slots. A lane keeps its slot (1..8 by BPM, slowest first, in
-profile/identity.json), but a chart draws only slots 1..4 in colour; a lane past slot 4 folds into
-"Other", the same rule as past eight, only sooner. So the light-mode tritan pair, yellow (slot 4)
-and magenta (slot 5), never sit side by side in one chart. `chart_slot(slot)` is that rule.
+legend) shows at most 4 categorical slots, so the light-mode tritan pair, yellow (slot 4) and
+magenta (slot 5), never sit side by side in one chart. identity.json gives at most 4 lanes a slot
+(slots 1..4), so the charts only read it. `chart_slot(slot)` is the guard every chart applies to a
+slot it reads: anything that is not 1..4 draws as "Other", so a slot from elsewhere (an older
+identity.json numbered 1..8 by BPM) still never shows a fifth colour.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from __future__ import annotations
 MODES = ("light", "dark")
 SLOT_NAMES = ("blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red")
 SLOTS = len(SLOT_NAMES)
-MAX_SLOTS_PER_CHART = 4  # D-26: at most 4 colours per chart; lanes past slot 4 are "Other"
+MAX_SLOTS_PER_CHART = 4  # D-26: at most 4 colours per chart (and Q-30: the 4 biggest lanes get them)
 
 SURFACE = {"light": "#fcfcfb", "dark": "#1a1a19"}
 PAGE = {"light": "#f9f9f7", "dark": "#0d0d0d"}
@@ -66,8 +68,9 @@ def slot_hex(slot: int | None, mode: str = "dark") -> str:
 
 
 def chart_slot(slot: int | None) -> int | None:
-    """The slot a chart draws for a lane's `slot`: 1..MAX_SLOTS_PER_CHART as it is; None,
-    anything past MAX_SLOTS_PER_CHART or not a slot at all -> None, the "Other" grey (D-26)."""
+    """The slot a chart draws for a slot it read: 1..MAX_SLOTS_PER_CHART as it is; None,
+    anything past MAX_SLOTS_PER_CHART or not a slot at all -> None, the "Other" grey (the D-26
+    guard; identity.json itself never holds a slot past 4)."""
     if isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= MAX_SLOTS_PER_CHART:
         return None
     return slot

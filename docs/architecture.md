@@ -69,7 +69,7 @@ dj-librarian/
   templates/project/instructions.md   Cowork Project template for a DJ
   docs/                               requirements plan decisions architecture breadboard lessons prompts/
   .github/workflows/ci.yml            pytest (windows, macos, ubuntu) · claude plugin validate ./plugin --strict · ruff · gitleaks
-  .github/workflows/release.yml       on tag vX.Y.Z: GitHub release + plugin zip (+ PyPI later). Consent gate
+  .github/workflows/release.yml       on tag vX.Y.Z: CI checks, then a draft GitHub release + plugin zip; PyPI later (D-27). Consent gate
   CLAUDE.md README.md CONTRIBUTING.md LICENSE CHANGELOG.md pyproject.toml uv.lock .gitignore
   local/                              gitignored maintainer files
 ```
@@ -81,7 +81,7 @@ dj-librarian/
 | Branching | `main` protected; `feat/`, `fix/`, `docs/`, `chore/` branches; one PR per change; squash merge | Linear history, conventional titles for free |
 | Commits | Conventional commits; PR title is the commit | CHANGELOG and semver bumps derive from it |
 | Versioning | Semver; `pyproject.version` = `plugin.json.version`; Keep-a-Changelog | One number for both artifacts |
-| Release | Tag `vX.Y.Z` → release.yml → GitHub release + plugin zip (+ PyPI). Tag only on Anton's yes | Consent gate |
+| Release | Tag `vX.Y.Z` → release.yml → CI checks, then a draft GitHub release with the plugin zip, which Anton publishes by hand; PyPI later, on his yes (D-27). Tag only on Anton's yes | Consent gate |
 | CI | pytest on `windows-latest`, `macos-latest`, `ubuntu-latest`; `claude plugin validate ./plugin --strict`; ruff; gitleaks | Three runtimes we claim; C-05 enforced by a scanner |
 | Backlog | GitHub Issues; labels `epic:E1…E13`, `req:R-xxx`; PR template asks for R-ids and test names | Traceability from R-id to merged code |
 | Licence | Apache-2.0 (D-12) | Patent grant + trademark clause; permissive |

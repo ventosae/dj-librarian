@@ -78,7 +78,7 @@ theme. `body` always has an explicit background, so nothing shows through in eit
 | Secondary text | `#52514e` | `#c3c2b7` |
 | Muted (axis, ticks) | `#6e6d68` | `#898781` |
 | Grid hairline | `#e1e0d9` | `#2c2c2a` |
-| Other (folded series, unowned band) | `#8f8e88` | `#6b6a65` |
+| Other (lanes outside the 4 biggest, unowned band) | `#8f8e88` | `#6b6a65` |
 
 ### Categorical: eight slots in a fixed order
 
@@ -95,21 +95,29 @@ theme. `body` always has an explicit background, so nothing shows through in eit
 
 - The order is part of the colour-blind safety: neighbours were chosen to stay apart. Never
   reorder, never skip, never cycle.
-- A slot belongs to a thing, not a rank. Lanes take slots by BPM, slowest first (the identity
-  of the lane, not its size), once per page, and keep that slot in every chart on the page.
-  Filtering or sorting never repaints a lane.
-- Past eight, the rest fold into **Other** (`--other`), labelled "Other" with a count.
-- **At most 4 colours in one chart** (D-26, Q-29). A single chart (a sleeve, the crate wall, a
-  mini sleeve, any legend) draws only slots 1-4 in colour: a lane past slot 4 folds into Other
-  there, the same rule as past eight, only sooner, and its legend counts them ("Other (2
-  lanes)"); the tooltip still names the lane, and the sleeve's lane notes say it after the BPM
-  ("126-127 BPM · Other"). The lane keeps its slot in `profile/identity.json`, and the folded
-  lanes are the fastest ones (slots follow BPM), never chosen by size. So yellow (slot 4) and magenta (slot 5), the light-mode tritan pair, never sit
-  side by side in one chart. Code: `dj.design.MAX_SLOTS_PER_CHART` and `dj.design.chart_slot`.
+- A slot belongs to a thing, not a rank. **Slots are assigned once, by lane size, in
+  `profile/identity.json`** (Q-30, D-27; `dj.analysis.identity`): the 4 lanes with the most
+  tracks get a colour (ties: the slower lane, then the label), and those four take slots 1-4 in
+  BPM order, the slowest of them slot 1. Size picks which lanes are coloured; BPM picks which
+  colour, so the biggest lane is not blue by rank. Every other lane is **Other** (`--other`,
+  `slot: null`). Every chart (the sleeve, the crate wall, a mini sleeve, any legend) reads the
+  slot from `identity.json` and never re-assigns it per chart. A lane keeps its slot in every
+  chart on the page; filtering or sorting never repaints a lane.
+- **At most 4 colours in one chart** (D-26, Q-29): `identity.json` colours 4 lanes at most, so
+  no chart draws a fifth. A legend counts the grey lanes in its Other key ("Other (2 lanes)");
+  the tooltip still names the lane, and a sleeve lane note in the grey says it after the BPM
+  ("126-127 BPM · Other"). So yellow (slot 4) and magenta (slot 5), the light-mode tritan pair,
+  never sit side by side in one chart. Code: `dj.design.MAX_SLOTS_PER_CHART` is the cap and
+  `dj.design.chart_slot` the guard every chart applies to the slot it reads (anything that is
+  not 1-4 draws as Other). An `identity.json` written before Q-30 (slots 1-8 by BPM) still
+  draws 4 colours at most, but its grey lanes are the fastest, not the smallest, so the page
+  then says only that a chart colours four lanes at most and how to colour the four biggest
+  ("draw my sleeve"), never "only your four biggest lanes get a colour".
 - A proposal's mini sleeve uses the same slots: a branch of the proposed tree wears the slot of
   the lane that fills most of it, a tempo band the slot of the branch it lands in. Two branches
-  never share a slot (the one that takes more of the lane keeps it); a branch without a lane,
-  or one that lost its slot that way, is Other. So a colour names the same lane on every chart.
+  never share a lane (the one that takes more of the lane keeps it); a branch filled most by an
+  Other lane, a branch without a lane, or one that lost its lane that way, is Other. So a colour
+  names the same lane on every chart.
 - A bar coloured by something other than its own lane (a crate-wall row wears its folder's
   main lane) says so in the legend, and its tooltip names its own lane too.
 - A chart with one series uses slot 1 and no legend box (its title says what it shows),
@@ -235,8 +243,10 @@ gets clipped.
 
 `profile/sleeve.svg` (dj-identity, R-1403) is an object, like a record sleeve on a table: it
 keeps its dark finish in both themes and colours its lanes with the **Booth** slot values. It
-follows the same rules otherwise: the lane slots of `profile/identity.json` (at most 4 colours,
-the rest Other), text in the dark text tokens, a 2 px gap between cells, no URL, no script, no
+follows the same rules otherwise: the lane slots of `profile/identity.json` (the 4 biggest lanes
+in colour, the rest Other; its lane notes are the three biggest lanes, so always in colour from W-32 on; an older
+identity.json can leave one grey, marked Other), text
+in the dark text tokens, a 2 px gap between cells, no URL, no script, no
 font file, every id prefixed so several sleeves can sit in one page.
 
 - Each ring is named (its decade) along one spoke: the middle of the BPM band with the fewest
@@ -268,7 +278,7 @@ font file, every id prefixed so several sleeves can sit in one page.
 | Contrast | each slot against its surface at least 3:1 | WARN |
 | Text | text and secondary text against the surface at least 4.5:1 | FAIL |
 | Muted | muted text (ticks, axis units, small print) against the surface at least 4.5:1 | FAIL |
-| Other | the Other grey, a mark colour (folded series, unowned band, the quiet axes), against the surface at least 3:1 | FAIL |
+| Other | the Other grey, a mark colour (uncoloured lanes, unowned band, the quiet axes), against the surface at least 3:1 | FAIL |
 | Sequential | the ramp's lightness strictly monotone | FAIL |
 | Status | each status colour against the surface at least 3:1 | WARN |
 
@@ -312,10 +322,12 @@ Refuse these in review:
 - A rainbow, or any multi-hue ramp, for magnitude.
 - Colour as the only identity: a series needs a legend entry or a direct label too.
 - A number on every point.
-- Colours by rank (the biggest lane gets blue): colour follows the lane, not its position.
+- Colours by rank (the biggest lane gets blue): size picks which 4 lanes get a colour, BPM order
+  picks which colour, and the lane keeps it on every chart.
 - A hue at the midpoint of a diverging scale: the midpoint is grey.
-- A ninth generated hue, or slots reused past eight: fold into Other.
-- A fifth colour in one chart: lanes past slot 4 fold into Other (D-26).
+- A ninth generated hue, or slots reused or cycled: lanes outside the four biggest are Other (D-27).
+- A fifth colour in one chart (D-26), or slots re-assigned per chart: they come from
+  `identity.json`, 4 at most (D-27).
 - A status colour used as a series, or a series colour used for status.
 - Text in the series colour; dashed gridlines; outlines around marks.
 - A web font, an external script or image, any `http` reference.
@@ -327,7 +339,7 @@ Copy into the PR description and tick each line:
 ```markdown
 - [ ] Colours only through the tokens of docs/design.md; `uv run python scripts/check_palette.py docs/design.md` passes.
 - [ ] Booth (default) and Day both render; the toggle works; `body` has an explicit background.
-- [ ] Each lane keeps its slot in every chart; slots never cycle; at most 4 colours per chart, the rest "Other".
+- [ ] Each lane keeps its `identity.json` slot in every chart; slots never cycle; the 4 biggest lanes in colour, the rest "Other".
 - [ ] Thin marks, 2 px surface gaps, at most 4 direct labels per chart, one axis per chart.
 - [ ] Every chart: legend for 2+ series, hover and focus tooltip, a table link to its MD/JSON file.
 - [ ] Text in text tokens, never in a series colour; status only with icon + label.

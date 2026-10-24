@@ -29,9 +29,13 @@ ring that holds fewer than SPARSE_TRACKS tracks the empty cells are one dim step
 lighter (SPARSE_NOTE says so), so the fingerprint reads as a full record even for a 50-track
 library. A cell with tracks is never lifted: the brighter the cell, the more tracks. Every ring
 is named when the room allows (DECADE_PITCH = MIN_RING + GAP), along a spoke within 45 degrees
-of level. Colour (D-26): a chart shows at most dj.design.MAX_SLOTS_PER_CHART slots, so a band or
-a lane whose slot is past it wears the Other grey, on the disc and in the lane notes alike
-(dj.design.chart_slot), and its lane note says "Other" after the BPM.
+of level. Colour (Q-30, D-27): every band and every lane note wears the slot profile/identity.json
+gives it (dj.analysis.identity: the four biggest lanes take slots 1-4 in BPM order, the rest are
+Other); nothing here re-derives a slot from a lane's position. A slot that is not 1..4 (None, or
+an older identity.json) draws in the Other grey through dj.design.chart_slot, the guard of the
+4-colour cap (D-26), and its lane note says "Other" after the BPM. The lane notes are the three
+biggest lanes in the size order identity colours by (dj.analysis.identity.size_key), so they
+always have a colour (from W-32 on; an older identity.json can leave one grey, marked Other).
 
 Every variation (the disc's rotation, the grain, the wear ring) comes from a small PRNG seeded
 only by identity["seed"], so the same export gives the same bytes. Nothing outside the document
@@ -227,8 +231,8 @@ def _rings(identity: Mapping[str, Any]) -> tuple[list[str], list[float], list[li
 
 
 def _slots(identity: Mapping[str, Any], overrides: Mapping[str, int | None] | None) -> list[int | None]:
-    """The slot each band is drawn in: the band's lane slot (or the override), folded by the
-    chart cap (dj.design.chart_slot: past MAX_SLOTS_PER_CHART, or none, is Other)."""
+    """The slot each band is drawn in: the slot identity.json gives the band (its owning lane's),
+    or the override, through the guard of the chart cap (dj.design.chart_slot: not 1..4 is Other)."""
     bands = (identity.get("fingerprint") or {}).get("bands") or []
     slots = [design.chart_slot(b.get("slot")) for b in bands] or [None] * BANDS_DEFAULT
     if overrides:
@@ -403,8 +407,11 @@ def _finish(rand: _Rand, dots: int) -> list[str]:
 
 
 def _lane_lines(identity: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The three biggest lanes, in the size order dj.analysis.identity colours them by (most
+    tracks, ties to the slower lane, then the label): all three among the coloured four."""
     lanes = [lane for lane in identity.get("lanes") or [] if isinstance(lane, Mapping)]
-    biggest = sorted(lanes, key=lambda l: (-(l.get("tracks") or 0), l.get("lo") or 0, str(l.get("label", ""))))
+    biggest = sorted(lanes, key=lambda l: (-(l.get("tracks") or 0), l.get("lo") or 0, l.get("hi") or 0,
+                                           str(l.get("label", ""))))  # fmt: skip
     return biggest[:3]
 
 
@@ -514,7 +521,7 @@ def sleeve_svg(identity: Mapping[str, Any], *, inline: bool = False, uid: str = 
     col = TEXT_W / 3
     for n, lane in enumerate(lanes):
         x = MARGIN + n * col
-        colour = design.slot_hex(design.chart_slot(lane.get("slot")), DARK)  # past the cap: Other, as on the disc
+        colour = design.slot_hex(design.chart_slot(lane.get("slot")), DARK)  # its identity.json slot, as on the disc
         playlists = list(lane.get("playlists") or [])
         where = _leaf(playlists[0]) if playlists else ""
         if len(playlists) > 1:
@@ -536,21 +543,22 @@ def sleeve_svg(identity: Mapping[str, Any], *, inline: bool = False, uid: str = 
     return "\n".join(out) + "\n"
 
 
-FOLDED_NOTE = " · Other"  # after the BPM of a lane note whose lane wears the Other grey (D-26)
+OTHER_NOTE = " · Other"  # after the BPM of a lane note whose lane wears the Other grey
 
 
 def _lane_label(lane: Mapping[str, Any], width: float, size: float) -> str:
-    """A lane note's label, "119-121 BPM", within `width` at `size`. A lane past the chart's
-    colour cap (dj.design.chart_slot) is drawn in the Other grey, so its label says so: "126-127
-    BPM · Other", or "126-127 · Other" when that does not fit; the word "Other" is never cut."""
+    """A lane note's label, "119-121 BPM", within `width` at `size`. A lane without a colour of
+    its own (its slot, through dj.design.chart_slot, is None) is drawn in the Other grey, so its
+    label says so: "126-127 BPM · Other", or "126-127 · Other" when that does not fit; the word
+    "Other" is never cut."""
     name = str(lane.get("label", ""))
     if design.chart_slot(lane.get("slot")) is not None:
         label = name + " BPM"
         return label if text_em(label, 0.0) * size <= width else _cut(label, width, size)
-    for label in (name + " BPM" + FOLDED_NOTE, name + FOLDED_NOTE):
+    for label in (name + " BPM" + OTHER_NOTE, name + OTHER_NOTE):
         if text_em(label, 0.0) * size <= width:
             return label
-    return _cut(name, width - text_em(FOLDED_NOTE, 0.0) * size, size) + FOLDED_NOTE
+    return _cut(name, width - text_em(OTHER_NOTE, 0.0) * size, size) + OTHER_NOTE
 
 
 def _cut(text: str, width: float, size: float) -> str:

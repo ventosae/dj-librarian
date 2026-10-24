@@ -33,7 +33,8 @@ same library always gets the same archetype (R-1402). The formulas and every inp
 
 The sleeve (`profile/sleeve.svg`, R-1403) is a 12-inch sleeve drawn from the collection: rings
 are decades (oldest inside), segments are BPM bands, a brighter cell holds more tracks, and each
-band takes the colour of the lane that owns it (grey when no lane does). The DJ's handle is the
+band takes the colour of the lane that owns it: the four biggest lanes have a colour, kept on
+every chart of the report; the other lanes and bands no lane owns are grey. The DJ's handle is the
 big type, the archetype is under it, the three biggest lanes are the liner notes at the bottom.
 It only changes when the export does. The handle is `dj_name` in `library.yaml`, asked once by
 dj-start ("What do they call you in the booth?"), "You" until then (R-1406).

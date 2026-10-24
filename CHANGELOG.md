@@ -32,11 +32,15 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - `plugin.json` `userConfig.uv_path`: the engine command is a user setting for macOS GUI apps (W-30, Q-25, unverified on a Mac).
 - Gig feedback scores Crate me: `+` lines add a point, `-` lines take one off and never make a spare (W-30, Q-19).
 - `docs/samples/chat-session-1.md`: the six dj-start replies, checked against the reply rules (W-30, Q-15).
+- `.github/workflows/release.yml`: on a pushed `v*` tag it runs the CI checks (`ci.yml` via `workflow_call`), refuses a tag that is not on `main` or does not match `pyproject.toml` and `plugin.json`, cuts the version's CHANGELOG section (`scripts/release_notes.py`), builds the plugin zip and creates a draft GitHub release with the zip attached; no PyPI step (W-32, W-27).
+- README "Try it before the release": install the zip (Customize → Plugins → Add → Upload plugin), what Door 1 does, and that the engine needs a clone (W-32).
+- `docs/dijok-session.md`: the one-page run sheet for the first tester session (W-28): before, during, after, the A-01…A-08 checks and the three questions (W-32).
 
 ### Changed
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.
 - Tests read the shipped `examples/` configs instead of a personal `tidy.yaml` / `tree.yaml`; two tests made portable to POSIX hosts (path separators, case-sensitive file names).
 - Skills moved from `.claude/skills/` to `plugin/skills/`. Ruff added with a baseline rule set.
+- Lane colours by size (Q-30, D-27): the four biggest lanes keep a colour, numbered 1-4 by BPM and assigned once in `identity.json`; every other lane is Other on every chart and on the sleeve (W-32).
 
 ### Fixed
 - `.gitignore`: the personal-state folders (`plans/`, `reports/`, …) are ignored at the repo root only, so `docs/prompts/plans/` is tracked.

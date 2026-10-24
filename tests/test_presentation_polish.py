@@ -4,7 +4,12 @@
    caption; the colophon is the one place that credits them; the "table" links stay.
 3. At most 4 categorical slots in any single chart (D-26, Q-29): a fixture of 6 lanes gives 4
    colours + "Other" on the hero sleeve, in the sleeve's lane notes, on the crate wall and its
-   legend, and on a proposal's mini sleeve (dj.design.MAX_SLOTS_PER_CHART).
+   legend, and on a proposal's mini sleeve (dj.design.MAX_SLOTS_PER_CHART). W-32 (Q-30, D-27)
+   changed which lanes keep a colour: the four biggest, numbered by BPM, assigned once in
+   identity.json (tests/test_lane_slots.py runs the whole chain). These tests were rewritten for
+   that rule; an identity.json written before it (slots 1-6 by BPM) still draws 4 colours at
+   most, through the guard (dj.design.chart_slot), and the page then never calls its grey lanes
+   the smaller ones (they are the fastest).
 4. Small collections read as a full record: no ring under MIN_RING, the empty cells of a ring
    with fewer than 3 tracks one dim step lighter (cells with tracks keep the brightness scale,
    and the caption and tooltips say why), every ring of a 50-track library named, the labels
@@ -35,20 +40,21 @@ CELL = re.compile(r'<path d="M[^"]*Z" fill="(#[0-9a-f]{6})" fill-opacity="([\d.]
 
 
 def six_lanes() -> dict:
-    """An identity in the shape dj.analysis.identity writes, with 6 lanes (slots 1..6, one per BPM
-    band from the slowest) and the fastest lane the biggest, so a folded lane is among the three
-    the sleeve names."""
+    """An identity in the shape dj.analysis.identity writes, with 6 lanes (one per BPM band from
+    the slowest) and the fastest lane the biggest. The slots come from dj.analysis.identity.lanes
+    (Q-30, D-27): the four biggest, 96-99, 119-121, 123-124 and 126-127, take slots 1-4 in BPM
+    order; 104-108 and 112-116 are Other."""
     ranges = ((96, 99), (104, 108), (112, 116), (119, 121), (123, 124), (126, 127))
-    labels = tuple(f"{lo}-{hi}" for lo, hi in ranges)
-    tracks = (5, 6, 7, 8, 9, 30)
-    lanes = [{"label": f"{lo}-{hi}", "lo": lo, "hi": hi, "tracks": t, "slot": n, "playlists": [f"Lanes/lane{n}"],
-              "key": f"lane:{n}"} for n, ((lo, hi), t) in enumerate(zip(ranges, tracks), 1)]  # fmt: skip
+    tracks = (12, 5, 6, 8, 9, 30)
+    lanes = identity_mod.lanes({"lanes": [
+        {"label": f"{lo}-{hi}", "lo": lo, "hi": hi, "tracks": t, "playlists": [f"Lanes/lane{n}"], "key": f"lane:{n}"}
+        for n, ((lo, hi), t) in enumerate(zip(ranges, tracks), 1)]})  # fmt: skip
     bands = []
     for n, name in enumerate(identity_mod.BANDS):
         lo, hi = identity_mod.band_range(n)
-        slot = n + 1 if n < 6 else None
+        lane = lanes[n] if n < 6 else None
         bands.append({"band": name, "lo": lo, "hi": hi, "tracks": 4 + n, "share": 0.1,
-                      "lane": labels[n] if slot else None, "slot": slot})  # fmt: skip
+                      "lane": lane["label"] if lane else None, "slot": lane["slot"] if lane else None})  # fmt: skip
     return {
         "schema": 1, "seed": "5e" * 32, "handle": "DJ Six", "date": "2026-10-20", "source": "exports/x.xml",
         "counts": {"tracks": 65, "axes": 6, "lanes": 6, "decades": 3, "bands": 8},
@@ -64,6 +70,16 @@ def six_lanes() -> dict:
             "placed": 65, "no_year": 0, "no_bpm": 0,
         },
     }  # fmt: skip
+
+
+def legacy_six_lanes() -> dict:
+    """The same identity as identity.json was written before W-32: slots 1-6 by BPM, slowest first."""
+    data = copy.deepcopy(six_lanes())
+    for n, lane in enumerate(data["lanes"], 1):
+        lane["slot"] = n
+    for n, band in enumerate(data["fingerprint"]["bands"]):
+        band["slot"] = n + 1 if band["lane"] else None
+    return data
 
 
 def six_lane_graph() -> dict:
@@ -144,24 +160,26 @@ def test_the_cap_is_one_constant():
 
 def test_six_lanes_give_four_colours_and_other_on_the_hero_sleeve():
     data = six_lanes()
+    assert [lane["slot"] for lane in data["lanes"]] == [1, None, None, 2, 3, 4]
     svg = sleeve.sleeve_svg(data, inline=True, uid="hero-", small_print=False)
     fills = {hexa for hexa, _o in cells(svg)}
     assert fills - {design.TEXT["dark"]} == set(BOOTH[:4]) | {design.OTHER["dark"]}  # 4 colours + Other
     assert not fills & set(BOOTH[4:])
-    # the lane notes (the sleeve's legend): the three biggest lanes; a folded one wears the Other
-    # grey and says "Other" after its BPM, so grey never reads as an unnamed second lane
+    # the lane notes (the sleeve's legend): the three biggest lanes, always among the coloured four,
+    # each in its identity.json slot (the biggest, the fastest, is slot 4: W-30 drew it grey)
     for drawn in (svg, sleeve.sleeve_svg(data)):
         notes = re.findall(r'font-size="24" font-weight="700" fill="#[0-9a-f]{6}">([^<]+)</text>', drawn)
-        assert notes == ["126-127 · Other", "123-124 · Other", "119-121 BPM"]
-        assert lane_note_swatches(drawn) == [design.OTHER["dark"], design.OTHER["dark"], BOOTH[3]]
-    # the centre label's ring wears the biggest lane, folded too
-    assert f'r="76" fill="{design.SURFACE["dark"]}" stroke="{design.OTHER["dark"]}"' in svg
-    assert "126-127 BPM (Other), 30 tracks" in svg  # the description says it too
+        assert notes == ["126-127 BPM", "96-99 BPM", "123-124 BPM"]
+        assert lane_note_swatches(drawn) == [BOOTH[3], BOOTH[0], BOOTH[2]]
+    # the centre label's ring wears the biggest lane, in its colour
+    assert f'r="76" fill="{design.SURFACE["dark"]}" stroke="{BOOTH[3]}"' in svg
+    assert "126-127 BPM, 30 tracks" in svg and "(Other)" not in svg  # the description says it too
 
 
-def test_a_folded_lane_note_keeps_the_word_other():
+def test_a_grey_lane_note_keeps_the_word_other():
     """The label fits its column: " BPM" goes before "Other" does; a label too long for either is
-    cut in the BPM part and keeps " · Other"; a lane in colour never says Other."""
+    cut in the BPM part and keeps " · Other"; a lane in colour never says Other. (A lane note in
+    the grey needs a slot the guard refuses or None: never one of the three biggest from W-32 on.)"""
     width = sleeve.TEXT_W / 3 - 36
     assert sleeve._lane_label({"label": "96-99", "slot": 5}, width, 24) == "96-99 BPM · Other"
     assert sleeve._lane_label({"label": "126-127", "slot": 6}, width, 24) == "126-127 · Other"
@@ -177,10 +195,11 @@ def test_six_lanes_give_four_colours_and_other_on_the_crate_wall_and_its_legend(
     classes = set(re.findall(r'class="mark (?:lane|outline) (s\d)"', wall.svg))
     assert classes == {"s1", "s2", "s3", "s4", "s0"}
     keys = [(kind, label) for kind, label in wall.legend if kind.startswith("s")]
-    assert keys == [("s1", "96-99 BPM"), ("s2", "104-108 BPM"), ("s3", "112-116 BPM"), ("s4", "119-121 BPM"),
+    assert keys == [("s1", "96-99 BPM"), ("s2", "119-121 BPM"), ("s3", "123-124 BPM"), ("s4", "126-127 BPM"),
                     ("s0", "Other (2 lanes), or no lane")]  # fmt: skip
-    # a folded lane is still named in its tooltip
-    assert 'data-tip="9 tracks · Lanes/lane6 · lane 126-127 BPM"' in wall.svg
+    # a grey (Other) lane is still named in its tooltip
+    assert 'data-tip="5 tracks · Lanes/lane2 · lane 104-108 BPM"' in wall.svg
+    assert re.search(r'data-tip="5 tracks · Lanes/lane2 · [^"]*"><path class="mark lane s0"', wall.svg)
     without_loose = six_lane_graph()
     without_loose["nodes"] = [n for n in without_loose["nodes"] if n["id"] != "loose"]
     legend = report_charts.crate_wall(without_loose, {}, data).legend
@@ -194,27 +213,76 @@ def test_six_lanes_give_four_colours_and_other_on_a_mini_sleeve():
     taste = {"bpm_playlists": [{"path": f"Lanes/lane{n}", "tracks": 3 + n, "lo": b["lo"] or 90, "hi": (b["hi"] or 140) - 1}
                                for n, b in zip(range(1, 7), data["fingerprint"]["bands"])]}  # fmt: skip
     slots, branches = report_charts.proposal_colours(nodes, data, taste)
-    assert [b.slot for b in branches] == [1, 2, 3, 4, 5, 6]  # each base keeps its lane's slot ...
+    assert [b.slot for b in branches] == [1, None, None, 2, 3, 4]  # each base wears its lane's identity slot
     mini, _branches = report._mini(1, nodes, data, taste)
     fills = {hexa for hexa, _o in cells(mini)} - {design.TEXT["dark"]}
-    assert fills == set(BOOTH[:4]) | {design.OTHER["dark"]}  # ... but the chart draws 4 colours + Other
+    assert fills == set(BOOTH[:4]) | {design.OTHER["dark"]}  # 4 colours + Other
     tree = report._tree_part(branches, True)
     assert set(re.findall(r'<span class="sw (s\d)">', tree)) <= {"s1", "s2", "s3", "s4", "s0"}
-    assert "lane 123-124 BPM (Other)" in tree  # a folded lane says it wears the Other grey
+    assert "lane 104-108 BPM (Other)" in tree  # an Other lane says it wears the Other grey
 
 
 def test_a_page_with_six_lanes_says_once_why_two_lanes_are_grey():
     page = report.page(day=DAY, profile=None, habits=None, structure={"reveals": ["x"]}, graph=six_lane_graph(),
                        entries=[], identity=six_lanes(), liner=None)  # fmt: skip
-    assert "grey for tracks outside your lanes and for the lanes past the four slowest (a chart colours four " \
-           "lanes at most)" in page  # fmt: skip
+    assert "grey for tracks outside your lanes and in your smaller lanes (only your four biggest lanes get a " \
+           "colour)" in page  # fmt: skip
     body = page.split("</style>", 1)[1]
     assert not re.search(r'class="[^"]*\bs[5-8]\b', body)  # no slot past 4 anywhere on the page
     for colour in BOOTH[4:]:
         assert colour not in body
-    three = report.page(day=DAY, profile=None, habits=None, structure=None, graph=None, entries=[],
-                        identity={**six_lanes(), "lanes": six_lanes()["lanes"][:3]}, liner=None)  # fmt: skip
-    assert "past the four slowest" not in three
+    three = identity_mod.lanes({"lanes": six_lanes()["lanes"][:3]})  # three lanes: all in colour
+    assert [lane["slot"] for lane in three] == [1, 2, 3]
+    page = report.page(day=DAY, profile=None, habits=None, structure=None, graph=None, entries=[],
+                       identity={**six_lanes(), "lanes": three}, liner=None)  # fmt: skip
+    assert report.OTHER_LANES not in page and "smaller lanes" not in page
+
+
+def test_an_older_identity_json_still_draws_four_colours_at_most():
+    """An identity.json written before W-32 numbers six lanes 1-6 by BPM. The charts read those
+    slots as they are and the guard (dj.design.chart_slot) draws 5 and 6 grey, so no chart shows a
+    fifth colour, and the legend still counts them as Other, until identity runs again."""
+    data = legacy_six_lanes()
+    svg = sleeve.sleeve_svg(data, inline=True, uid="hero-", small_print=False)
+    assert {hexa for hexa, _o in cells(svg)} - {design.TEXT["dark"]} == set(BOOTH[:4]) | {design.OTHER["dark"]}
+    wall = report_charts.crate_wall(six_lane_graph(), {}, data)
+    assert set(re.findall(r'class="mark (?:lane|outline) (s\d)"', wall.svg)) == {"s1", "s2", "s3", "s4", "s0"}
+    assert wall.legend[-1] == ("s0", "Other (2 lanes), or no lane")
+    page = report.page(day=DAY, profile=None, habits=None, structure={"reveals": ["x"]}, graph=six_lane_graph(),
+                       entries=[], identity=data, liner=None)  # fmt: skip
+    body = page.split("</style>", 1)[1]
+    assert not re.search(r'class="[^"]*\bs[5-8]\b', body) and not any(c in body for c in BOOTH[4:])
+
+
+def test_an_older_identity_json_never_calls_its_grey_lanes_the_smaller_ones():
+    """Its grey lanes are the fastest (slots 5 and 6 by BPM), and here the fastest is the biggest
+    lane (30 tracks): the page says only that a chart colours four lanes at most and how to colour
+    the four biggest, on the sleeve caption, the proposals note and the mini sleeve's tooltip."""
+    data = legacy_six_lanes()
+    assert report_charts.stale_slots(data) and not report_charts.stale_slots(six_lanes())
+    assert not report_charts.stale_slots(None) and not report_charts.stale_slots({"lanes": [{"slot": None}]})
+    page = report.page(day=DAY, profile=None, habits=None, structure={"reveals": ["x"]}, graph=six_lane_graph(),
+                       entries=[], identity=data, liner=None)  # fmt: skip
+    assert report.OTHER_LANES not in page and "smaller lanes" not in page and "not one of your four" not in page
+    assert f"grey for tracks outside your lanes and in 2 of your lanes ({report.OLD_SLOTS})" in page
+    assert "say “draw my sleeve” to colour your four biggest" in report.OLD_SLOTS
+    nodes = [TreeNode("folder", f"base{n}", children=(TreeNode("playlist", "p", fill_from=(f"Lanes/lane{n}",)),))
+             for n in range(1, 7)]  # fmt: skip
+    taste = {"bpm_playlists": [{"path": f"Lanes/lane{n}", "tracks": 3 + n, "lo": b["lo"] or 90, "hi": (b["hi"] or 140) - 1}
+                               for n, b in zip(range(1, 7), data["fingerprint"]["bands"])]}  # fmt: skip
+    _slots, branches = report_charts.proposal_colours(nodes, data, taste)
+    assert [b.slot for b in branches] == [1, 2, 3, 4, 5, 6]  # read as identity.json holds them
+    mini, _branches = report._mini(1, nodes, data, taste)
+    assert f"lands in base6 (lane 126-127 BPM, Other: {report.OLD_OWNER})" in mini
+    assert "not one of your four biggest" not in mini
+    entry = {"slug": "x", "family": "bases", "name": "X", "principle": "p", "cost_minutes": 5, "lands": [],
+             "trigger": "build x", "tree": type("Tree", (), {"nodes": tuple(nodes)})()}  # fmt: skip
+    note = re.search(r'<p class="mini-note">(.*?)</p>', report._proposals([entry], data, taste)).group(1)
+    assert note.endswith(f"or a branch with no lane colour of its own ({report.OLD_SLOTS}). Outline: a branch no "
+                         "tempo band lands in, so it has no colour on the sleeve.")  # fmt: skip
+    # the current identity.json keeps the reason Q-30 gives
+    fresh = report._proposals([entry], six_lanes(), taste)
+    assert f"no lane colour of its own ({report.OTHER_LANES})" in fresh and report.OLD_SLOTS not in fresh
 
 
 # -- 4. small collections read as a full record ---------------------------------------------------

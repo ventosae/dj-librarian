@@ -12,8 +12,11 @@ The page follows docs/design.md (R-408): colour tokens on `:root`, Day (light) a
 both selected, Booth the default (`<html data-theme="dark">`); two buttons in the header switch
 them and remember the choice in localStorage (inside try/catch); `#day` or `#booth` in the URL
 wins (the screenshots use it). The charts are dj.report_charts: thin marks, 2 px gaps, a lane
-keeps its slot colour everywhere, at most 4 colours per chart (lanes past slot 4 are Other, and
-the page says so once where it happens: D-26), at most 4 direct labels per chart, a tooltip on every mark
+keeps the slot colour profile/identity.json gives it everywhere (the four biggest lanes have one,
+the rest are Other, and the page says so once where it happens: Q-30, D-27; at most 4 colours per
+chart, D-26; an identity.json from before Q-30, slots 1..8 by BPM, still draws 4 colours at most,
+and the page then says only that and how to colour the four biggest, since its grey lanes are the
+fastest), at most 4 direct labels per chart, a tooltip on every mark
 (hover and keyboard focus), a "table" link per chart to the file it was drawn from.
 
 What the page is made of (numbers from code, words from Claude, R-302):
@@ -331,12 +334,23 @@ def _handle_style(handle: str) -> str:
 SAY_SLEEVE = "Say \u201cdraw my sleeve\u201d and I run it and rebuild this report (about 2 minutes)."
 
 
-FOLDED = "a chart colours four lanes at most"  # D-26: said wherever a lane past slot 4 turns grey
+OTHER_LANES = "only your four biggest lanes get a colour"  # Q-30, D-27: said where an Other lane turns grey
+# an identity.json from before Q-30 (slots 1..8 by BPM): its grey lanes are the fastest, not the smallest
+OLD_SLOTS = "a chart colours four lanes at most; say “draw my sleeve” to colour your four biggest"
+OLD_OWNER = "a chart colours four lanes at most"  # the same, in a mini sleeve's tooltip
 
 
-def _folds(identity: Mapping[str, Any] | None) -> bool:
-    """True when the page has lanes past slot MAX_SLOTS_PER_CHART: every chart draws them grey."""
-    return any(charts.folded(lane.get("slot")) for lane in charts.lane_rows(identity))
+def _has_other_lanes(identity: Mapping[str, Any] | None) -> bool:
+    """True when identity.json has lanes without a colour (outside the four biggest): every chart
+    draws them grey."""
+    return bool(charts.other_lanes(identity))
+
+
+def _why_grey(identity: Mapping[str, Any] | None) -> str:
+    """Why lanes are grey, said once where it happens: the four biggest lanes get a colour (Q-30),
+    or, for an identity.json written before Q-30, only that a chart colours four at most and how
+    to colour the four biggest (its grey lanes are the fastest ones, which can be the biggest)."""
+    return OLD_SLOTS if charts.stale_slots(identity) else OTHER_LANES
 
 
 def _sleeve_figure(identity: Mapping[str, Any] | None) -> str:
@@ -348,8 +362,14 @@ def _sleeve_figure(identity: Mapping[str, Any] | None) -> str:
             art = ""
         if art:
             grey = "grey for tracks outside your lanes"
-            if _folds(identity):
-                grey += f" and for the lanes past the four slowest ({FOLDED})"
+            # only the grey lanes that own a band the disc draws grey; an Other lane that owns no
+            # band (its neighbours overlap every band more) leaves no grey on the sleeve
+            others = {str(lane.get("label")) for lane in charts.other_lanes(identity)}
+            grey_lanes = len(others & {str(b.get("lane")) for b in charts.fingerprint_bands(identity)
+                                       if design.chart_slot(b.get("slot")) is None})  # fmt: skip
+            if grey_lanes:
+                which = f"{grey_lanes} of your lanes" if charts.stale_slots(identity) else "your smaller lanes"
+                grey += f" and in {which} ({_why_grey(identity)})"
             sparse = f"; {sleeve_mod.SPARSE_NOTE}" if sleeve_mod.sparse_rings(identity) else ""
             return (
                 '<figure class="sleeve">'
@@ -551,20 +571,32 @@ def _mini(n: int, nodes: Sequence[Any], identity: Mapping[str, Any] | None,
         art = sleeve_mod.mini_sleeve_svg(identity, slots, size=240, uid=f"p{n}-")
     except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError):
         return "", branches
-    owners = {band: b.name if design.chart_slot(b.slot) else f"{b.name} (no lane colour of its own)"
-              for b in branches for band in b.bands}  # fmt: skip
+    old = charts.stale_slots(identity)
+    owners = {band: _owner(b, old) for b in branches for band in b.bands}
     return (f'<div class="mini"><div class="sleeve-wrap">{charts.defang(art.strip())}'
             f"{charts.mini_hits(identity, owners)}</div></div>"), branches  # fmt: skip
 
 
+def _owner(b: charts.Branch, old: bool = False) -> str:
+    """Where a band lands, for the mini sleeve's tooltip: the branch, and why it is grey when it is
+    (`old`: identity.json is from before Q-30, so its grey lanes are not the smaller ones)."""
+    if design.chart_slot(b.slot):
+        return b.name
+    if b.lane:
+        why = OLD_OWNER if old else "not one of your four biggest"
+        return f"{b.name} (lane {b.lane} BPM, Other: {why})"
+    return f"{b.name} (no lane colour of its own)"
+
+
 def _bpm_line(b: charts.Branch) -> str:
     """The BPM line under a branch: the lane its swatch keys first (the label the sleeve and the
-    crate wall legend give that colour), then the tempo bands it takes on the mini sleeve. Each
-    part is kept on one line (a range never breaks at its hyphen); the line wraps at the dot."""
+    crate wall legend give that colour; "(Other)" for a lane identity.json leaves grey), then the
+    tempo bands it takes on the mini sleeve. Each part is kept on one line (a range never breaks
+    at its hyphen); the line wraps at the dot."""
     bands = charts.band_ranges(b.bands)
     parts = [f"bands {bands}"]
-    if b.slot and b.lane:
-        lane = f"lane {b.lane} BPM" + (" (Other)" if charts.folded(b.slot) else "")  # grey past slot 4 (D-26)
+    if b.lane:
+        lane = f"lane {b.lane} BPM" + ("" if design.chart_slot(b.slot) else " (Other)")
         parts = [lane, f"bands {bands.removesuffix(' BPM')}"]
     return " · ".join(f"<span>{esc(part)}</span>" for part in parts)
 
@@ -627,8 +659,8 @@ def _proposals(entries: Sequence[Mapping[str, Any]], identity: Mapping[str, Any]
     )
     if identity and charts.fingerprint_bands(identity):
         own = "a branch with no lane colour of its own"
-        if _folds(identity):
-            own += f" (a lane past the four slowest is grey too: {FOLDED})"
+        if _has_other_lanes(identity):
+            own += f" ({_why_grey(identity)})"
         parts.append(
             '<p class="mini-note">On each mini sleeve, a tempo band takes the colour of the branch it lands in, '
             "and a branch wears the colour of the BPM lane that fills most of it. Grey: tracks no copied "

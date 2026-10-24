@@ -5,12 +5,16 @@ Door 1: stdlib only, plus dj.design, dj.sleeve and dj.treeschema. Every function
 in, an SVG or HTML string out. The page around them (dj.report) owns the CSS: every mark here
 carries classes, never a colour, so the Booth and Day themes of docs/design.md repaint them.
 
-Colour classes: `s1` ... `s8` set `--lane` to categorical slot 1..8, `s0` to the Other grey. A
-lane keeps its slot everywhere on the page (dj.analysis.identity gives lanes their slots by BPM,
-slowest first). Marks never carry text in their colour; labels use the text classes. A chart
-shows at most dj.design.MAX_SLOTS_PER_CHART (4) colours (D-26, Q-29): `slot_class` draws a lane
-past slot 4 as `s0`, so it folds into Other, and a legend counts those lanes in its grey key
-("Other (2 lanes)"); tooltips still name the lane.
+Colour classes: `s1` ... `s4` set `--lane` to categorical slot 1..4, `s0` to the Other grey. A
+lane keeps its slot everywhere on the page: every chart here reads it from identity.json, where
+dj.analysis.identity assigns it once (Q-30, D-27: the four biggest lanes take slots 1-4 in BPM
+order, every other lane is Other, `slot: null`); nothing here re-derives a slot from a lane's
+position or rank. Marks never carry text in their colour; labels use the text classes.
+`slot_class` passes a slot through dj.design.chart_slot, the guard of the 4-colour cap (D-26,
+Q-29), so a slot that is not 1..4 draws as `s0` too. A legend counts the lanes it draws grey in
+its grey key ("Other (2 lanes)"); tooltips still name the lane. `stale_slots(identity)` tells an
+identity.json written before Q-30 (slots 1..8 by BPM) apart, so the page does not call its grey
+lanes the smaller ones.
 
     crate_wall(graph, structure, identity) -> Wall (svg, legend entries, rows, labels, arcs)
         One row per top-level folder (and one "Top level" row for loose playlists), one bar per
@@ -18,7 +22,8 @@ past slot 4 as `s0`, so it folds into Other, and a legend counts those lanes in 
         playlists end to end": the ticks count along the whole row), bars laid end to end with a
         2 px gap. Every bar of a folder row wears
         the folder's lane: the lane (identity `lanes[].playlists`) that holds most of the row's
-        tracks, ties to the slower lane, Other when none. The legend says so ("row colour"), and
+        tracks, ties to the slower lane, no lane when none; the bars take that lane's slot
+        (grey for an Other lane or no lane). The legend says so ("row colour"), and
         a bar whose own lane differs names both in its tooltip. A loose playlist wears its own
         lane. A dump (dj-structure rule) is hatched with an SVG pattern; an empty or smart
         playlist is an outline. The top overlapping pairs are arcs between the two bars. Direct
@@ -36,12 +41,13 @@ past slot 4 as `s0`, so it folds into Other, and a legend counts those lanes in 
     proposal_colours(nodes, identity, bpm_rows) -> (band -> slot, branches)
         How a proposal recolours the fingerprint, with the lane slots of the page: a colour
         always names a lane. A branch is a top-level node of the proposal's tree. It wears the
-        slot of the lane that fills most of it (the lane playlists it copies, by tracks; ties
-        to the slower lane), or none when no lane playlist goes into it. Two branches never
-        share a slot: the one that takes more of that lane keeps it (ties: tree order), the
-        other wears none. Each playlist the proposal copies (`from`) spreads its tracks evenly
-        over the BPM bands its range covers (taste/facts.json `bpm_playlists`: lo..hi, each end
-        widened by half a BPM as identity does); a band goes to the branch that would receive
+        identity.json slot of the lane that fills most of it (the lane playlists it copies, by
+        tracks; ties to the slower lane), so an Other lane gives an Other branch, or none when
+        no lane playlist goes into it. Two branches never share a lane: the one that takes more
+        of it keeps it (ties: tree order), the other wears none. Each playlist the proposal
+        copies (`from`) spreads its tracks evenly over the BPM bands its range covers
+        (taste/facts.json `bpm_playlists`: lo..hi, each end widened by half a BPM as identity
+        does); a band goes to the branch that would receive
         most of those tracks (ties: the earlier branch) and takes that branch's slot, so the
         mini sleeve shows which lanes a proposal keeps apart and which it merges. A band no
         copied playlist reaches, or one that lands in a branch without a slot, is grey.
@@ -115,15 +121,10 @@ def _n(x: float) -> str:
 
 
 def slot_class(slot: Any) -> str:
-    """The colour class a chart draws for a lane's slot: s1..s4, or s0 (Other) for None and
-    anything past dj.design.MAX_SLOTS_PER_CHART (D-26: at most 4 colours in one chart)."""
+    """The colour class a chart draws for a slot read from identity.json: s1..s4, or s0 (Other)
+    for None; anything else is s0 too (dj.design.chart_slot, the guard of the 4-colour cap)."""
     shown = design.chart_slot(slot)
     return f"s{shown}" if shown else "s0"
-
-
-def folded(slot: Any) -> bool:
-    """True for a lane slot (1..8) that a chart folds into Other (past MAX_SLOTS_PER_CHART)."""
-    return isinstance(slot, int) and not isinstance(slot, bool) and design.MAX_SLOTS_PER_CHART < slot <= design.SLOTS
 
 
 def other_label(lanes: int, no_lane: bool) -> str:
@@ -158,13 +159,30 @@ def lane_rows(identity: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
     return [lane for lane in (identity or {}).get("lanes") or [] if isinstance(lane, Mapping)]
 
 
-def lane_of(identity: Mapping[str, Any] | None) -> dict[str, Mapping[str, Any]]:
-    """playlist path -> the lane that lists it (the first one, lanes in BPM order)."""
-    out: dict[str, Mapping[str, Any]] = {}
-    for lane in lane_rows(identity):
+def lane_numbers(identity: Mapping[str, Any] | None) -> dict[str, int]:
+    """playlist path -> the index of the lane that lists it (the first one) in identity `lanes`
+    (BPM order, so a lower index is the slower lane): a lane's identity, which its slot is not
+    (Other lanes share `slot: null`)."""
+    out: dict[str, int] = {}
+    for n, lane in enumerate(lane_rows(identity)):
         for path in lane.get("playlists") or []:
-            out.setdefault(str(path), lane)
+            out.setdefault(str(path), n)
     return out
+
+
+def other_lanes(identity: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
+    """The lanes every chart draws in the Other grey: their identity.json slot is null (outside
+    the four biggest, Q-30), or not one a chart draws (dj.design.chart_slot)."""
+    return [lane for lane in lane_rows(identity) if design.chart_slot(lane.get("slot")) is None]
+
+
+def stale_slots(identity: Mapping[str, Any] | None) -> bool:
+    """True for an identity.json written before Q-30 (D-27): it numbered the lanes 1..8 by BPM, so
+    a lane holds a slot identity.json now never writes (anything but null or 1..4). The charts
+    still draw it through the guard (dj.design.chart_slot: at most 4 colours), but its grey lanes
+    are then the fastest ones, not the smallest, so the page must not say "the four biggest"."""
+    return any(lane.get("slot") is not None and design.chart_slot(lane.get("slot")) is None
+               for lane in lane_rows(identity))  # fmt: skip
 
 
 # -- the crate wall ------------------------------------------------------------------------------
@@ -226,7 +244,8 @@ class Bar:
     dump: bool = False
     share: float | None = None
     lane: str | None = None  # its own lane's label
-    own: int | None = None  # its own lane's slot
+    lane_no: int | None = None  # its own lane (lane_numbers)
+    wears: int | None = None  # the lane whose slot it wears (lane_numbers): its row's, or its own
     x: float = 0.0
     w: float = 0.0
     outline: bool = False
@@ -241,6 +260,7 @@ class Row:
     bars: list[Bar] = field(default_factory=list)
     slot: int | None = None
     lane: str | None = None  # the label of the row's lane (folder rows)
+    lane_no: int | None = None  # the row's lane (lane_numbers; folder rows)
     hidden_outlines: int = 0
 
 
@@ -289,17 +309,19 @@ def wall_rows(graph: Mapping[str, Any], structure: Mapping[str, Any] | None,
     for d in (((structure or {}).get("dumps") or {}).get("top") or []):
         if isinstance(d, Mapping) and d.get("path") is not None:
             dumps[str(d["path"])] = d.get("share")
-    lanes = lane_of(identity)
-    by_slot = {lane.get("slot"): lane for lane in lane_rows(identity)}
-    has_lanes = bool(by_slot)
+    lanes = lane_rows(identity)
+    numbers = lane_numbers(identity)
+    has_lanes = bool(lanes)
 
     def bar(node: Mapping[str, Any], row: int) -> Bar:
         path = str(node.get("path", node.get("id")))
         tracks = node.get("tracks") if node.get("kind") == "playlist" else None
-        lane = lanes.get(path)
+        n = numbers.get(path)
+        lane = lanes[n] if n is not None else None
         own = (lane.get("slot") if lane else None) if has_lanes else 1
-        return Bar(path=path, name=str(node.get("name", path)), tracks=tracks, row=row, slot=own, own=own,
-                   dump=path in dumps, share=dumps.get(path), lane=str(lane.get("label")) if lane else None)  # fmt: skip
+        return Bar(path=path, name=str(node.get("name", path)), tracks=tracks, row=row, slot=own,
+                   dump=path in dumps, share=dumps.get(path), lane=str(lane.get("label")) if lane else None,
+                   lane_no=n, wears=n)  # fmt: skip
 
     rows: list[Row] = []
     tops = [n for n in nodes if n.get("depth") == 1]
@@ -308,17 +330,19 @@ def wall_rows(graph: Mapping[str, Any], structure: Mapping[str, Any] | None,
     for node in folders[:MAX_ROWS]:
         row = Row("folder", str(node.get("name", "")), str(node.get("path", node["id"])), node.get("tracks"))
         row.bars = [bar(p, len(rows)) for p in _playlists_below(node["id"], by_id, kids)]
-        if has_lanes:
+        if has_lanes:  # the row's lane: the one holding most of its tracks, ties to the slower lane
             weight: dict[int, int] = {}
             for b in row.bars:
-                if isinstance(b.own, int) and isinstance(b.tracks, int):
-                    weight[b.own] = weight.get(b.own, 0) + b.tracks
-            row.slot = min(weight, key=lambda s: (-weight[s], s)) if weight else None
-            row.lane = str(by_slot[row.slot].get("label")) if row.slot in by_slot else None
+                if b.lane_no is not None and isinstance(b.tracks, int):
+                    weight[b.lane_no] = weight.get(b.lane_no, 0) + b.tracks
+            row.lane_no = min(weight, key=lambda n: (-weight[n], n)) if weight else None
+            main = lanes[row.lane_no] if row.lane_no is not None else None
+            row.slot = main.get("slot") if main else None  # read from identity.json, never re-derived
+            row.lane = str(main.get("label")) if main else None
         else:
             row.slot = 1
         for b in row.bars:
-            b.slot = row.slot
+            b.slot, b.wears = row.slot, row.lane_no
         rows.append(row)
     if loose:
         row = Row("loose", LOOSE, "", None)
@@ -392,7 +416,7 @@ def _bar_tip(b: Bar, row: Row | None = None) -> str:
         share = f": {round(float(b.share) * 100)}% of the collection" if isinstance(b.share, (int, float)) else ""
         parts.append(f"a dump{share}")
     own = f"lane {b.lane} BPM" if b.lane else "no lane"
-    if row is not None and row.kind == "folder" and row.lane and b.own != row.slot:
+    if row is not None and row.kind == "folder" and row.lane and b.lane_no != row.lane_no:
         parts.append(f"{own} (row colour: {row.name}, {row.lane} BPM)")
     elif b.lane:
         parts.append(own)
@@ -677,18 +701,18 @@ def crate_wall(graph: Mapping[str, Any], structure: Mapping[str, Any] | None,
 
     # the legend: what a bar's colour means, the lanes that show (slot order), then the marks.
     # A grey dump or a grey outline is keyed by "dump" or "empty or smart": the solid grey "no
-    # lane" key shows only when a solid grey bar is drawn. At most MAX_SLOTS_PER_CHART colours
-    # (D-26): a lane past them is drawn grey and counted in the one grey key, "Other (N lanes)".
+    # lane" key shows only when a solid grey bar is drawn. A lane without a colour (an Other
+    # lane of identity.json) is counted in the one grey key, "Other (N lanes)".
     def slot(b: Bar) -> int:
         return design.chart_slot(b.slot) or 0
 
-    gone = {b.slot for b in bars if folded(b.slot)}  # lanes this chart folds into Other
-    no_lane = any(not folded(b.slot) and not slot(b) for b in bars if not (b.dump or b.outline))
-    shown = sorted({slot(b) for b in bars if slot(b)} | ({0} if gone or no_lane else set()))
+    grey = {b.wears for b in bars if b.wears is not None and not slot(b)}  # Other lanes this chart draws
+    no_lane = any(b.wears is None and not slot(b) for b in bars if not (b.dump or b.outline))
+    shown = sorted({slot(b) for b in bars if slot(b)} | ({0} if grey or no_lane else set()))
     shown = shown[1:] + shown[:1] if shown and shown[0] == 0 else shown  # grey last
     legend: list[tuple[str, str]] = []
-    lanes = {lane.get("slot"): lane for lane in lane_rows(identity)}
-    if lanes and len(shown) >= 2:
+    lanes = {s: lane for lane in lane_rows(identity) if (s := design.chart_slot(lane.get("slot")))}  # slot -> lane
+    if lane_rows(identity) and len(shown) >= 2:
         folder_rows = any(r.kind == "folder" and r.bars for r in rows)
         head = "Row colour = the folder's main BPM lane" if folder_rows else "Colour = the playlist's BPM lane"
         if folder_rows and any(r.kind == "loose" for r in rows):
@@ -698,7 +722,7 @@ def crate_wall(graph: Mapping[str, Any], structure: Mapping[str, Any] | None,
             if s:
                 legend.append((f"s{s}", f"{lanes[s].get('label', '?')} BPM" if s in lanes else "no lane"))
             else:
-                legend.append(("s0", other_label(len(gone), no_lane)))
+                legend.append(("s0", other_label(len(grey), no_lane)))
     if any(b.dump for b in bars):
         legend.append(("dump", "dump"))
     if any(b.outline for b in bars):
@@ -862,11 +886,11 @@ def mini_hits(identity: Mapping[str, Any], owners: Mapping[str, str | None]) -> 
 class Branch:
     name: str
     kind: str
-    slot: int | None  # the slot of the lane that fills most of it (None: no lane, or taken)
+    slot: int | None  # identity.json's slot of the lane that fills most of it (None: an Other lane, no lane, or taken)
     children: list[str]
     sources: int
     bands: list[str]  # the BPM bands that land in it, so wear its slot on the mini sleeve
-    lane: str | None = None  # the label of that lane
+    lane: str | None = None  # the label of that lane (an Other lane's too)
 
 
 def _bpm_rows(identity: Mapping[str, Any] | None, taste: Mapping[str, Any] | None) -> list[dict[str, Any]]:
@@ -924,32 +948,31 @@ def proposal_colours(nodes: Sequence[TreeNode], identity: Mapping[str, Any] | No
     slot of the branch it lands in, so a colour names the same lane as everywhere on the page."""
     rows = _bpm_rows(identity, taste)
     tracks_of = {row["path"]: row["tracks"] for row in rows}
-    lanes = lane_of(identity)
+    lanes = lane_rows(identity)
+    numbers = lane_numbers(identity)
     dest: dict[str, list[int]] = {}
     branches = []
-    fills: list[dict[int, float]] = []  # per branch: lane slot -> tracks it would take from that lane
+    fills: list[dict[int, float]] = []  # per branch: lane (lane_numbers) -> tracks it would take from it
     for i, node in enumerate(nodes):
         sources, fill = 0, {}
         for inner in _walk(node):
             for src in inner.fill_from:
                 dest.setdefault(str(src), []).append(i)
                 sources += 1
-                lane = lanes.get(str(src))
-                slot = lane.get("slot") if lane else None
-                if isinstance(slot, int) and not isinstance(slot, bool) and 1 <= slot <= design.SLOTS:
-                    share = float(lane.get("tracks") or 0) / max(1, len(lane.get("playlists") or []))
-                    fill[slot] = fill.get(slot, 0.0) + tracks_of.get(str(src), share)
+                n = numbers.get(str(src))
+                if n is not None:
+                    share = float(lanes[n].get("tracks") or 0) / max(1, len(lanes[n].get("playlists") or []))
+                    fill[n] = fill.get(n, 0.0) + tracks_of.get(str(src), share)
         fills.append(fill)
         branches.append(Branch(node.name, node.kind, None, [c.name for c in node.children], sources, []))
-    by_slot = {lane.get("slot"): lane for lane in lane_rows(identity)}
     claims: dict[int, list[int]] = {}
     for i, fill in enumerate(fills):
         if fill:
-            claims.setdefault(min(fill, key=lambda s: (-fill[s], s)), []).append(i)  # ties: the slower lane
-    for slot, claimants in claims.items():
-        keeper = min(claimants, key=lambda i: (-fills[i][slot], i))  # two branches never share a slot
-        branches[keeper].slot = slot
-        branches[keeper].lane = str(by_slot[slot].get("label")) if slot in by_slot else None
+            claims.setdefault(min(fill, key=lambda n: (-fill[n], n)), []).append(i)  # ties: the slower lane
+    for n, claimants in claims.items():
+        keeper = min(claimants, key=lambda i: (-fills[i][n], i))  # two branches never share a lane
+        branches[keeper].slot = lanes[n].get("slot")  # identity.json's: an Other lane gives an Other branch
+        branches[keeper].lane = str(lanes[n].get("label"))
     bands = fingerprint_bands(identity or {})
     weights = [[0.0] * len(nodes) for _ in bands]
     for row in rows:

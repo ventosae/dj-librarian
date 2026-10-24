@@ -16,6 +16,20 @@ Status: early (0.1.0, unreleased). Windows is the tested platform. macOS is port
 
 The full rules are in [CLAUDE.md](CLAUDE.md) and [docs/requirements.md](docs/requirements.md).
 
+## Try it before the release
+
+Until the first release, a tester runs the plugin from a zip. This is Door 1: no clone and no install beyond the zip, about 15 minutes to your first report.
+
+1. Get the zip. Build it in a clone with `uv run python scripts/build_plugin_zip.py` (it writes `dist/dj-librarian-plugin-<version>.zip`), or, once a version is tagged, ask the maintainer for the one on the draft GitHub release (only maintainers see a draft).
+2. In the Claude app: **Customize → Plugins → Add → Upload plugin**, and pick the zip.
+3. Open a new Cowork task and say "start". Door 1 runs in Cowork: an ordinary chat cannot connect a folder.
+4. Three moves from you: say Mac or Windows, export your collection from rekordbox (File → Export Collection in xml format), connect a folder in Cowork (a new one called `dj-library`) and drop the XML into it.
+5. About 5 minutes later the report is in `reports/<date>-library.html`: who you are as a DJ, how your library is built, two or three ways to rebuild it. Pick one and you see the new tree first; after your yes you get `proposals/<slug>.xml` to import in rekordbox yourself.
+
+rekordbox is never touched: Door 1 reads a copy of your export, and you do the import. Crate me and Style Barber run from the zip too. If the upload refuses the zip, build it again with `--flat` (the plugin at the zip's root; which layout the upload wants is still open, Q-21).
+
+The engine is not in the zip: live reads of your rekordbox database (My Tags), Spotify and `dj tidy` on your audio files need a clone of this repo and `uv`. Say "set me up" after the report and the engine card ([plugin/skills/dj-start/engine.md](plugin/skills/dj-start/engine.md), about 10 minutes) walks you through it; the details per OS are in [The engine on Windows and macOS](#the-engine-on-windows-and-macos).
+
 ## Install
 
 You need [uv](https://docs.astral.sh/uv/) and rekordbox 7.
@@ -74,7 +88,7 @@ Your own configuration is gitignored. `links.yaml` belongs in your dj-library fo
 
 ## Claude plugin
 
-The plugin adds twelve skills (see `plugin/skills/`) and an MCP server with a fixed list of `dj` tools. A DJ starts with **dj-start** ("set me up"): it sets up the dj-library folder from a rekordbox XML export and writes the first report. Read tools and write tools are separate, so you can leave every write tool on "ask every time"; which tool is which: [docs/permissions.md](docs/permissions.md). In Claude Code the plugin also brings a PreToolUse hook (`plugin/hooks/`) that denies a write tool called without a `preview_id`.
+The plugin adds twelve skills (see `plugin/skills/`) and an MCP server with a fixed list of `dj` tools. A DJ starts with **dj-start** ("start"): it sets up the dj-library folder from a rekordbox XML export and writes the first report. Read tools and write tools are separate, so you can leave every write tool on "ask every time"; which tool is which: [docs/permissions.md](docs/permissions.md). In Claude Code the plugin also brings a PreToolUse hook (`plugin/hooks/`) that denies a write tool called without a `preview_id`.
 
 The plugin starts its MCP server from the folder above the plugin folder (`uv run --directory <plugin folder>/..`), so it works only while the plugin runs from your clone, after `uv sync` there.
 
