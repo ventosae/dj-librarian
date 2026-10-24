@@ -1,14 +1,12 @@
-"""The plugin's manifest and how it starts the engine (W-34, D-28, Q-31; replaces W-30's `uv path`
-option, Q-25).
+"""The plugin's manifest and how the engine reaches a DJ (W-35, D-29; replaces W-34's bundle in the
+plugin and W-30's `uv path` option).
 
-plugin.json names the engine bundle, `"mcpServers": "./engine.mcpb"` (a build product of
-scripts/build_mcpb.py --plugin, gitignored, inside the plugin zip by default), and declares no
-userConfig: the bundle carries its own settings (mcpb/manifest.json's user_config), which the
-host asks for when it loads the bundle. The old `.mcp.json` (`uv run --directory
-${CLAUDE_PLUGIN_ROOT}/..`, which needed a clone) and the `uv path` option are gone. The write-gate
-hook still starts a bare `uv` (a known gap, logged with Q-31). `claude plugin validate --strict`
-(2.1.299) checks every `${user_config.KEY}` against the declared keys; CI builds the bundle and
-then runs it.
+plugin.json names no MCP server and declares no userConfig: `/dj-librarian:install` copies the
+engine's source (plugin/engine/ in the zip) to ~/dj-librarian and registers it in Claude
+Desktop's config; the `.mcpb` is a standalone fallback, not in the plugin. The old `.mcp.json`
+(`uv run --directory ${CLAUDE_PLUGIN_ROOT}/..`) and the `uv path` option stay gone. The write-gate
+hook still starts a bare `uv` (logged with Q-31). `claude plugin validate --strict` checks every
+`${user_config.KEY}` against the declared keys.
 """
 
 from __future__ import annotations
@@ -31,8 +29,8 @@ def _json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_plugin_json_names_the_engine_bundle():
-    assert _json(PLUGIN_JSON)["mcpServers"] == "./engine.mcpb"
+def test_plugin_json_names_no_mcp_server():
+    assert "mcpServers" not in _json(PLUGIN_JSON)  # the install command registers the engine (D-29)
 
 
 def test_plugin_json_declares_no_options():
@@ -71,7 +69,7 @@ def test_the_hook_keeps_a_bare_uv():
 
 
 def test_the_engine_bundle_in_plugin_is_never_tracked():
-    """plugin/engine.mcpb is built, not committed: the zip and CI build it fresh."""
+    """plugin/engine.mcpb is never committed (an older layout, W-34)."""
     if shutil.which("git") is None or not (REPO / ".git").exists():
         pytest.skip("not a git checkout")
     done = subprocess.run(["git", "-C", str(REPO), "ls-files", "--", "plugin/engine.mcpb", "plugin/.mcpb-cache"],

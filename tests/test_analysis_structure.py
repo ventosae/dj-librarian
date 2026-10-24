@@ -871,7 +871,7 @@ def test_script_shim_points_at_the_repo_src():
     assert (SCRIPT.resolve().parents[4] / "src" / "dj" / "analysis" / "structure.py").is_file()
     text = SCRIPT.read_text(encoding="utf-8")
     assert "    import dj  # noqa: F401\n" in text  # an importable dj first (engine venv or PyPI)
-    assert '(_here / "../../../../src", _here / "../../../vendor")' in text  # then the clone, then the zip (D-22)
+    assert '(_here / "../../../../src", _here / "../../../engine/src")' in text  # then the clone, then the zip (D-29)
 
 
 def test_script_runs_without_the_engine_packages(folder):

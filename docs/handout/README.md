@@ -8,7 +8,7 @@ to say on the back.
 | `dj-librarian-a6.html` | The source: two A6 pages. The page size comes from its CSS, `@page { size: 105mm 148mm; margin: 0; }`. |
 | `fonts.css` | The fonts, embedded as base64 WOFF2 so the card renders offline: Bangers, Comic Neue (regular and bold) and Patrick Hand, all from Google Fonts under the SIL Open Font License 1.1 (openfontlicense.org). The OFL lets you embed and redistribute them; it does not let you sell the fonts on their own. |
 | `dj-librarian-a6.pdf` | The print file, 2 pages of 105 × 148 mm. |
-| `preview-front.png`, `preview-back.png` | Each page as an image at 3× (1191 × 1678 px). |
+| `preview-front.png`, `preview-back.png` | Each page as an image at 3× (1191 × 1678 px), for looking at a change. Rendered locally with the commands below and gitignored, not committed (W-35). |
 
 Change the HTML, then re-render all three outputs and look at both PNGs: no text may run out of
 its panel, bubble or box, and the PDF must still have 2 pages.

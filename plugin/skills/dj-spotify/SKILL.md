@@ -26,15 +26,15 @@ Show the DJ this card, one step at a time. Wait for "done" before the next step.
    description: anything. Redirect URI, exactly: `http://127.0.0.1:8888/callback`
    (`127.0.0.1`, not `localhost`). Tick **Web API**. Save, then open the app's Settings: the
    Client ID is shown, the Client Secret sits behind "View client secret".
-3. **Two keys into the engine settings (2 min).** Open the engine settings, the same form the
-   engine card pointed the folder at (Claude desktop app: Settings > Extensions > dj-librarian
-   engine), paste the Client ID into **Spotify client ID** and the secret into **Spotify client
-   secret**, save. No terminal, no file to edit.
+3. **Two keys where the engine reads them (2 min).** Engine from `/dj-librarian:install`: a text
+   file named `.env` in the engine folder (`dj-librarian` in the home folder, never the synced
+   dj-library folder) with two lines, `SPOTIFY_CLIENT_ID=` and
+   `SPOTIFY_CLIENT_SECRET=`, each followed by its key (`examples/.env.example` shows it). Engine
+   as the desktop extension: its settings form (Settings > Extensions > dj-librarian engine),
+   **Spotify client ID** and **Spotify client secret**, save. No terminal.
 
-   The keys go into that form only. Never into the chat. In a clone of the repo (developers,
-   and Claude Code, which does not start the engine from the plugin yet, Q-31) they go into
-   `.env` instead, after `SPOTIFY_CLIENT_ID=` and `SPOTIFY_CLIENT_SECRET=`, as
-   `examples/.env.example` shows.
+   The keys go there only. Never into the chat. In a clone of the repo (developers) the repo's
+   `.env` works too.
 4. **One link (1 min).** In `links.yaml` in their dj-library folder, one entry: `spotify:` the
    name of a Spotify playlist they own (their inbox), `crate:` the path of a normal rekordbox
    playlist that already exists (for example `house_base/0_INBOX`).

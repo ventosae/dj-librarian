@@ -46,11 +46,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-`plugin.json` points its MCP server at `./engine.mcpb`, a build product git ignores. Build it into the plugin before you validate, or both validate commands fail with `Path not found: ./engine.mcpb`:
-
-```bash
-uv run python scripts/build_mcpb.py --plugin
-```
+Validate the plugin and the marketplace:
 
 ```bash
 claude plugin validate ./plugin --strict
@@ -60,7 +56,7 @@ claude plugin validate ./plugin --strict
 claude plugin validate .
 ```
 
-Then remove `plugin/engine.mcpb` again (and a `plugin/.mcpb-cache/` if Claude Code made one), so nobody tests against a stale engine. `uv run python scripts/build_mcpb.py --smoke` also starts the built engine with the command and env `mcpb/manifest.json` gives a host, and compares its tools with the manifest's.
+`uv run python scripts/build_mcpb.py --smoke` builds the standalone engine bundle and starts it with the command and env `mcpb/manifest.json` gives a host, and compares its tools with the manifest's.
 
 `tests/conftest.py` blocks the real rekordbox database and all network sockets. No test may open a real database or an audio file outside `tmp_path`. After any pyrekordbox upgrade, run `tests/test_contract.py` before any write.
 
@@ -71,7 +67,7 @@ Then remove `plugin/engine.mcpb` again (and a `plugin/.mcpb-cache/` if Claude Co
 - **Every PR cites the requirement ids it satisfies** (`R-…`, `NFR-…`, `C-…`) from [docs/requirements.md](docs/requirements.md). A change with no requirement starts as an issue.
 - Update [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`.
 - The versions in `pyproject.toml`, `plugin/.claude-plugin/plugin.json` and `mcpb/manifest.json` stay equal (`scripts/build_mcpb.py` refuses to build otherwise).
-- Run `uv run python scripts/build_mcpb.py --plugin`, then `claude plugin validate ./plugin --strict`, before opening a PR that touches `plugin/` or `mcpb/`.
+- Run `claude plugin validate ./plugin --strict` before opening a PR that touches `plugin/`, and `uv run python scripts/build_mcpb.py --smoke` for one that touches `mcpb/`.
 
 ## Writes: the safety rule
 

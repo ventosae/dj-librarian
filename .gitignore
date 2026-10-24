@@ -48,12 +48,15 @@ local/
 # Claude Code local settings
 .claude/settings.local.json
 
-# Plugin caches, and the core scripts/build_plugin_zip.py vendors into the zip only (D-22).
-# plugin/engine.mcpb is the engine bundle scripts/build_mcpb.py --plugin writes (W-34); Claude
-# Code extracts a plugin's bundle into .mcpb-cache/.
+# Plugin caches. plugin/engine/ is the engine copy scripts/build_plugin_zip.py puts in the zip only
+# (D-29); vendor/ and engine.mcpb are older layouts (D-22, W-34) a local build may have left.
 .mcpb-cache/
+/plugin/engine/
 /plugin/vendor/
 /plugin/engine.mcpb
+# Rendered locally, not tracked (W-35): the handout previews and the R-409 copy of the Booth shot
+/docs/handout/preview-*.png
+/docs/samples/report.png
 
 # OS / editors
 .DS_Store

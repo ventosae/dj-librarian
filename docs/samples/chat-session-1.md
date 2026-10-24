@@ -59,7 +59,7 @@ Task list, each item ticked off as it finishes:
 ```text
 Step 5 of 6 · about 5 minutes to read. Your report: reports/2026-10-20-library.html
 Step 6 of 6 · under 2 minutes. Pick one below: I show you the new tree before anything gets written.
-The XML has no My Tags or play history; the engine reads your My Tags. The engine is already in: say set me up and point me at your dj-library folder.
+The XML has no My Tags or play history; the engine reads your My Tags. To add it: in the Code tab type /dj-librarian:install and click Allow, then say set me up.
 ```
 
 File card:

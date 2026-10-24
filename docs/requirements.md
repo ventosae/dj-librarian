@@ -54,7 +54,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | ID | Requirement | Pri | Acceptance | Status | Release |
 |---|---|---|---|---|---|
 | R-101 | Ask the DJ's device (Mac / Windows) first, as chips, and branch every later step on it. | M | First reply asks device; later steps show only that OS. | Built | v0.1 |
-| R-102 | Engine install (MCP on the DJ's machine) is offered **after** the first report, when a feature needs it; numbered steps per OS, ≤ 10 min; `dj_status` as the proof. | M | Dijok completes it without Anton; `dj_status` answers. | Agreed | v0.1 |
+| R-102 | Engine install (MCP on the DJ's machine) is offered **after** the first report, when a feature needs it; `/dj-librarian:install` in Claude Code, the DJ clicking Allow (D-29), ≤ 10 min; `dj_status` as the proof. | M | Dijok completes it without Anton; `dj_status` answers. | Agreed | v0.1 |
 | R-103 | Guide the DJ to connect a `dj-library/` folder in Cowork and scaffold it (R-901). | M | Scaffold exists; `library.yaml` records device, rekordbox version, date. | Built | v0.1 |
 | R-104 | **First-contact input is the rekordbox XML export** (File → Export Collection in xml format), guided by a 3-step card, dropped into the connected folder. | M | Analysis + report run on the XML alone. | Built | v0.1 |
 | R-105 | Onboarding states time estimates and progress ("Step 2 of 6") on every turn. | M | Every onboarding reply has both. | Built | v0.1 |
@@ -97,7 +97,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-406 | Section 4: one next action under two minutes. | M | Present. | Built | v0.1 |
 | R-407 | Report written in the voice (R-1001) and passes the ADHD rules (R-1002). | M | Checklists pass. | Built | v0.1 |
 | R-408 | Visual design per `docs/design.md`: tokens on `:root`, dark and light selected (not flipped), fixed categorical order, thin marks, direct labels, one axis, legend for ≥ 2 series, hover tooltips, a table-view link (the MD files) for every chart. | M | `scripts/check_palette.py` passes; design checklist in the PR. | Built | v0.1 |
-| R-409 | A rendered screenshot of the sample report (`docs/samples/report.png`, ≥ 1100 px wide, full page) is committed with every report change for the PM's eyeball pass. | M | PNG present and current. | Built | v0.1 |
+| R-409 | A rendered screenshot of the sample report (`docs/samples/report-booth.png` and `report-day.png`, ≥ 1100 px wide, full page) is committed with every report change for the PM's eyeball pass. | M | PNG present and current. | Built | v0.1 |
 
 ### E5 Build a structure (`dj-build`)
 
@@ -174,7 +174,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-1204 | `README`, `CONTRIBUTING`, `LICENSE` (Apache-2.0, D-12), `examples/.env.example`, `examples/*.example.yaml`. | M | A stranger installs from README. | Built | v0.1 |
 | R-1205 | Issues are the backlog; plan.md "Later" items become issues. | M | Issues created on first push. | Agreed | v0.1 |
 | R-1206 | Personal data removed: STATE.md, log.md, CRATES.md, links.yaml, tidy.yaml, bases.yaml, tree.yaml, tracklists/, wishlist/, Claude outputs/, settings.local.json ignored in place; "Anton" out of code, tool descriptions, skills, tests, README; paths parameterised. | M | `git grep -il anton -- src tests plugin README.md CONTRIBUTING.md examples` finds nothing. | Built | v0.1 |
-| R-1207 | Plugin layout: `plugin/.claude-plugin/plugin.json`, repo-root `.claude-plugin/marketplace.json` (source `./plugin`), `plugin/skills/`, `plugin/engine.mcpb` (built by `scripts/build_mcpb.py`, named in `plugin.json` `mcpServers`), `plugin/hooks/hooks.json`; no `bin/` (Cowork refuses it). | M | `claude plugin validate ./plugin --strict` passes. | Built | v0.1 |
+| R-1207 | Plugin layout: `plugin/.claude-plugin/plugin.json`, repo-root `.claude-plugin/marketplace.json` (source `./plugin`), `plugin/skills/`, `plugin/commands/` (install, uninstall), `plugin/hooks/hooks.json`; the zip adds `plugin/engine/` (the core, D-29); no `bin/` (Cowork refuses it). | M | `claude plugin validate ./plugin --strict` passes. | Built | v0.1 |
 
 ### E13 Platforms
 

@@ -761,15 +761,15 @@ def _log_text(slug: str, counts: dict[str, int], xml_file: str, now: datetime | 
 
 def product_version() -> str:
     """dj-librarian's version for the XML's PRODUCT line: the installed package, else the
-    clone's pyproject.toml, else the plugin's plugin.json (the core vendored in the plugin zip
-    sits in `<plugin>/vendor/dj/`, D-22)."""
+    pyproject.toml above the package (a clone, or `<plugin>/engine/` in the plugin zip, D-29), else
+    the plugin's plugin.json (`<plugin>/.claude-plugin/`, one folder up from engine/)."""
     from importlib import metadata
 
     try:
         return metadata.version("dj-librarian")
     except metadata.PackageNotFoundError:
         pass
-    above = Path(__file__).resolve().parents[2]  # the clone, or the plugin folder
+    above = Path(__file__).resolve().parents[2]  # the clone, or <plugin>/engine in the zip
     try:
         import tomllib  # Python 3.11+; Cowork's sandbox may run 3.10
 
@@ -777,11 +777,13 @@ def product_version() -> str:
         return str(tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"])
     except (ImportError, OSError, KeyError, ValueError):
         pass
-    try:
-        manifest = json.loads((above / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        return str(manifest["version"])
-    except (OSError, KeyError, TypeError, ValueError):
-        return "unknown"
+    for folder in (above, above.parent):
+        try:
+            manifest = json.loads((folder / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+            return str(manifest["version"])
+        except (OSError, KeyError, TypeError, ValueError):
+            continue
+    return "unknown"
 
 
 def apply(

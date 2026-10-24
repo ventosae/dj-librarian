@@ -1,11 +1,12 @@
 # Engine set-up (M1)
 
 The engine is the dj-librarian MCP server, running on the DJ's own computer. It reads rekordbox's
-live database (My Tags, play counts) and runs Spotify and `dj tidy`. It comes inside the plugin
-zip, or on its own as `dj-librarian-engine-<version>.mcpb`. The Claude app brings the Python it
-needs, so the DJ installs nothing and never opens a terminal. One card, about 3 minutes, then
-`dj_status` as the proof (R-102, R-1101, R-1105). Whether the engine starts from inside the plugin
-zip is unverified until it has run once (Q-31); the `.mcpb` is the fallback.
+live database (My Tags, play counts) and runs Spotify and `dj tidy`. The plugin zip carries its
+source; `/dj-librarian:install`, typed in the Code tab of the Claude desktop app, installs it while
+the DJ clicks Allow on each step (D-29). The DJ types nothing else and opens no terminal of their
+own. One card, about 5 minutes, then `dj_status` as the proof (R-102, R-1101, R-1105). The command
+is unverified on a Mac until it has run there (Q-32); the second route is the
+`dj-librarian-engine-<version>.mcpb` desktop extension (Q-31).
 
 **Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by
 [shared/adhd.md](../../shared/adhd.md), and run its pre-send checklist before each reply.
@@ -20,46 +21,36 @@ zip is unverified until it has run once (Q-31); the `.mcpb` is the fallback.
 
 ## The card
 
-One card for Mac and Windows, in the Claude desktop app and in Cowork. Replace `<engine settings>`
-with the row below for how the engine came in before you send it: inside the plugin zip unless the
-DJ says they installed the `.mcpb`.
+One card for Mac and Windows. The command is the DJ's to type: it never runs on its own.
 
 ```text
-Step 1 of 2 · about 3 minutes. The engine is already in. Point it at your folder, then I check it works:
-1. Open <engine settings> and pick your dj-library folder there, the one you connected in Cowork (library.yaml is in it). Leave Power mode off.
-2. Spotify client ID and secret: paste them into the same form if you have them, or leave both empty.
-3. In the dj-librarian tool permissions, set every tool whose name ends in _apply, _write or _undo to Ask every time (9 tools). Read tools can stay on Allow.
-Say done once the form is saved (under a minute).
+Step 1 of 2 · about 5 minutes. The engine installs from Claude Code; you click Allow:
+1. In the Claude desktop app, open the Code tab and type /dj-librarian:install.
+2. Click Allow on each step. When it asks for your dj-library folder, drag that folder in (library.yaml is in it).
+3. Restart Claude, then in Customize > Connectors > dj-librarian set every tool whose name ends in _apply, _write or _undo to Ask every time (9 tools).
+Say set me up in a new Cowork task when Claude is back (under a minute).
 ```
 
-| How the engine came in | `<engine settings>` |
-|---|---|
-| Inside the plugin zip | Settings > Extensions > dj-librarian engine (not there? say so) |
-| The `.mcpb` on its own | Settings > Extensions > dj-librarian engine |
+The DJ gives the folder by dragging it in, or by its path on their computer. Never send them a path
+you see in Cowork: that is where Cowork mounts the folder, not a path on their computer.
 
-Where a plugin's own engine settings show is unverified (Q-31): Settings > Extensions is where the
-fallback puts them, hence "not there? say so". Not there: the fallback under The proof.
+The 9 write tools are dj_tree_apply, dj_apply_write, dj_copy_apply, dj_push_apply, dj_build_apply,
+dj_tidy_apply, dj_tidy_undo, dj_structure_write and dj_crate_write. Read tools can stay on Allow.
 
-The DJ picks the folder in the form by its name. Never send them a path you see in Cowork: that is
-where Cowork mounts the folder, not a path on their computer.
+Spotify keys: with the install command they go in a `.env` file in the engine folder (`dj-librarian`
+in the home folder, never the dj-library folder, which may sync); with the
+desktop extension, in its settings form (dj-library folder, Spotify client ID, Spotify client secret,
+Power mode (Windows)). Never into the chat; dj-spotify's card sets up the Spotify app.
 
-Claude Code: send no card. Claude Code 2.1.299 does not start this engine from the plugin (Q-31).
-Say so in one line; the report, builds and crates keep running on the XML.
-
-The form has four fields: dj-library folder (required), Spotify client ID, Spotify client secret
-(both optional) and Power mode (Windows), off by default. Spotify keys go into that form only,
-never into the chat or a `.env`; dj-spotify's card sets up the Spotify app. The 9 write tools are
-dj_tree_apply, dj_apply_write, dj_copy_apply, dj_push_apply, dj_build_apply, dj_tidy_apply,
-dj_tidy_undo, dj_structure_write and dj_crate_write.
-
-The engine keeps its state in the dj-library folder, under `.cache/engine/` (preview records, the
-master.db backups), so an update of the engine loses nothing. The Spotify token stays on the
-computer, in `.dj-librarian/.cache/` in the home folder, never in the dj-library folder.
+State: with the install command the engine keeps its state in its own folder (`dj-librarian` in the
+home folder: preview records, master.db backups, the Spotify token), and a new install backs that
+folder up first. The desktop extension keeps it in the dj-library folder under `.cache/engine/`,
+the Spotify token in `.dj-librarian/.cache/` in the home folder.
 
 ## The proof
 
-When the DJ says done, call `dj_status`. The engine works when it answers with `tracks`. One line,
-the number from the tool:
+When the DJ says set me up again, call `dj_status`. The engine works when it answers with `tracks`.
+One line, the number from the tool:
 
 ```text
 Step 2 of 2 · under a minute. Engine on: dj_status read <tracks> tracks live from your rekordbox.
@@ -68,15 +59,16 @@ Next: say what you wanted it for, My Tags, Spotify or tidy (under a minute).
 
 When it fails, one matter-of-fact line and the fix, then wait:
 
-- No `dj_status` tool after done: the form is not saved (the engine starts only once the dj-library folder is set), or new tools show only in a new task. Saved: the DJ opens a new Cowork task (or restarts Claude) and says set me up there. Still nothing: the fallback. The DJ gets `dj-librarian-engine-<version>.mcpb` from the release or from whoever is testing with them, drags it onto Settings > Extensions in the Claude desktop app, clicks Install, fills the same form and says set me up in a new Cowork task.
-- The settings are not under Settings > Extensions: the engine came inside the plugin and this Claude shows its settings elsewhere or not at all (Q-31), or the plugin is the light zip without the engine. The fallback above puts them there.
-- `dj_status` says there is no library folder, or not a dj-library: the form points nowhere or at the wrong folder. Open <engine settings>, pick the folder that holds `library.yaml`, say done.
-- `master.db not found`: rekordbox 7 has not run on this computer yet, or keeps its database elsewhere. Open rekordbox once, close it, say done. Still not found: say so plainly; the XML route keeps working.
+- No `dj_status` tool: the install did not finish, or Claude was not restarted. Restart Claude and say set me up in a new Cowork task. Still nothing: type /dj-librarian:install in the Code tab again; it stops at the step that fails and shows one line.
+- The command stopped with an error line: the DJ sends that line to whoever gave them the plugin. Meanwhile the second route: drag `dj-librarian-engine-<version>.mcpb` (from the release or from whoever is testing with them) onto Settings > Extensions, click Install, fill the form, say set me up in a new Cowork task (Q-31).
+- `dj_status` says there is no library folder, or not a dj-library: type /dj-librarian:install again and give the folder that holds `library.yaml` (the extension: pick it in its settings form).
+- Claude Code knows no /dj-librarian:install: the plugin is the light zip. Upload `dj-librarian-plugin-<version>.zip` (Customize > Plugins), then type the command again.
+- `master.db not found`: rekordbox 7 has not run on this computer yet, or keeps its database elsewhere. Open rekordbox once, close it, say set me up. Still not found: say so plainly; the XML route keeps working.
 
 ## The gates
 
 Every write goes preview first, then the DJ's explicit yes, then the write tool with the preview's
 `preview_id`. Two gates hold that even if a chat gets it wrong: "Ask every time" on each write tool,
-and the XML the DJ imports by hand. Power mode off in the form refuses every master.db write. In
-Claude Code the plugin's hook also denies a write tool called without a `preview_id`. The full tool
-list with the setting for each is `docs/permissions.md` in the repo.
+and the XML the DJ imports by hand. Master.db writes also need power mode (Windows only). In Claude
+Code the plugin's hook also denies a write tool called without a `preview_id`. The full tool list
+with the setting for each is `docs/permissions.md` in the repo.

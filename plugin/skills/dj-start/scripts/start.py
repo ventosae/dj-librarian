@@ -23,11 +23,11 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-try:  # the dj core, in this order (D-22): importable (engine venv or PyPI), a clone, the plugin zip
+try:  # the dj core, in this order (D-29): importable (engine venv or PyPI), a clone, the plugin zip
     import dj  # noqa: F401
-except ImportError:  # a clone of the repo keeps it in ../../../../src, the plugin zip in ../../../vendor
+except ImportError:  # a clone of the repo keeps it in ../../../../src, the plugin zip in ../../../engine/src
     _here = Path(__file__).resolve().parent
-    for _core in (_here / "../../../../src", _here / "../../../vendor"):
+    for _core in (_here / "../../../../src", _here / "../../../engine/src"):
         if (_core / "dj" / "__init__.py").is_file():
             sys.path.insert(0, str(_core.resolve()))
             break

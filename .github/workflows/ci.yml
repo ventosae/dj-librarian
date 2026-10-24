@@ -48,15 +48,11 @@ jobs:
           node-version: "22"
       - name: Install Claude Code
         run: npm i -g @anthropic-ai/claude-code
-      # `claude plugin validate` only checks that ./engine.mcpb exists. The official MCPB CLI checks
-      # the manifest against the strict 0.4 schema the host installs it with (the pin is
+      # The engine bundle (the standalone fallback, not in the plugin): the official MCPB CLI checks
+      # its manifest against the strict 0.4 schema the host installs it with (the pin is
       # scripts/build_mcpb.py's MCPB_CLI).
       - name: Check the engine manifest (MCPB schema)
         run: npx --yes @anthropic-ai/mcpb@2.1.2 validate mcpb/manifest.json
-      # plugin.json's mcpServers names ./engine.mcpb, a build product (gitignored, W-34): build it
-      # first. Standard library only, so the runner's python3 is enough.
-      - name: Build the engine into the plugin
-        run: python3 scripts/build_mcpb.py --plugin
       - name: Validate plugin
         run: claude plugin validate ./plugin --strict
       - name: Validate marketplace

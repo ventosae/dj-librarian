@@ -26,7 +26,7 @@ What it does, start to end, in a temporary folder (deleted afterwards):
    a placeholder left unfilled stops the script).
 4. Screenshots with headless Microsoft Edge (skipped with a message when Edge is not installed,
    or with --no-screenshots): the full page at 1100 px wide in both themes through the URL hash,
-   `#booth` -> report-booth.png (and its copy report.png, R-409), `#day` -> report-day.png; and a
+   `#booth` -> report-booth.png, `#day` -> report-day.png (the two R-409 names); and a
    390 px wide Booth screenshot for reviewers, outside the repo (--phone, default: the system
    temp folder). Edge renders into a tall window (--height); Pillow then cuts the rows of plain
    page background below the end of the page. The command, for one theme:
@@ -72,7 +72,6 @@ START_SKILL = SKILLS / "dj-start" / "SKILL.md"
 DEVICE = "windows"
 EXPORT_NAME = "collection.xml"  # the name dj-start's export card (step 2) gives the file
 SHOTS = {"booth": "report-booth.png", "day": "report-day.png"}
-R409 = "report.png"  # the screenshot R-409 names: a copy of the Booth one
 WIDTH, PHONE_WIDTH = 1100, 390
 HEIGHT = 7000  # the window height of the full-page shots; a page that reaches it is cut
 LINER_MAX_WORDS = 120
@@ -467,8 +466,6 @@ def screenshots(out: Path, phone: Path, height: int) -> list[Path]:
             png = out / name
             shoot(edge, page, png, width=WIDTH, height=height, theme=theme, profile=Path(profile))
             written.append(png)
-        shutil.copyfile(out / SHOTS["booth"], out / R409)
-        written.append(out / R409)
         shoot(edge, page, phone, width=PHONE_WIDTH, height=height + 4000, theme="booth", profile=Path(profile))
         written.append(phone)
     return written

@@ -7,6 +7,5 @@
   },
   "license": "Apache-2.0",
   "repository": "https://github.com/OWNER/dj-librarian",
-  "keywords": ["rekordbox", "dj", "spotify", "playlists", "music-library", "id3", "mcp"],
-  "mcpServers": "./engine.mcpb"
+  "keywords": ["rekordbox", "dj", "spotify", "playlists", "music-library", "id3", "mcp"]
 }

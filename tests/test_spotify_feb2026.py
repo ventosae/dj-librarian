@@ -359,15 +359,15 @@ def test_the_setup_card_matches_what_the_code_needs():
     assert [n for n, _ in steps] == ["1", "2", "3", "4", "5"]
     titles = [title for _, title in steps]
     assert titles[0].startswith("Premium") and titles[1].startswith("Your own app")
-    assert titles[2].startswith("Two keys into the engine settings") and titles[4].startswith("Proof")
+    assert titles[2].startswith("Two keys where the engine reads them") and titles[4].startswith("Proof")
     form = " ".join(card.split())
     assert "Settings > Extensions > dj-librarian engine" in form
-    # Claude Code 2.1.299 refuses the `uv` bundle inside a plugin (Q-31): no Configure page to send a DJ to.
-    assert "Configure" not in text and "Claude Code, which does not start the engine from the plugin yet, Q-31" in form
+    # W-35: the install command's engine reads `.env` in the dj-library folder; the extension, its form.
+    assert "Configure" not in text and "Engine from `/dj-librarian:install`: a text file named `.env` in the engine folder" in form
     assert "**Spotify client ID**" in form and "**Spotify client secret**" in form
     for terminal in ("Terminal", "PowerShell", "cp examples", "Copy-Item", "notepad", "open -e"):
         assert terminal not in card, terminal
-    assert "In a clone of the repo (developers," in form
+    assert "In a clone of the repo (developers) the repo's `.env` works too." in form
     assert f"`{spotify.REDIRECT}`" in card and "not `localhost`" in card
     for key in ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET"):
         assert f"`{key}=`" in card

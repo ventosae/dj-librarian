@@ -4,8 +4,8 @@ The manifest is server type `uv` (the host provides Python and the dependencies)
 `dj-librarian` (so tool names and the write-gate matcher stay as they are), passes the four
 settings to the engine as env, and lists exactly the tools the server registers. The manifest
 check is as strict as the MCPB 0.4 schema. The build is a zip with manifest.json at its root and
-nothing beyond the allowlist: the same bytes every time, written to plugin/engine.mcpb only when
-asked (tests use tmp copies). `--smoke` (handshake) is tested against a fake server bundle; the
+nothing beyond the allowlist: the same bytes every time; it is the standalone fallback, not
+in the plugin (D-29). `--smoke` (handshake) is tested against a fake server bundle; the
 real bundle starts only with DJ_MCPB_SMOKE=1 and uv on PATH, from uv's cache (UV_OFFLINE), and CI
 starts it in the plugin job. Nothing touches the network.
 """
@@ -320,30 +320,6 @@ def test_nothing_personal_in_the_bundle(built):
                     assert allowed, (name, line)
 
 
-def test_plugin_writes_engine_mcpb_into_the_given_folder_only(bm, built, tmp_path):
-    real = REPO / "plugin" / "engine.mcpb"
-    before = real.read_bytes() if real.exists() else None
-    plugin = tmp_path / "plugin"
-    shutil.copytree(REPO / "plugin" / ".claude-plugin", plugin / ".claude-plugin")
-    result = bm.build(tmp_path / "out", plugin_dir=plugin)
-    _first, path = built
-    assert (plugin / "engine.mcpb").read_bytes() == path.read_bytes()
-    assert result["plugin"].endswith("plugin/engine.mcpb")
-    assert (real.read_bytes() if real.exists() else None) == before  # the real plugin/ untouched
-
-
-def test_main_with_plugin_uses_the_plugin_folder(bm, built, tmp_path, monkeypatch, capsys):
-    real = REPO / "plugin" / "engine.mcpb"
-    before = real.exists()
-    monkeypatch.setattr(bm, "PLUGIN", tmp_path / "plugin")
-    assert bm.main(["--out", str(tmp_path / "out"), "--plugin"]) == 0
-    out = json.loads(capsys.readouterr().out)
-    assert set(out) == {"path", "size", "files", "version", "plugin"}
-    assert (tmp_path / "plugin" / "engine.mcpb").is_file()
-    assert out["size"] == (tmp_path / "out" / f"dj-librarian-engine-{_version()}.mcpb").stat().st_size
-    assert real.exists() == before
-
-
 def test_main_prints_one_json_error_and_exits_1(bm, tmp_path, monkeypatch, capsys):
     def refuse(*_a, **_k):
         raise bm.BuildError("no good")
@@ -446,8 +422,8 @@ def test_a_bad_manifest_stops_the_build_before_anything_is_written(bm, tmp_path)
     data["server"]["type"] = "python"
     (repo / "mcpb" / "manifest.json").write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(bm.BuildError, match="server.type must be 'uv'"):
-        bm.build(tmp_path / "out", repo=repo, plugin_dir=tmp_path / "plugin")
-    assert not (tmp_path / "out").exists() and not (tmp_path / "plugin").exists()
+        bm.build(tmp_path / "out", repo=repo)
+    assert not (tmp_path / "out").exists()
 
 
 def test_members_refuse_outside_a_git_checkout(bm, tmp_path, monkeypatch):
@@ -521,17 +497,9 @@ def _ci() -> dict:
     return yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
 
 
-def test_ci_builds_the_engine_into_the_plugin_before_validating():
-    job = _ci()["jobs"]["plugin"]
-    runs = [str(step.get("run", "")) for step in job["steps"]]
-    build = next(i for i, run in enumerate(runs) if run.strip() == "python3 scripts/build_mcpb.py --plugin")
-    validate = next(i for i, run in enumerate(runs) if "claude plugin validate ./plugin --strict" in run)
-    assert build < validate
-
-
 def test_ci_checks_the_manifest_with_the_pinned_official_cli(bm):
-    """`claude plugin validate` only checks that ./engine.mcpb exists; the MCPB CLI checks the
-    manifest against the schema the host installs it with. The same pin as --npx."""
+    """The bundle is the standalone fallback (D-29): the MCPB CLI checks its manifest against the
+    schema the host installs it with. The same pin as --npx."""
     job = _ci()["jobs"]["plugin"]
     runs = [str(step.get("run", "")).strip() for step in job["steps"]]
     assert f"npx --yes {bm.MCPB_CLI} validate mcpb/manifest.json" in runs
@@ -659,8 +627,8 @@ def test_build_with_smoke_starts_the_bundle_before_writing(bm, built, tmp_path, 
 
     monkeypatch.setattr(bm, "handshake", refuse)
     with pytest.raises(bm.BuildError):
-        bm.build(tmp_path / "bad", plugin_dir=tmp_path / "plugin", smoke=True)
-    assert not (tmp_path / "bad").exists() and not (tmp_path / "plugin").exists()
+        bm.build(tmp_path / "bad", smoke=True)
+    assert not (tmp_path / "bad").exists()
 
 
 @pytest.mark.skipif(os.environ.get("DJ_MCPB_SMOKE") != "1" or shutil.which("uv") is None,
@@ -671,3 +639,12 @@ def test_the_built_bundle_starts_and_lists_the_manifests_tools(bm, built, manife
     _result, path = built
     out = bm.handshake(path.read_bytes(), offline=True)
     assert out["tools"] == len(manifest["tools"]) and out["server"]["name"] == "dj-librarian"
+
+
+def test_there_is_no_plugin_flag_any_more(bm):
+    """D-29: the plugin zip carries the engine's source, not the bundle, so nothing writes
+    plugin/engine.mcpb and the CI plugin job validates the plugin as it is."""
+    with pytest.raises(SystemExit):
+        bm.main(["--plugin"])
+    runs = [str(step.get("run", "")) for step in _ci()["jobs"]["plugin"]["steps"]]
+    assert not any("--plugin" in run for run in runs)  # the standalone bundle is still smoke-tested

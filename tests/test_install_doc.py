@@ -1,10 +1,10 @@
-"""docs/install.md, the one install doc (W-34 item 5, D-28).
+"""docs/install.md, the one install doc (W-34, W-35; D-28, D-29).
 
-Door 1 is the plugin zip. Door 2 is the engine, with no terminal anywhere: one upload (the plugin
-zip carries the engine; "set me up" points it at the dj-library folder through the engine's
-settings form) and the fallback (the `.mcpb` dragged onto Settings → Extensions). Every write tool
-on Ask every time, the Spotify keys in the settings form, the engine's state under
-`<dj-library>/.cache/engine/`, the light zip for Door 1 only, and an honest status table (Q-31).
+Door 1 is the plugin zip. Door 2 is the engine in three routes, in this order: `/dj-librarian:install`
+in Claude Code (the DJ types one line and clicks Allow; no terminal of their own), the `.mcpb`
+dragged onto Settings → Extensions, and by hand from a clone (developers). Every write tool on Ask
+every time, where the Spotify keys and the state live for each route, the light zip for Door 1 only,
+and an honest status table (Q-31, Q-32).
 """
 
 from __future__ import annotations
@@ -46,63 +46,39 @@ def test_two_doors_and_a_status_table():
     assert "no terminal" in _text().split("\n## ")[0]
 
 
-def test_door_2_holds_no_terminal_command():  # D-28: no clone, no uv, no terminal
-    door2 = _door2()
-    developers = [line for line in door2.split("\n") if line.startswith("Developers:")]
-    assert len(developers) == 1  # the one line that sends a developer elsewhere
-    dj_path = door2.replace(developers[0], "")
-    assert TERMINAL.findall(dj_path) == []
-    assert "```" not in door2  # no command block at all
-    assert "claude_desktop_config.json" not in _text()
+def _routes() -> dict[str, str]:
+    return {title: _flat(body) for title, body in _sections(_door2(), "###").items()}
 
 
-def test_one_upload_set_me_up_and_the_settings_form():
-    one = _flat(_sections(_door2(), "###")["One upload: it's already in"])
-    assert "The Door 1 zip carries the engine" in one
-    assert "Say **set me up** and point Claude at your dj-library folder" in one
+def test_three_routes_in_order_with_no_terminal_for_the_dj():
+    titles = list(_sections(_door2(), "###"))
+    assert titles[:3] == ["1. The install command (first choice)", "2. The desktop extension (second choice)",
+                          "3. By hand (third choice)"]  # fmt: skip
+    for title in titles[:2]:  # the DJ's routes: no command for them to type in a terminal
+        assert TERMINAL.findall(_sections(_door2(), "###")[title]) == [], title
+    assert "```" not in _door2()
+
+
+def test_the_install_command_route():
+    cmd = _routes()["1. The install command (first choice)"]
+    assert "**Code** tab" in cmd and "**`/dj-librarian:install`**" in cmd and "**Allow**" in cmd
+    assert "asks once for your dj-library folder" in cmd and "a backup of the config first" in cmd
+    assert "Restart Claude Desktop" in cmd and "**Customize → Connectors → dj-librarian**" in cmd
+    assert "say **set me up**" in cmd and "`dj_status`" in cmd
+    assert "`/dj-librarian:uninstall`" in cmd and "(Q-32)" in cmd
+
+
+def test_the_desktop_extension_route():
+    ext = _routes()["2. The desktop extension (second choice)"]
+    assert "`dj-librarian-engine-<version>.mcpb`" in ext and "**Settings → Extensions**" in ext and "**Install**" in ext
     for title in FORM.values():
-        assert f"**{title}**" in one, title
-    assert "(required)" in one and "(optional)" in one and "leave it off" in one
-    assert "`dj_status`" in one and "track count" in one
-    assert "**Settings → Extensions → dj-librarian engine**" in one
-    assert "unverified (Q-31)" in one
-    assert "not a path Claude shows you from Cowork" in one  # Cowork's mount path is not the DJ's
+        assert f"**{title}**" in ext, title
+    assert "Unverified (Q-31)" in ext and "install one route only" in ext
 
 
-def test_the_one_upload_is_marked_unverified_up_front():
-    """Q-31: the route reads as untested from its first line, and the intro says so too."""
-    one = _sections(_door2(), "###")["One upload: it's already in"]
-    first = next(line for line in one.split("\n") if line.strip())
-    assert first == "Unverified until tested (Q-31): if no dj-librarian tools show up, use the fallback below."
-    intro = _flat(_text().split("\n## ")[0])
-    assert "Whether the engine starts from inside the zip is unverified (Q-31)" in intro
-
-
-def test_claude_code_has_no_configure_page_for_this_engine():
-    """Claude Code 2.1.299 refuses a `uv` bundle inside a plugin; its Configure page appeared only for
-    a bundle relabelled `python` (design note), so no doc sends a DJ there."""
-    one = _flat(_sections(_door2(), "###")["One upload: it's already in"])
-    assert "Configure" not in _text()
-    assert "| Claude Code | None yet: Claude Code 2.1.299 does not start this engine from the plugin (Q-31)." in one
-
-
-def test_no_tools_after_done_means_a_new_task_before_the_fallback():
-    """Two engines side by side show every tool twice: a new task (or a restart) comes first."""
-    one = _flat(_sections(_door2(), "###")["One upload: it's already in"])
-    assert "No dj-librarian tools yet: open a new Cowork task (or restart Claude) and say **set me up** there." in one
-    fallback = _flat(_sections(_door2(), "###")["Fallback: the engine on its own"])
-    assert fallback.startswith("When no dj-librarian tools show up after the upload, even in a new Cowork task or "
-                               "after a restart of Claude")  # fmt: skip
-
-
-def test_the_fallback_is_the_mcpb_dragged_onto_settings_extensions():
-    fallback = _sections(_door2(), "###")["Fallback: the engine on its own"]
-    steps = dict(re.findall(r"^(\d)\. (.+)$", fallback, re.MULTILINE))
-    assert list(steps) == ["1", "2", "3", "4"]
-    assert "`dj-librarian-engine-<version>.mcpb`" in steps["1"] and "Don't unzip it" in steps["1"]
-    assert "**Settings → Extensions**" in steps["2"] and "drag the `.mcpb`" in steps["2"]
-    assert "**Install**" in steps["2"]
-    assert "same four fields" in steps["3"] and "**Ask every time**" in steps["4"]
+def test_by_hand_sends_developers_to_the_readme_and_contributing():
+    hand = _routes()["3. By hand (third choice)"]
+    assert "(../README.md#install)" in hand and "(../CONTRIBUTING.md)" in hand
 
 
 def test_every_write_tool_on_ask_every_time():
@@ -113,45 +89,38 @@ def test_every_write_tool_on_ask_every_time():
     assert "[permissions.md](permissions.md)" in perms
 
 
-def test_spotify_keys_go_in_the_settings_form_not_a_dot_env():
-    spotify = _flat(_sections(_door2(), "###")["Spotify keys"])
-    assert "the engine's settings form" in spotify and "not in a `.env` file, never in the chat" in spotify
-    assert "Spotify Premium" in spotify and "dj-spotify" in spotify
+def test_spotify_keys_per_route():
+    spotify = _routes()["Spotify keys"]
+    assert "a `.env` file in the engine folder" in spotify and "never the dj-library folder" in spotify
+    assert "its settings form" in spotify
+    assert "Never paste the keys into the chat" in spotify and "Spotify Premium" in spotify and "dj-spotify" in spotify
 
 
-def test_where_the_engine_keeps_its_state():
-    state = _flat(_sections(_door2(), "###")["Where the engine keeps its state"])
-    assert "under `.cache/engine/`" in state
-    for kept in ("preview records", "master.db backups"):
-        assert kept in state, kept
-    assert "Spotify login token stays on this computer, in `.dj-librarian/.cache/`" in state
-    assert "nothing is lost" in state and "`.dj-librarian` in your home folder" in state
+def test_where_the_engine_keeps_its_state_per_route():
+    state = _routes()["Where the engine keeps its state"]
+    assert "`dj-librarian` in your home folder" in state and "`dj-librarian.bak-<date>`" in state
+    assert "under `.cache/engine/`" in state and "master.db backups" in state
+    assert "`.dj-librarian/.cache/` in your home folder, never in the dj-library folder" in state
 
 
 def test_the_three_artifacts_and_which_door_each_serves():
     text = _flat(_text())
     assert "`dj-librarian-plugin-<version>.zip`" in text
-    assert "`dj-librarian-plugin-<version>-no-engine.zip`, is Door 1 only" in text
+    assert "`dj-librarian-plugin-<version>-no-engine.zip`" in text and "Door 1 only" in text
     assert "`dj-librarian-engine-<version>.mcpb`" in text
     assert "**Customize → Plugins → Add → Upload plugin**" in text
 
 
-def test_the_status_table_is_honest_about_q31():
+def test_the_status_table_is_honest():
     status = _sections(_text())["Status of each route"]
     rows = re.findall(r"^\| ([^|]+) \| ([^|]+) \| ([^|]+) \|$", status, re.MULTILINE)
     assert [c.strip() for c in rows[0]] == ["Route", "Mac", "Windows"]
     routes = [r[0].strip() for r in rows[1:]]
     assert len(routes) == 4
-    assert any("inside the plugin zip" in r for r in routes) and any("`.mcpb`" in r for r in routes)
+    assert any("`/dj-librarian:install`" in r for r in routes) and any("`.mcpb`" in r for r in routes)
     flat = _flat(status)
-    assert "Claude Code 2.1.299 refuses it" in flat
-    assert "the Claude desktop app on Windows, on a Mac, and inside a Cowork session" in flat
-    assert "fails closed" in flat  # the known gap: the hook starts uv
-
-
-def test_developers_are_sent_to_the_readme_and_contributing():
-    (line,) = [ln for ln in _door2().split("\n") if ln.startswith("Developers:")]
-    assert "(../README.md#install)" in line and "(../CONTRIBUTING.md)" in line
+    assert "Q-32 stays open until the install command has run on a Mac" in flat
+    assert "on Windows, on a Mac, and inside a Cowork session" in flat
 
 
 def test_relative_links_resolve():

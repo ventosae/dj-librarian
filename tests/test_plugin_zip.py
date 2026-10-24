@@ -1,21 +1,20 @@
-"""scripts/build_plugin_zip.py: the plugin zip with the Door-1 core vendored inside and the engine
-bundle (D-22, D-28, Q-21, Q-31).
+"""scripts/build_plugin_zip.py: the plugin zip with one copy of the core inside, plugin/engine/
+(D-29, Q-21).
 
-The zip holds plugin/, plugin/vendor/dj/ (the core the Door-1 test guards, plus the identity,
-sleeve, design and report-chart modules and archetypes.yaml), never an engine module or a test,
-and plugin/engine.mcpb (the engine bundle scripts/build_mcpb.py builds, where plugin.json's
-mcpServers points). `--no-engine` gives the light zip: no bundle, and a plugin.json without
-mcpServers. A zip over 15 MB is refused. Unzipped where there is no src/ and `dj` cannot be
-imported, the skill scripts find the core in vendor/ and run the whole first-contact chain to the
-report. Nothing is uploaded.
+The zip holds plugin/ (with the install and uninstall commands) and plugin/engine/: the tracked
+src/dj/**, the project files, examples/ and the config script, byte for byte, never a test, a doc,
+vendor/ or the engine bundle. `--no-engine` gives the light zip: engine/src for Door 1, no install
+pieces. A zip over 15 MB is refused. Unzipped where there is no clone and `dj` cannot be imported,
+the skill scripts find the core in engine/src and run the whole first-contact chain to the report.
+Nothing is uploaded.
 """
 
 from __future__ import annotations
 
 import importlib.util
-import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,10 +29,6 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "build_plugin_zip.py"
 DAY = "2026-10-20"
-ENGINE = ("dj/cli.py", "dj/mcp_server.py", "dj/readers/db.py", "dj/tree.py", "dj/library.py", "dj/spotify.py",
-          "dj/intake.py", "dj/match.py", "dj/push.py", "dj/playlist_copy.py", "dj/analyze.py")  # fmt: skip
-W30B_EXTRA = ("dj/analysis/identity.py", "dj/sleeve.py", "dj/design.py", "dj/report_charts.py",
-              "dj/analysis/archetypes.yaml")  # fmt: skip
 
 
 @pytest.fixture(scope="module")
@@ -87,31 +82,33 @@ def test_the_zip_is_named_for_the_version_in_pyproject_and_plugin_json(built):
     assert result["files"] == len(_names(path)) and result["bytes"] == path.stat().st_size
 
 
-def test_the_zip_holds_the_plugin_and_the_door1_core_only(built, bz):
+def _engine_rel() -> set[str]:
+    """What plugin/engine/ must hold: the tracked src/dj/**, the project files, examples/ and the
+    config script (D-29)."""
+    done = subprocess.run(["git", "-C", str(REPO), "ls-files", "-z", "--", "src/dj", "examples",
+                           "scripts/merge_desktop_config.py"], capture_output=True, timeout=60)  # fmt: skip
+    tracked = {n for n in done.stdout.decode("utf-8").split("\0") if n and (REPO / n).is_file()}
+    tracked = {n for n in tracked if "__pycache__" not in n and not n.endswith(".pyc")}
+    return tracked | {"pyproject.toml", "uv.lock", ".python-version", "README.md", "LICENSE"}
+
+
+def test_the_zip_holds_the_plugin_and_one_copy_of_the_core(built, bz):
     _result, path = built
-    names = _names(path)
+    names = set(_names(path))
     assert all(name.startswith("plugin/") for name in names)
     plugin = {f"plugin/{p.relative_to(REPO / 'plugin').as_posix()}" for p in bz.plugin_files()}
-    assert plugin <= set(names) and "plugin/.claude-plugin/plugin.json" in plugin
-    assert "plugin/.mcp.json" not in names  # the engine comes from the bundle (W-34)
-    vendored = {name.removeprefix("plugin/vendor/") for name in names if name.startswith("plugin/vendor/")}
-    assert set(names) == plugin | {f"plugin/vendor/{v}" for v in vendored} | {"plugin/engine.mcpb"}
-    for module in bz.door1_modules():  # the set tests/test_door1_imports.py guards
-        stem = module.replace(".", "/")
-        assert f"{stem}.py" in vendored or f"{stem}/__init__.py" in vendored, module
-    assert set(W30B_EXTRA) <= vendored  # W-30b: identity, sleeve, design, report charts, archetypes
-    assert {"dj/__init__.py", "dj/analysis/__init__.py", "dj/readers/__init__.py", "dj/writers/__init__.py"} <= vendored
-    assert not set(ENGINE) & vendored, set(ENGINE) & vendored
-    assert not any("test" in Path(v).name or "__pycache__" in v or v.endswith(".pyc") for v in vendored)
-    for v in vendored:  # byte for byte what src/ holds
-        with zipfile.ZipFile(path) as zf:
-            assert zf.read(f"plugin/vendor/{v}") == (REPO / "src" / v).read_bytes(), v
-
-
-def test_the_vendored_modules_import_without_the_engine_packages(bz):
-    found = bz.core_modules(bz.door1_modules())
-    assert "dj.readers.db" not in found and "dj.cli" not in found and "dj.mcp_server" not in found
-    assert all(f.is_relative_to((REPO / "src" / "dj").resolve()) for f in found.values())
+    engine = {f"plugin/engine/{rel}" for rel in _engine_rel()}
+    assert names == plugin | engine | {"plugin/engine/BUILD.txt"}
+    assert {"plugin/commands/install.md", "plugin/commands/uninstall.md", "plugin/engine/src/dj/installer.py",
+            "plugin/engine/scripts/merge_desktop_config.py", "plugin/engine/uv.lock"} <= names  # fmt: skip
+    for gone in ("plugin/.mcp.json", "plugin/engine.mcpb"):  # D-29: no bundle inside, no vendor/
+        assert gone not in names
+    assert not any(n.startswith(("plugin/vendor/", "plugin/engine/tests/", "plugin/engine/docs/")) for n in names)
+    with zipfile.ZipFile(path) as zf:
+        for rel in _engine_rel():  # byte for byte what the repo holds
+            assert zf.read(f"plugin/engine/{rel}") == (REPO / rel).read_bytes(), rel
+        assert "mcpServers" not in json.loads(zf.read("plugin/.claude-plugin/plugin.json"))
+        assert re.fullmatch(rf"dj-librarian {_version()} [0-9a-f]{{16}}\n", zf.read("plugin/engine/BUILD.txt").decode())
 
 
 def test_the_same_files_give_the_same_zip(bz, built, tmp_path):
@@ -127,50 +124,28 @@ def test_flat_puts_the_plugin_at_the_zip_root(bz, tmp_path):
         pytest.skip("not a git checkout: the zip is built from the files git tracks")
     bz.build(tmp_path, flat=True)
     names = _names(tmp_path / f"dj-librarian-plugin-{_version()}.zip")
-    assert ".claude-plugin/plugin.json" in names and "vendor/dj/libfolder.py" in names
-    assert "engine.mcpb" in names
+    assert ".claude-plugin/plugin.json" in names and "engine/src/dj/libfolder.py" in names
     assert not any(name.startswith("plugin/") for name in names)
 
 
-# -- the engine inside, and the light zip without it -----------------------------------------------
-
-
-def test_the_engine_bundle_is_in_the_zip_where_plugin_json_points(bz, built):
-    result, path = built
-    source = REPO / "plugin" / ".claude-plugin" / "plugin.json"
-    plugin_json = json.loads(source.read_text(encoding="utf-8"))
-    assert plugin_json["mcpServers"] == "./engine.mcpb"
-    data, _info = bz.mcpb.bundle()
-    with zipfile.ZipFile(path) as zf:
-        assert zf.read("plugin/engine.mcpb") == data  # built fresh: the same bytes as the .mcpb
-        assert zf.read("plugin/.claude-plugin/plugin.json") == source.read_bytes()
-    assert result["engine"] is True and result["engine_size"] == len(data)
-    with zipfile.ZipFile(io.BytesIO(data)) as engine:
-        assert json.loads(engine.read("manifest.json"))["name"] == plugin_json["name"]
-
-
-def test_no_engine_gives_the_light_zip(bz, built, light):
-    full_result, full = built
+def test_no_engine_gives_the_light_zip_for_door1(built, light):
+    _full_result, full = built
     result, path = light
     assert path.is_file() and path.name == f"dj-librarian-plugin-{_version()}-no-engine.zip"
-    assert result["engine"] is False and result["engine_size"] is None
-    names = _names(path)
-    assert set(names) == set(_names(full)) - {"plugin/engine.mcpb"}
-    assert result["files"] == full_result["files"] - 1 == len(names)
-    with zipfile.ZipFile(path) as zf:
-        zipped = json.loads(zf.read("plugin/.claude-plugin/plugin.json"))
-    source = json.loads((REPO / "plugin" / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
-    assert "mcpServers" not in zipped  # the light zip never points at a bundle it lacks
-    source.pop("mcpServers")
-    assert zipped == source
+    assert result["engine"] is False
+    names, everything = set(_names(path)), set(_names(full))
+    assert names < everything and result["files"] == len(names)
+    for name in everything - names:  # only what installs the engine is left out
+        assert name.startswith("plugin/commands/") or (
+            name.startswith("plugin/engine/") and not name.startswith("plugin/engine/src/")), name
+    assert {n for n in everything if n.startswith("plugin/engine/src/")} <= names  # Door 1 needs the core
 
 
 def test_main_no_engine_prints_the_light_zip(bz, tmp_path, capsys):
     if not _git_checkout():
         pytest.skip("not a git checkout: the zip is built from the files git tracks")
     assert bz.main(["--out", str(tmp_path), "--no-engine"]) == 0
-    out = json.loads(capsys.readouterr().out)
-    assert out["engine"] is False and out["engine_size"] is None
+    assert json.loads(capsys.readouterr().out)["engine"] is False
     assert [p.name for p in tmp_path.iterdir()] == [f"dj-librarian-plugin-{_version()}-no-engine.zip"]
 
 
@@ -182,14 +157,6 @@ def test_a_zip_over_the_limit_is_refused_and_not_written(bz, tmp_path, monkeypat
     with pytest.raises(bz.BuildError, match="over the"):
         bz.build(tmp_path)
     assert list(tmp_path.iterdir()) == []  # neither the zip nor its temp file
-
-
-def test_the_zip_with_the_engine_needs_plugin_json_to_point_at_it(bz, tmp_path):
-    manifest = tmp_path / "plugin.json"
-    manifest.write_text(json.dumps({"name": "dj-librarian", "version": _version()}), encoding="utf-8")
-    with pytest.raises(bz.BuildError, match="engine.mcpb"):
-        bz.zipped_manifest(manifest, engine=True)
-    assert json.loads(bz.zipped_manifest(manifest, engine=False)) == {"name": "dj-librarian", "version": _version()}
 
 
 def test_build_refuses_when_plugin_json_and_pyproject_disagree(bz, tmp_path, monkeypatch):
@@ -219,7 +186,7 @@ def _fake_plugin_repo(tmp_path: Path) -> Path:
         (plugin / rel).write_text(text, encoding="utf-8")
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True, timeout=60)
     for rel in ("skills/dj-start/scripts/__pycache__/start.cpython-313.pyc", "vendor/dj/libfolder.py", ".DS_Store",
-                "engine.mcpb", ".mcpb-cache/dj-librarian/manifest.json"):  # fmt: skip
+                "engine.mcpb", ".mcpb-cache/dj-librarian/manifest.json", "engine/src/dj/x.py"):  # fmt: skip
         (plugin / rel).parent.mkdir(parents=True, exist_ok=True)
         (plugin / rel).write_bytes(b"cache")
     return plugin
@@ -244,7 +211,7 @@ def test_an_untracked_file_in_plugin_stops_the_build_instead_of_shipping(bz, tmp
     message = str(refused.value)
     assert ".env" in message and "skills/dj-start/notes.local.md" in message
     assert "__pycache__" not in message and "vendor/" not in message and ".DS_Store" not in message
-    assert "engine.mcpb" not in message and ".mcpb-cache" not in message
+    assert "engine.mcpb" not in message and ".mcpb-cache" not in message and "engine/" not in message
     with pytest.raises(bz.BuildError, match="notes.local.md"):
         bz.build(tmp_path / "out")
     assert not (tmp_path / "out").exists()
@@ -261,18 +228,9 @@ def test_plugin_files_refuse_outside_a_git_checkout(bz, tmp_path, monkeypatch):
         bz.plugin_files()
 
 
-def test_door1_modules_is_read_from_the_test_file(bz, tmp_path):
-    from test_door1_imports import DOOR1_MODULES
-
-    assert bz.door1_modules() == DOOR1_MODULES
-    (tmp_path / "t.py").write_text("X = 1\n", encoding="utf-8")
-    with pytest.raises(bz.BuildError, match="DOOR1_MODULES"):
-        bz.door1_modules(tmp_path / "t.py")
-
-
 def test_every_skill_script_looks_for_the_core_in_the_same_order():
-    """An importable dj (engine venv or PyPI), then ../../../../src (a clone), then ../../../vendor
-    (the zip): the same block in every script, so none is left on the old clone-only lookup."""
+    """An importable dj (the engine venv), then ../../../../src (a clone), then ../../../engine/src
+    (the zip, D-29): the same block in every script."""
     scripts = sorted((REPO / "plugin" / "skills").glob("*/scripts/*.py"))
     assert len(scripts) >= 9
     blocks = set()
@@ -281,11 +239,12 @@ def test_every_skill_script_looks_for_the_core_in_the_same_order():
         start = text.index("try:  # the dj core")
         blocks.add(text[start : text.index("break\n", start)])
     (block,) = blocks
-    assert block.index("import dj") < block.index("../../../../src") < block.index("../../../vendor")
-    for script in scripts:  # the paths, from the script's own folder, land on src/ and plugin/vendor
+    assert block.index("import dj") < block.index("../../../../src") < block.index("../../../engine/src")
+    assert "vendor" not in block
+    for script in scripts:  # the paths, from the script's own folder, land on src/ and plugin/engine/src
         here = script.resolve().parent
         assert (here / "../../../../src").resolve() == (REPO / "src").resolve()
-        assert (here / "../../../vendor").resolve() == (REPO / "plugin" / "vendor").resolve()
+        assert (here / "../../../engine/src").resolve() == (REPO / "plugin" / "engine" / "src").resolve()
 
 
 def test_dist_is_gitignored():
@@ -307,24 +266,24 @@ def _run(script: Path, *args: str, cwd: Path, env: dict) -> dict:
     return out
 
 
-def test_unzipped_without_src_the_scripts_run_the_chain_from_vendor(built, tmp_path):
+def test_unzipped_without_a_clone_the_scripts_run_the_chain_from_engine_src(built, tmp_path):
     """dj-start find-xml and init, profile, structure, taste, identity and report, all from the
     unzipped plugin, with a Python that cannot import dj (no src/, -S skips the editable .pth)."""
     site = Path(yaml.__file__).resolve().parents[1]
     if (site / "dj").exists():
-        pytest.skip("dj is installed as a package here; the vendored branch is not reachable")
+        pytest.skip("dj is installed as a package here; the engine/src branch is not reachable")
     _result, path = built
     unzipped = tmp_path / "upload"
     with zipfile.ZipFile(path) as zf:
         zf.extractall(unzipped)
     skills = unzipped / "plugin" / "skills"
-    assert not list(tmp_path.rglob("src"))  # no clone anywhere: only vendor/ can serve the core
+    assert not (tmp_path / "src").exists()  # no clone: only plugin/engine/src can serve the core
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
     env["PYTHONPATH"] = str(site)  # PyYAML, but no dj: the .pth is not read under -S
     env["PYTHONUTF8"] = "1"
     probe = subprocess.run([sys.executable, "-S", "-c", "import dj"], cwd=tmp_path, env=env, capture_output=True,
                            text=True, timeout=120)  # fmt: skip
-    assert probe.returncode != 0, "dj is importable without the vendored core"
+    assert probe.returncode != 0, "dj is importable without the zip's core"
 
     library = tmp_path / "dj-library"
     library.mkdir()

@@ -905,12 +905,12 @@ def test_steps_5_and_6_go_out_as_one_reply():
         assert TIME.search(_lines(block)[0])
 
 
-ENGINE_OFFER = "The engine is already in: say set me up and point me at your dj-library folder."
+ENGINE_OFFER = "To add it: in the Code tab type /dj-librarian:install and click Allow, then say set me up."
 
 
 def test_step_6_never_promises_play_history_from_the_engine():  # Q-13: DjmdHistory is not read
     step = _step(6)
-    offers = [ln for b in _templates(step) for ln in _lines(b) if "The engine is already in" in ln]
+    offers = [ln for b in _templates(step) for ln in _lines(b) if "/dj-librarian:install" in ln]
     assert len(offers) == 2
     for line in offers:
         assert "the engine reads your My Tags" in line
@@ -920,13 +920,13 @@ def test_step_6_never_promises_play_history_from_the_engine():  # Q-13: DjmdHist
     assert "never promise" in step
 
 
-def test_step_6_offers_the_engine_that_came_in_the_zip_without_an_install():  # W-34, D-28
-    """The plugin zip carries the engine: the offer asks for the folder, not for an install, and
-    names no install time; engine.md holds the fallback for a zip without it."""
+def test_step_6_offers_the_install_command():  # W-35, D-29
+    """The engine installs from Claude Code: the offer names the command and set me up, no
+    terminal and no install time; engine.md holds the card."""
     step = _step(6)
     assert "Install the engine" not in step and "about 10 minutes" not in step
     prose = " ".join(step.split())
-    assert "The engine comes inside the plugin zip" in prose and "engine.md has the fallback" in prose
+    assert "with /dj-librarian:install (D-29)" in prose and "engine.md has the card" in prose
 
 
 def test_already_set_up_covers_every_case():  # R-101 device from library.yaml; a new export

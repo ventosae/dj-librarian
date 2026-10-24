@@ -1,13 +1,11 @@
 """The engine set-up card (M1, R-102), `dj library use`, and the permissions doc (R-1101, R-1105).
 
-engine.md (W-34, D-28): offered only on "set me up" or when a feature needs live data. The engine
-comes inside the plugin zip or as the `.mcpb` on its own, so the card holds no terminal command:
-one card for both OSes, three numbered steps in about 3 minutes (the dj-library folder in the
-engine settings, the optional Spotify keys in the same form, every write tool on "ask every time"),
-dj_status as the proof, a new task and then the `.mcpb` as the fallback; no card in Claude Code,
-which refuses the bundle inside a plugin (Q-31). docs/permissions.md: every MCP tool in exactly
-one of read / library-text / write, and the write list is what the Claude Code hook matches. Both
-name only the tools the engine has today.
+engine.md (W-35, D-29): offered only on "set me up" or when a feature needs live data. The engine
+installs with `/dj-librarian:install`, typed by the DJ in Claude Code's Code tab (they click Allow;
+no terminal of their own): one card for both OSes, three numbered steps in about 5 minutes (type the
+command, Allow and the dj-library folder, restart and every write tool on "ask every time"),
+dj_status as the proof, the `.mcpb` as the second route. docs/permissions.md: every MCP tool in
+exactly one of read / library-text / write, and the write list is what the Claude Code hook matches.
 """
 
 from __future__ import annotations
@@ -36,12 +34,6 @@ FORM = {
     "spotify_client_id": "Spotify client ID",
     "spotify_client_secret": "Spotify client secret",
     "power_mode": "Power mode (Windows)",
-}
-# `<engine settings>` per way the engine came in. The plugin's own settings place is unverified
-# (Q-31), so its row says "not there? say so". Claude Code gets no card: 2.1.299 refuses the bundle.
-SETTINGS = {
-    "Inside the plugin zip": "Settings > Extensions > dj-librarian engine (not there? say so)",
-    "The `.mcpb` on its own": "Settings > Extensions > dj-librarian engine",
 }
 # What a terminal step looks like: the DJ path holds none of these (D-28). The apps by their names
 # (Terminal, PowerShell), so prose may still say that nobody opens a terminal.
@@ -100,83 +92,66 @@ def test_offered_only_when_asked_or_when_a_feature_needs_live_data():
     assert '`dj_status` is already there when the DJ says "set me up": skip the card, go to the proof' in when
 
 
-def test_the_engine_comes_in_the_zip_or_as_the_mcpb_and_needs_no_terminal():
+def test_the_install_command_is_the_route_and_the_mcpb_the_second():
     top = " ".join(_text(ENGINE).split("\n## ")[0].split())
-    assert "inside the plugin zip" in top and "`dj-librarian-engine-<version>.mcpb`" in top
-    assert "installs nothing and never opens a terminal" in top
-    assert "about 3 minutes" in top
-    assert "unverified until it has run once (Q-31)" in top and "the `.mcpb` is the fallback" in top
+    assert "`/dj-librarian:install`" in top and "Code tab" in top and "clicks Allow" in top
+    assert "opens no terminal of their own" in top and "about 5 minutes" in top
+    assert "(Q-32)" in top and "`dj-librarian-engine-<version>.mcpb`" in top and "(Q-31)" in top
 
 
-def test_no_terminal_command_anywhere_in_the_card_file():  # D-28: no clone, no uv, no terminal
+def test_no_terminal_command_anywhere_in_the_card_file():  # the DJ types only the slash command
     text = _text(ENGINE)
     assert TERMINAL.findall(text) == []
     assert "git" not in re.findall(r"\b\w+\b", text.lower())
 
 
-def test_one_card_for_both_oses_with_the_settings_per_way_the_engine_came_in():
-    section = _section(_text(ENGINE), "The card")
-    assert "One card for Mac and Windows, in the Claude desktop app and in Cowork" in section
-    assert "Mac:" not in section and "Windows:\n" not in section
-    rows = dict(re.findall(r"^\| ([^|]+?) \| ([^|]+?) \|$", section, re.MULTILINE))
-    assert rows.pop("How the engine came in") == "`<engine settings>`"
-    assert rows == SETTINGS
-    prose = " ".join(section.split())
-    assert "inside the plugin zip unless the DJ says they installed the `.mcpb`" in prose
-    assert "Where a plugin's own engine settings show is unverified (Q-31)" in prose
-    assert "Settings > Extensions is where the fallback puts them" in prose
-    assert "Configure" not in section  # Claude Code's plugin Configure page exists only for a bundle it takes
-
-
-def test_claude_code_gets_no_card():
-    """Claude Code 2.1.299 refuses a `uv` bundle inside a plugin (Q-31): no settings to point at."""
-    prose = " ".join(_section(_text(ENGINE), "The card").split())
-    assert "Claude Code: send no card. Claude Code 2.1.299 does not start this engine from the plugin (Q-31)." in prose
-    assert "the report, builds and crates keep running on the XML" in prose
+def test_one_card_for_both_oses_and_the_command_is_the_djs_to_type():
+    section = " ".join(_section(_text(ENGINE), "The card").split())
+    assert "One card for Mac and Windows" in section and "Mac:" not in section
+    assert "The command is the DJ's to type: it never runs on its own." in section
+    command = _text(REPO / "plugin" / "commands" / "install.md")
+    assert "disable-model-invocation: true" in command.split("---")[1]
 
 
 def test_the_card_names_the_folder_never_a_cowork_path():
     """In Cowork, Claude sees the folder where Cowork mounts it, not where it sits on the DJ's computer."""
-    section = _section(_text(ENGINE), "The card")
-    assert "<your dj-library folder>" not in section and "full path" not in section
-    assert "Never send them a path you see in Cowork" in " ".join(section.split())
-    (folder,) = re.findall(r"^1\. (.+)$", card(), re.MULTILINE)
-    assert "your dj-library folder there, the one you connected in Cowork (library.yaml is in it)" in folder
+    section = " ".join(_section(_text(ENGINE), "The card").split())
+    assert "Never send them a path you see in Cowork" in section
+    (folder,) = [s for s in re.findall(r"^\d\. (.+)$", card(), re.MULTILINE) if "dj-library folder" in s]
+    assert "drag that folder in (library.yaml is in it)" in folder
 
 
-def test_the_card_is_three_numbered_steps_in_about_3_minutes():
+def test_the_card_is_three_numbered_steps_in_about_5_minutes():
     text = card()
     lines = [line for line in text.split("\n") if line.strip()]
-    assert lines[0].startswith("Step 1 of 2 · about 3 minutes. The engine is already in.")
+    assert lines[0].startswith("Step 1 of 2 · about 5 minutes.")
     assert re.findall(r"^(\d)\. ", text, re.MULTILINE) == ["1", "2", "3"]
-    folder, spotify, permissions = re.findall(r"^\d\. (.+)$", text, re.MULTILINE)
-    assert folder.startswith("Open <engine settings> and pick your dj-library folder")
-    assert "Leave Power mode off" in folder
-    assert spotify.startswith("Spotify client ID and secret") and "leave both empty" in spotify
-    assert "Ask every time" in permissions and "Read tools can stay on Allow" in permissions
+    command, allow, permissions = re.findall(r"^\d\. (.+)$", text, re.MULTILINE)
+    assert "open the Code tab and type /dj-librarian:install" in command
+    assert allow.startswith("Click Allow on each step")
+    assert permissions.startswith("Restart Claude") and "Customize > Connectors > dj-librarian" in permissions
     assert re.findall(r"\bdj_[a-z_]+\b", permissions) == []  # adhd.md rule 9: no list of 9 in the card
     write = _write_tools()
     assert f"every tool whose name ends in _apply, _write or _undo to Ask every time ({len(write)} tools)" in permissions
     assert {name for name in _tools() if re.search(r"_(?:apply|write|undo)$", name)} == write
-    assert "under a minute" in lines[-1] and lines[-1].startswith("Say done")
+    assert "under a minute" in lines[-1] and lines[-1].startswith("Say set me up in a new Cowork task")
     assert len(lines) <= 5 and text_problems(text) == []
     assert TERMINAL.findall(text) == []
 
 
-def test_the_card_names_the_settings_form_the_way_the_manifest_does():
+def test_the_card_section_names_the_write_tools_the_keys_and_the_state():
     section = " ".join(_section(_text(ENGINE), "The card").split())
-    for title in FORM.values():
-        assert title in section, title
-    assert "never into the chat or a `.env`" in section
-    assert "`.cache/engine/`" in section  # state outlives an engine update
     named = re.search(r"The \d+ write tools are (.+?)\.", section).group(1)
     assert set(re.findall(r"\bdj_[a-z_]+\b", named)) == _write_tools()  # for Claude, if the DJ asks
+    assert "a `.env` file in the engine folder" in section and "never the dj-library folder" in section
+    assert "Never into the chat" in section
+    for title in FORM.values():  # the extension's form, as the manifest names it
+        assert title in section, title
+    assert "backs that folder up first" in section and "`.cache/engine/`" in section
 
 
 def test_the_form_titles_match_the_manifest():
-    """The bundle's own manifest (W-34 item 1) asks for exactly these four fields."""
-    if not MANIFEST.is_file():
-        pytest.skip("mcpb/manifest.json is built by the engine bundle stream")
+    """The bundle's manifest asks for exactly these four fields."""
     config = json.loads(MANIFEST.read_text(encoding="utf-8"))["user_config"]
     assert {key: field["title"] for key, field in config.items()} == FORM
 
@@ -189,15 +164,12 @@ def test_the_proof_is_dj_status_with_the_track_count():
     failures = re.findall(r"^- (.+)$", proof, re.MULTILINE)
     assert 1 <= len(failures) <= 5
     no_tools = next(line for line in failures if line.startswith("No `dj_status` tool"))
-    for part in ("the fallback", "`dj-librarian-engine-<version>.mcpb`", "Settings > Extensions",
-                 "Install", "from the release or from whoever is testing with them"):  # fmt: skip
-        assert part in no_tools, part
-    # A new task (or a restart) first: a second engine next to the first shows every tool twice.
-    new_task = "Saved: the DJ opens a new Cowork task (or restarts Claude) and says set me up there."
-    assert new_task in no_tools and no_tools.index(new_task) < no_tools.index("the fallback")
-    assert any("no library folder" in line and "<engine settings>" in line for line in failures)
-    assert any("(Q-31)" in line for line in failures)
-    assert not any("Configure" in line for line in failures)
+    assert no_tools.index("Restart Claude") < no_tools.index("/dj-librarian:install")
+    stopped = next(line for line in failures if line.startswith("The command stopped"))
+    for part in ("whoever gave them the plugin", "`dj-librarian-engine-<version>.mcpb`", "Settings > Extensions",
+                 "Install", "(Q-31)"):  # fmt: skip
+        assert part in stopped, part
+    assert any("no library folder" in line and "`library.yaml`" in line for line in failures)
 
 
 def test_engine_card_passes_the_mechanical_checklist():

@@ -5,7 +5,7 @@ release.yml runs only on a pushed `v*` tag (the owner's, W-29). It runs ci.yml's
 `workflow_call`, then checks that the tagged commit is on main, checks the tag against pyproject.toml
 and plugin.json, cuts the version's CHANGELOG.md section, builds the engine bundle and both plugin
 zips and creates a DRAFT GitHub release with the three attached (W-34): dj-librarian-engine-<v>.mcpb,
-dj-librarian-plugin-<v>.zip (engine inside) and dj-librarian-plugin-<v>-no-engine.zip.
+dj-librarian-plugin-<v>.zip (the engine's source inside) and dj-librarian-plugin-<v>-no-engine.zip.
 No package index step, nothing public. Nothing here talks to the network.
 """
 
@@ -267,7 +267,7 @@ def test_release_checks_the_tag_and_the_notes_before_it_builds(draft):
 
 
 def test_release_builds_the_engine_and_both_zips(draft):
-    """The standalone engine (Settings -> Extensions), the plugin zip with the engine inside (one
+    """The standalone engine (Settings -> Extensions), the plugin zip with the engine's source inside (one
     upload) and the light zip (skills only), all from the tagged commit (W-34, D-28)."""
     runs = [" ".join(str(step.get("run", "")).split()) for step in draft["steps"]]
     assert "uv run python scripts/build_mcpb.py" in runs
@@ -354,14 +354,13 @@ def test_readme_sends_the_tester_to_cowork_and_starts_with_start():
 
 
 def test_readme_says_the_zip_carries_the_engine_and_links_the_card():
-    """W-34 (D-28): the plugin zip carries the engine, "set me up" points it at the folder, the
-    `.mcpb` is the fallback and the light zip is Door 1 only; no clone for the engine (Q-31 open)."""
+    """W-35 (D-29): the zip carries the engine's source, /dj-librarian:install installs it, the
+    `.mcpb` is the second route and the light zip is Door 1 only; no clone for the engine."""
     section = _readme_section("Try it before the release")
     flat = " ".join(section.split())
     assert "The engine is not in the zip" not in section and "need a clone" not in section
-    assert "The engine comes in the same zip" in flat and "No clone, no terminal" in flat
-    assert 'say "set me up" after the report and point Claude at your dj-library folder' in flat
-    assert "unverified (Q-31)" in flat
+    assert "comes in the same zip as source" in flat and "type `/dj-librarian:install`" in flat
+    assert 'then say "set me up" in a Cowork task' in flat and "unverified, Q-31" in flat
     assert "`dj-librarian-engine-<version>.mcpb`" in flat and "Settings → Extensions" in flat
     assert "`dj-librarian-plugin-<version>-no-engine.zip`, is Door 1 only" in flat
     links = re.findall(r"\]\(([^)]+)\)", section)
@@ -387,15 +386,15 @@ def test_readme_drops_the_uv_path_option_and_the_plugin_folder_engine():
     for gone in ("uv path", "uv_path", "--directory <plugin folder>/..", "/usr/local/bin/uv", ".mcp.json"):
         assert gone not in readme, gone
     plugin = _readme_section("Claude plugin")
-    assert "`engine.mcpb`" in plugin and "`mcpServers`" in plugin and "(Q-31)" in plugin
-    assert "`<dj-library>/.cache/engine/`" in plugin
+    assert "`/dj-librarian:install`" in plugin and "`plugin/engine/`" in plugin and "(Q-31)" in plugin
+    assert "`<dj-library>/.cache/engine/`" in plugin and "vendor/" not in readme and "--plugin" not in readme
     for env in ("DJ_LIBRARY", "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET", "DJ_POWER_MODE"):
         assert f"`{env}`" in plugin, env
 
 
 def test_readme_registers_the_clone_engine_in_claude_code_and_claude_desktop():
-    """Until Claude Code takes a `uv` bundle in a plugin (Q-31), a developer registers the clone's
-    engine by hand; the section the README points to covers both hosts."""
+    """A developer registers the clone's engine with the install command or by hand; the section the
+    README points to covers both hosts."""
     plugin = " ".join(_readme_section("Claude plugin").split())
     assert "[The engine on Windows and macOS](#the-engine-on-windows-and-macos)" in plugin
     assert "the line for Claude Code and the config entry for Claude Desktop" in plugin

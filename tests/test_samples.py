@@ -29,7 +29,7 @@ def load_script():
 
 ms = load_script()
 TEXT = [*ms.SAMPLE_FILES, ms.SAMPLE_REPORT, ms.SAMPLE_CHAT]
-PNGS = [*ms.SHOTS.values(), ms.R409]
+PNGS = list(ms.SHOTS.values())  # report.png is no longer made (W-35)
 
 
 def text(rel: str) -> str:
@@ -76,7 +76,6 @@ def test_the_screenshots_are_full_pages_1100_px_wide():
     sizes = {name: png_size(SAMPLES / name) for name in PNGS}
     for name, (width, height) in sizes.items():
         assert width == ms.WIDTH and 1500 < height < ms.HEIGHT, (name, width, height)
-    assert (SAMPLES / ms.R409).read_bytes() == (SAMPLES / ms.SHOTS["booth"]).read_bytes()
 
 
 def test_the_samples_are_current_and_reproducible(tmp_path):

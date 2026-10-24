@@ -4,7 +4,7 @@ name: Release
 # schedule or manual trigger. It runs the CI checks, checks that the tagged commit is on main and
 # matches the version, builds the engine bundle and both plugin zips and creates a DRAFT GitHub
 # release with the three files and the CHANGELOG.md section: dj-librarian-engine-<v>.mcpb (the
-# standalone engine), dj-librarian-plugin-<v>.zip (skills with the engine inside) and
+# standalone engine), dj-librarian-plugin-<v>.zip (skills with the engine's source inside) and
 # dj-librarian-plugin-<v>-no-engine.zip (skills only). The owner reads the draft and makes it
 # public by hand. No package index step: PyPI comes later, with the owner's yes (W-32, W-34,
 # D-27, D-28, D-17, D-22).
@@ -58,7 +58,7 @@ jobs:
         run: uv run python scripts/release_notes.py "$VERSION" --out "$RUNNER_TEMP/notes.md"
       - name: Build the engine bundle
         run: uv run python scripts/build_mcpb.py
-      - name: Build the plugin zip (engine inside)
+      - name: Build the plugin zip (the engine's source inside)
         run: uv run python scripts/build_plugin_zip.py
       - name: Build the light plugin zip (no engine)
         run: uv run python scripts/build_plugin_zip.py --no-engine

@@ -28,11 +28,11 @@ Until the first release, a tester runs the plugin from a zip. This is Door 1: no
 
 rekordbox is never touched: Door 1 reads a copy of your export, and you do the import. Crate me and Style Barber run from the zip too. If the upload refuses the zip, build it again with `--flat` (the plugin at the zip's root; which layout the upload wants is still open, Q-21).
 
-The engine comes in the same zip: live reads of your rekordbox database (My Tags), Spotify and `dj tidy` on your audio files. No clone, no terminal: say "set me up" after the report and point Claude at your dj-library folder; the engine card ([plugin/skills/dj-start/engine.md](plugin/skills/dj-start/engine.md), about 3 minutes) shows where the engine's settings are. Whether the engine starts from inside the zip is unverified (Q-31). The fallback is the engine on its own, `dj-librarian-engine-<version>.mcpb`: Claude desktop app → Settings → Extensions → drag it in → Install. The light zip, `dj-librarian-plugin-<version>-no-engine.zip`, is Door 1 only. All of it in one place: [docs/install.md](docs/install.md).
+The engine (live reads of your rekordbox database for My Tags, Spotify, `dj tidy` on your audio files) comes in the same zip as source: in the Claude desktop app's Code tab, type `/dj-librarian:install` and click Allow on each step, then say "set me up" in a Cowork task; the engine card ([plugin/skills/dj-start/engine.md](plugin/skills/dj-start/engine.md), about 5 minutes) walks you through it. The second route is the engine on its own, `dj-librarian-engine-<version>.mcpb`: Claude desktop app → Settings → Extensions → drag it in → Install (unverified, Q-31). The light zip, `dj-librarian-plugin-<version>-no-engine.zip`, is Door 1 only. All of it in one place: [docs/install.md](docs/install.md).
 
 ## Install
 
-DJs: [docs/install.md](docs/install.md) is the one install doc. One upload, the plugin zip with the engine inside; the engine's `.mcpb` on its own as the fallback; which tools to leave on "ask every time"; the Spotify keys in the engine's settings form. Nothing to type in a terminal.
+DJs: [docs/install.md](docs/install.md) is the one install doc. The plugin zip, then `/dj-librarian:install` in Claude Code for the engine (you click Allow); the engine's `.mcpb` as the second route; which tools to leave on "ask every time"; where the Spotify keys go. You never type in a terminal yourself.
 
 ### From a clone (developers)
 
@@ -52,7 +52,7 @@ The three release files come from the clone:
 | Command | Writes |
 |---|---|
 | `uv run python scripts/build_mcpb.py` | `dist/dj-librarian-engine-<version>.mcpb`, the engine on its own |
-| `uv run python scripts/build_plugin_zip.py` | `dist/dj-librarian-plugin-<version>.zip`, the plugin with the engine inside |
+| `uv run python scripts/build_plugin_zip.py` | `dist/dj-librarian-plugin-<version>.zip`, the plugin with the engine's source inside |
 | `uv run python scripts/build_plugin_zip.py --no-engine` | `dist/dj-librarian-plugin-<version>-no-engine.zip`, the light zip (Door 1 only) |
 
 ## Commands
@@ -100,13 +100,11 @@ Your configuration lives in your dj-library folder: the engine reads `links.yaml
 
 ## Claude plugin
 
-The plugin adds twelve skills (see `plugin/skills/`) and the engine: `engine.mcpb`, an MCP server with a fixed list of `dj` tools, which `plugin.json` names under `mcpServers`. A DJ starts with **dj-start** ("start"): it sets up the dj-library folder from a rekordbox XML export and writes the first report. Read tools and write tools are separate, so you can leave every write tool on "ask every time"; which tool is which: [docs/permissions.md](docs/permissions.md). In Claude Code the plugin also brings a PreToolUse hook (`plugin/hooks/`) that denies a write tool called without a `preview_id`. The hook starts `uv`, so on a machine without uv it blocks every write tool (it fails closed; a known gap).
+The plugin adds twelve skills (see `plugin/skills/`) and two commands, `/dj-librarian:install` and `/dj-librarian:uninstall` (`plugin/commands/`). A DJ starts with **dj-start** ("start"): it sets up the dj-library folder from a rekordbox XML export and writes the first report. Read tools and write tools are separate, so you can leave every write tool on "ask every time"; which tool is which: [docs/permissions.md](docs/permissions.md). In Claude Code the plugin also brings a PreToolUse hook (`plugin/hooks/`) that denies a write tool called without a `preview_id`. The hook starts `uv`, so on a machine without uv it blocks every write tool (it fails closed; a known gap).
 
-The engine is an [MCP bundle](https://github.com/modelcontextprotocol/mcpb) of the `uv` type: the host brings Python and the dependencies, so a DJ installs nothing. Its settings form asks for the dj-library folder, the optional Spotify client ID and secret, and Power mode (Windows); the host hands them to the engine as `DJ_LIBRARY`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` and `DJ_POWER_MODE`. The engine then keeps its state in `<dj-library>/.cache/engine/`, so an update of the extension loses nothing. Claude Code 2.1.299 refuses a `uv` bundle inside a plugin: it loads the skills, not the engine. Whether the Claude desktop app starts it, from the plugin or as an extension, on Windows, on a Mac and in Cowork, is open (Q-31).
+The zip carries the engine's source in `plugin/engine/`, the one copy of the core (D-29). `/dj-librarian:install` copies it to `~/dj-librarian`, runs `uv sync` and `dj status`, asks once for the dj-library folder and adds `dj-mcp` to Claude Desktop's config with absolute paths and `DJ_LIBRARY` set (`src/dj/installer.py`, a backup of the config first, nothing else in it touched). The engine also reads `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` and `DJ_POWER_MODE` from its environment before any `.env`. The standalone [MCP bundle](https://github.com/modelcontextprotocol/mcpb) (`scripts/build_mcpb.py`) is the second route; as an extension it keeps its state in `<dj-library>/.cache/engine/`. Claude Code 2.1.299 refuses a `uv` bundle inside a plugin, so the plugin no longer carries it (Q-31).
 
-`plugin/engine.mcpb` is a build product (gitignored): `uv run python scripts/build_mcpb.py --plugin` writes it, and `claude plugin validate ./plugin` needs it.
-
-- **Claude Code, from a clone:** build the engine into the plugin as above, then add the marketplace from the clone. Run this inside the clone folder:
+- **Claude Code, from a clone:** add the marketplace from the clone. Run this inside the clone folder:
 
 ```bash
 claude plugin marketplace add ./
@@ -116,15 +114,15 @@ claude plugin marketplace add ./
 claude plugin install dj-librarian@dj-librarian
 ```
 
-Until Claude Code takes a `uv` bundle in a plugin (Q-31), register the engine from the clone by hand: [The engine on Windows and macOS](#the-engine-on-windows-and-macos) has the line for Claude Code and the config entry for Claude Desktop.
+A plugin installed from the clone's marketplace is a copy of `plugin/` alone: no engine and no core, so its skill scripts answer with a one-line error that the core does not load, and `/dj-librarian:install` stops. Register the clone's engine by hand: [The engine on Windows and macOS](#the-engine-on-windows-and-macos) has the line for Claude Code and the config entry for Claude Desktop.
 
-The skills that need no engine (dj-start through the report, crates, builds, Style Barber) run from the plugin zip: it carries their core in `vendor/` (D-22). A copy without it (a GitHub marketplace, until the core is on PyPI) answers with a one-line error that the dj-librarian core does not load. The skill scripts look for the core in this order: an importable `dj` (the engine's venv), a clone of the repo, the zip's `vendor/`.
+The skills that need no engine (dj-start through the report, crates, builds, Style Barber) run from the plugin zip: they import the core from `plugin/engine/src` (D-29). The skill scripts look for the core in this order: an importable `dj` (the engine's venv), a clone of the repo, the zip's `engine/src`.
 
 Optional: [templates/project/instructions.md](templates/project/instructions.md) is a Cowork Project template you can paste into a new Project's instructions; the plugin works without it.
 
 ### The engine on Windows and macOS
 
-The engine is the MCP server `dj-mcp`; it runs on your computer. A DJ gets it from the plugin zip or the `.mcpb` ([docs/install.md](docs/install.md)). From a clone (developers), register it by hand.
+The engine is the MCP server `dj-mcp`; it runs on your computer. A DJ installs it with `/dj-librarian:install` or the `.mcpb` ([docs/install.md](docs/install.md)). From a clone (developers), register it by hand.
 
 Claude Code, one line (`--scope user` makes it available in every folder; Claude Code started from your shell passes `UV_PROJECT_ENVIRONMENT` on):
 

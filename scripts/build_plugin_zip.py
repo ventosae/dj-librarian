@@ -1,84 +1,68 @@
-"""Build the plugin zip a DJ uploads: plugin/, the Door-1 core vendored inside it, and the
-engine bundle (D-17, D-22, D-28, Q-21, Q-31).
+"""Build the plugin zip a DJ uploads: plugin/ and one copy of the core inside it, plugin/engine/
+(D-17, D-29, Q-21).
 
     uv run python scripts/build_plugin_zip.py [--out DIR] [--flat] [--no-engine]
 
 Writes `<out>/dj-librarian-plugin-<version>.zip` (default `dist/`, gitignored) and prints one
-JSON object: the zip, its file count and size, the version, the vendored core modules, whether
-the engine is in it (`engine`) and the engine bundle's size in bytes (`engine_size`).
-
-Which zip gives what:
-- the full zip (default): the skills (Door 1) and the engine as `plugin/engine.mcpb`, which
-  plugin.json's `mcpServers` names, so one upload brings the MCP tools too (Door 2). Whether a
-  host starts a `uv` bundle from inside a plugin is open (Q-31): Claude Code 2.1.299 refuses it
-  and still loads the skills,
-- `--no-engine`: the light zip `dj-librarian-plugin-<version>-no-engine.zip`, the skills only;
-  its plugin.json has no `mcpServers`. The engine then comes from the standalone
-  `dj-librarian-engine-<version>.mcpb` (scripts/build_mcpb.py; in the Claude desktop app:
-  Settings -> Extensions -> drag it in -> Install).
+JSON object: the zip, its file count and size, the version, and whether the engine is in it.
 
 What goes in, under the top folder `plugin/` (with `--flat`, at the zip's root instead: which
 layout Claude's "Upload plugin" wants is unverified until the first upload, Q-21):
 - every file git tracks under `plugin/` except caches (`__pycache__/`, `*.pyc`, `.mcpb-cache/`,
-  OS files) and a local `engine.mcpb` (the engine is built fresh, below). A file under `plugin/`
-  that git does not track (a `.env`, notes, local settings, ignored or not) stops the build
-  instead of shipping: hard rules 6 and 7,
-- `plugin/vendor/dj/`: the Door-1 core and nothing else. The modules `tests/test_door1_imports.py`
-  guards (its DOOR1_MODULES list, read from that file, so the two never drift), the W-31 modules
-  the identity and the report need (CORE_EXTRA), every `dj` module those import when they load
-  (found by importing them with the engine packages blocked, so no engine module can get in),
-  the package `__init__.py` files, and the data files in CORE_DATA. No tests, no engine module,
-- `plugin/engine.mcpb` (not with `--no-engine`): the engine bundle, built here from the tracked
-  files by scripts/build_mcpb.py's functions (never a local copy), the same bytes as
-  `dist/dj-librarian-engine-<version>.mcpb`.
+  OS files) and anything a local build or an older zip layout left there (`engine/`, `vendor/`,
+  `engine.mcpb`). A file under `plugin/` that git does not track (a `.env`, notes, local
+  settings, ignored or not) stops the build instead of shipping: hard rules 6 and 7,
+- `plugin/engine/`: the engine's source, the one copy of the core. `src/dj/**`, `pyproject.toml`,
+  `uv.lock`, `.python-version`, `README.md` and `LICENSE` (the files git tracks, the same list as
+  the engine bundle: scripts/build_mcpb.py `members`), plus `examples/` and
+  `scripts/merge_desktop_config.py`, and `BUILD.txt` (the version and a hash of those files: the
+  install command copies a new engine whenever it differs, even under the same version).
+  `/dj-librarian:install` copies it to `~/dj-librarian` and runs `uv sync` there (D-29); the Door-1
+  skill scripts import the core from `engine/src`.
 
-The skill scripts find the core in this order: an importable `dj` (the engine venv, later PyPI),
-then `../../../../src` (a clone of the repo), then `../../../vendor` (this zip).
+`--no-engine`: the light zip `dj-librarian-plugin-<version>-no-engine.zip` for Door 1 only. It
+keeps `engine/src` (the skills need the core) and leaves out what installs the engine:
+`commands/`, and engine/'s project files, examples and script.
 
-The version comes from pyproject.toml and must equal plugin.json's (and the bundle manifest's).
-A zip over 15 MB is refused. The zip is the same bytes for the same files (sorted entries, fixed
-time stamps). Nothing is uploaded or published: the release workflow only drafts (W-32).
+The skill scripts find the core in this order: an importable `dj` (the engine venv), then
+`../../../../src` (a clone of the repo), then `../../../engine/src` (this zip).
+
+The version comes from pyproject.toml and must equal plugin.json's. A zip over 15 MB is refused.
+The zip is the same bytes for the same files (sorted entries, fixed time stamps). The engine
+bundle (`.mcpb`) is not in the zip: it is the standalone fallback, scripts/build_mcpb.py. Nothing
+is uploaded or published: the release workflow only drafts (W-32).
 """
 
 from __future__ import annotations
 
 import argparse
-import ast
+import hashlib
 import importlib.util
 import json
 import os
 import subprocess
 import sys
 import tempfile
-import textwrap
 import tomllib
 import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 PLUGIN = REPO / "plugin"
-SRC = REPO / "src"
-DOOR1_TEST = REPO / "tests" / "test_door1_imports.py"
 TOP = "plugin"  # the zip's one top folder: the plugin as it sits in the repo
-VENDOR = "vendor"  # plugin/vendor/dj/ holds the core
-# Engine-only packages (Door 2). A vendored module must import without them: the same list the
-# Door-1 test blocks.
-ENGINE_PACKAGES = ("pyrekordbox", "rapidfuzz", "httpx", "typer", "mcp")
-# Added by W-30b to what DOOR1_MODULES guards: the identity, the sleeve and the report's charts.
-CORE_EXTRA = ("dj.analysis.identity", "dj.sleeve", "dj.design", "dj.report_charts")
-# Data files the core reads next to its modules (paths relative to src/).
-CORE_DATA = ("dj/analysis/archetypes.yaml",)
+ENGINE = "engine"  # plugin/engine/: the engine's source
+ENGINE_EXTRA = ("examples", "scripts/merge_desktop_config.py")  # beside the bundle's files
+STAMP_FILE = "BUILD.txt"  # engine/BUILD.txt: the version and a hash of the engine's files
+INSTALL_ONLY = ("commands",)  # plugin folders the light zip leaves out
+LOCAL = {ENGINE, "vendor", "engine.mcpb"}  # left by a local build or an older layout: never shipped
 SKIP_DIRS = {"__pycache__", ".mcpb-cache"}
 SKIP_FILES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 STAMP = (2026, 1, 1, 0, 0, 0)  # every entry's time: the same files give the same zip
-ENGINE = "engine.mcpb"  # the engine bundle at the plugin's root, where plugin.json's mcpServers points
-MCP_SERVERS = f"./{ENGINE}"
-MANIFEST = ".claude-plugin/plugin.json"
-MAX_BYTES = 15 * 1024 * 1024  # a zip over 15 MB is refused (W-34)
+MAX_BYTES = 15 * 1024 * 1024  # a zip over 15 MB is refused
 
 
 def _load_mcpb():
-    """scripts/build_mcpb.py, loaded from beside this file: its functions build the engine."""
+    """scripts/build_mcpb.py, loaded from beside this file: its `members` lists the engine's files."""
     spec = importlib.util.spec_from_file_location("build_mcpb", Path(__file__).resolve().with_name("build_mcpb.py"))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -101,47 +85,11 @@ def version() -> str:
     return str(project)
 
 
-def door1_modules(path: Path = DOOR1_TEST) -> list[str]:
-    """The DOOR1_MODULES list of tests/test_door1_imports.py, read without importing the test."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "DOOR1_MODULES" for t in node.targets):
-            return list(ast.literal_eval(node.value))
-    raise BuildError(f"{path.name} has no DOOR1_MODULES list.")
-
-
-def core_modules(modules: list[str]) -> dict[str, Path]:
-    """Every `dj` module that loads when `modules` are imported with the engine packages blocked:
-    {module name: its file}. An engine module cannot be among them: it would not import."""
-    code = textwrap.dedent(f"""
-        import importlib, json, sys
-        for name in {ENGINE_PACKAGES!r}:
-            sys.modules[name] = None  # `import name` raises ImportError
-        for mod in {modules!r}:
-            importlib.import_module(mod)
-        found = {{n: m.__file__ for n, m in sys.modules.items()
-                 if (n == "dj" or n.startswith("dj.")) and getattr(m, "__file__", None)}}
-        print(json.dumps(found))
-    """)
-    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(SRC), os.environ.get("PYTHONPATH", "")]).rstrip(os.pathsep))
-    done = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=env, capture_output=True, text=True,
-                          encoding="utf-8", timeout=120)  # fmt: skip
-    if done.returncode != 0:
-        raise BuildError(f"the core does not import without the engine packages:\n{done.stderr.strip()}")
-    found = {name: Path(file).resolve() for name, file in json.loads(done.stdout).items()}
-    for name, file in found.items():
-        if not file.is_relative_to(SRC.resolve() / "dj"):
-            raise BuildError(f"{name} loaded from {file}, not from src/dj: run from the repo.")
-    return dict(sorted(found.items()))
-
-
 def _shipped(rel: str) -> bool:
-    """False for what never goes in: caches (a `.mcpb-cache/` Claude Code extracted the engine
-    into among them), OS files, a `vendor/` left by a local test (the core is vendored fresh from
-    src/) and a local `engine.mcpb` (the engine is built fresh)."""
+    """False for caches, OS files and what a local build left at the plugin's top."""
     parts = rel.split("/")
-    return not (parts[0] == VENDOR or rel == ENGINE or any(part in SKIP_DIRS for part in parts)
-                or parts[-1] in SKIP_FILES or rel.endswith(".pyc"))  # fmt: skip
+    return not (parts[0] in LOCAL or any(part in SKIP_DIRS for part in parts) or parts[-1] in SKIP_FILES
+                or rel.endswith(".pyc"))  # fmt: skip
 
 
 def _git_files(*args: str) -> list[str]:
@@ -159,60 +107,57 @@ def _git_files(*args: str) -> list[str]:
 
 def plugin_files() -> list[Path]:
     """The plugin's own files, sorted: exactly what git tracks under plugin/ (as it is on disk),
-    minus caches, OS files and a local `vendor/`. A file git does not track (a `.env`, notes,
-    local settings, ignored or not) is refused, not shipped: hard rules 6 and 7. Track it to ship
-    it, or move it out of plugin/."""
+    minus caches and local build output. A file git does not track is refused, not shipped."""
     stray = sorted(rel for rel in _git_files("--others") if _shipped(rel))
     if stray:
         raise BuildError("plugin/ holds files git does not track, which would ship in the zip: "
                          + ", ".join(stray) + ". Track them to ship them, or move them out of plugin/.")  # fmt: skip
-    out = []
-    for rel in sorted(set(_git_files("--cached"))):
-        path = PLUGIN / rel
-        if _shipped(rel) and path.is_file() and not path.is_symlink():  # a tracked file deleted on disk: gone
-            out.append(path)
-    return out
+    return [PLUGIN / rel for rel in sorted(set(_git_files("--cached")))
+            if _shipped(rel) and (PLUGIN / rel).is_file() and not (PLUGIN / rel).is_symlink()]  # fmt: skip
 
 
-def zipped_manifest(path: Path, *, engine: bool) -> bytes:
-    """plugin.json as it goes in the zip. With the engine: as it is, and it must name
-    `./engine.mcpb` under mcpServers. Without: the same object minus `mcpServers`, so the light
-    zip does not point at a bundle it lacks (and still validates)."""
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if engine:
-        if data.get("mcpServers") != MCP_SERVERS:
-            raise BuildError(f'plugin.json must say "mcpServers": "{MCP_SERVERS}" for the zip with the engine.')
-        return path.read_bytes()
-    data.pop("mcpServers", None)
-    return (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+def engine_files(*, full: bool = True) -> dict[str, Path]:
+    """{path under engine/: source file}: the engine bundle's files minus its manifest (src/dj/**
+    and the project files), plus examples/ and the config script. Not `full`: src/ only."""
+    try:
+        names = {name: path for name, path in mcpb.members(REPO).items() if name != "manifest.json"}
+    except mcpb.BuildError as exc:
+        raise BuildError(f"the engine: {exc}") from None
+    if not full:
+        return {name: path for name, path in names.items() if name.startswith("src/")}
+    tracked = mcpb._git(REPO, "--cached", "--", *ENGINE_EXTRA)
+    for rel in ENGINE_EXTRA:
+        if not any(name == rel or name.startswith(f"{rel}/") for name in tracked):
+            raise BuildError(f"{rel} is not tracked by git: the engine copy needs it.")
+    for rel in tracked:
+        if mcpb._shipped(rel) and (REPO / rel).is_file():
+            names[rel] = REPO / rel
+    return dict(sorted(names.items()))
 
 
-def entries(*, flat: bool = False, engine: bool = True) -> tuple[dict[str, Path | bytes], list[str], int | None]:
-    """{name in the zip: source file, or the bytes that go in}, the vendored module names, and the
-    engine bundle's size (None without it). `flat`: no top folder. `engine`: plugin/engine.mcpb,
-    built fresh by scripts/build_mcpb.py's functions."""
+def stamp(files: dict[str, Path], ver: str) -> bytes:
+    """engine/BUILD.txt: `dj-librarian <version> <sha256 of the files, names and bytes>`."""
+    digest = hashlib.sha256()
+    for rel, path in sorted(files.items()):
+        digest.update(rel.encode("utf-8") + b"\0" + path.read_bytes() + b"\0")
+    return f"dj-librarian {ver} {digest.hexdigest()[:16]}\n".encode("utf-8")
+
+
+def entries(*, flat: bool = False, engine: bool = True) -> dict[str, Path | bytes]:
+    """{name in the zip: source file, or the bytes that go in}. `flat`: no top folder. Not
+    `engine`: the light zip."""
     top = "" if flat else f"{TOP}/"
     names: dict[str, Path | bytes] = {}
-    for path in plugin_files():  # first: a stray file refuses before the slower import check
+    for path in plugin_files():  # first: a stray file refuses before anything else
         rel = path.relative_to(PLUGIN).as_posix()
-        names[f"{top}{rel}"] = zipped_manifest(path, engine=engine) if rel == MANIFEST else path
-    modules = core_modules(sorted(set(door1_modules()) | set(CORE_EXTRA)))
-    for file in modules.values():
-        names[f"{top}{VENDOR}/{file.relative_to(SRC.resolve()).as_posix()}"] = file
-    for rel in CORE_DATA:
-        source = SRC / rel
-        if not source.is_file():
-            raise BuildError(f"src/{rel} is missing.")
-        names[f"{top}{VENDOR}/{rel}"] = source
-    engine_size = None
+        if engine or rel.split("/")[0] not in INSTALL_ONLY:
+            names[f"{top}{rel}"] = path
+    files = engine_files(full=engine)
+    for rel, path in files.items():
+        names[f"{top}{ENGINE}/{rel}"] = path
     if engine:
-        try:
-            data, _info = mcpb.bundle()
-        except mcpb.BuildError as exc:
-            raise BuildError(f"the engine bundle: {exc}") from None
-        names[f"{top}{ENGINE}"] = data
-        engine_size = len(data)
-    return dict(sorted(names.items())), list(modules), engine_size
+        names[f"{top}{ENGINE}/{STAMP_FILE}"] = stamp(files, version())
+    return dict(sorted(names.items()))
 
 
 def zip_name(ver: str, *, engine: bool = True) -> str:
@@ -224,7 +169,7 @@ def build(out_dir: Path, *, flat: bool = False, engine: bool = True) -> dict[str
     """Write the zip into `out_dir` (a temp file first, then its name) and say what is in it.
     Nothing is written when the zip would be over MAX_BYTES."""
     ver = version()
-    names, modules, engine_size = entries(flat=flat, engine=engine)
+    names = entries(flat=flat, engine=engine)
     out_dir.mkdir(parents=True, exist_ok=True)
     target = out_dir / zip_name(ver, engine=engine)
     fd, tmp = tempfile.mkstemp(dir=out_dir, prefix=f".{target.name}.", suffix=".tmp")
@@ -249,9 +194,7 @@ def build(out_dir: Path, *, flat: bool = False, engine: bool = True) -> dict[str
         "files": len(names),
         "bytes": target.stat().st_size,
         "version": ver,
-        "core_modules": modules,
         "engine": engine,
-        "engine_size": engine_size,
     }
 
 
@@ -260,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=REPO / "dist", help="folder for the zip (default: dist/)")
     parser.add_argument("--flat", action="store_true", help="the plugin's files at the zip's root, no plugin/ folder")
     parser.add_argument("--no-engine", action="store_true",
-                        help="leave the engine out: the light zip ...-no-engine.zip, skills only")  # fmt: skip
+                        help="the light zip ...-no-engine.zip: Door 1 only, no install command")  # fmt: skip
     args = parser.parse_args(argv)
     try:
         result = build(args.out.resolve(), flat=args.flat, engine=not args.no_engine)

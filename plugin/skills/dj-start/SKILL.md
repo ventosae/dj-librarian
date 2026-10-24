@@ -156,7 +156,7 @@ Step 3 of 6 · about 1 minute. Setting up the folder failed: <error> Check the f
 ```
 
 `core` (this skill's scripts cannot load where they run, Q-06). The scripts look for the core in
-an installed `dj`, then a clone of the repo, then the plugin zip's `vendor/` folder (D-22). This
+an installed `dj`, then a clone of the repo, then the core folder inside the plugin zip (D-29). This
 copy has none of them: it came from a GitHub marketplace, or from a zip built without the core.
 The plugin zip (`dj-librarian-plugin-<version>.zip`, README, Claude plugin) carries the core:
 
@@ -220,12 +220,12 @@ one action under 2 minutes. Chips: one per proposal in the report (2 or 3), each
 `Build me the <name> structure` exactly as the report shows it, plus `not yet`. The last line
 says what was missing and is the only place for the engine offer (R-102): the XML has no My Tags
 or play history (Q-01; the init JSON lists them under `not_in_xml`). The engine reads My Tags,
-but in this version not play history (Q-13), so never promise history. The engine comes inside the
-plugin zip, so set me up only points it at the folder (engine.md has the fallback).
+but in this version not play history (Q-13), so never promise history. The engine installs from
+Claude Code with /dj-librarian:install (D-29); set me up then checks it (engine.md has the card).
 
 ```text
 Step 6 of 6 · under 2 minutes. Pick one below: I show you the new tree before anything gets written.
-The XML has no My Tags or play history; the engine reads your My Tags. The engine is already in: say set me up and point me at your dj-library folder.
+The XML has no My Tags or play history; the engine reads your My Tags. To add it: in the Code tab type /dj-librarian:install and click Allow, then say set me up.
 ```
 
 No chips: this version.
@@ -236,7 +236,7 @@ Step 6 of 6 · under 2 minutes. Reply with a number: I show you the new tree bef
 2. Build me the <name 2> structure
 3. Build me the <name 3> structure
 4. Not yet
-The XML has no My Tags or play history; the engine reads your My Tags. The engine is already in: say set me up and point me at your dj-library folder.
+The XML has no My Tags or play history; the engine reads your My Tags. To add it: in the Code tab type /dj-librarian:install and click Allow, then say set me up.
 ```
 
 A returning DJ with no new export (see Already set up): the same chips and last line, this first

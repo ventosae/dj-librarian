@@ -1,6 +1,6 @@
 """The A6 handout, docs/handout/ (W-34 item 5).
 
-The card's "Set me up" line says the engine is already in (D-28). The PDF is 2 pages of 105 × 148 mm,
+The card's "Set me up" line names the install command (D-29). The PDF is 2 pages of 105 × 148 mm,
 the size the HTML's `@page` sets; the two previews are its pages at 3×; docs/handout/README.md names
 the files, the OFL fonts embedded in fonts.css and the exact commands that re-render all three.
 """
@@ -16,7 +16,7 @@ HANDOUT = Path(__file__).resolve().parents[1] / "docs" / "handout"
 HTML = HANDOUT / "dj-librarian-a6.html"
 PDF = HANDOUT / "dj-librarian-a6.pdf"
 README = HANDOUT / "README.md"
-SET_ME_UP = "It’s already in — say set me up and point me at your dj-library folder."
+SET_ME_UP = "Code tab → /dj-librarian:install → Allow. Then say set me up."
 PT_PER_MM = 72 / 25.4
 
 
@@ -55,7 +55,7 @@ def _rows() -> dict[str, str]:
     return {bubble.strip(): " ".join(what.split()) for bubble, what in parser.rows}
 
 
-def test_the_set_me_up_line_says_the_engine_is_already_in():
+def test_the_set_me_up_line_names_the_install_command():
     rows = _rows()
     assert rows["Set me up"] == SET_ME_UP
     assert "Installs the engine" not in _text(HTML) and "10 min)" not in _text(HTML)
@@ -78,7 +78,10 @@ def test_the_pdf_has_two_a6_pages():
 
 
 def test_the_previews_are_the_two_pages_at_3x():
+    """Rendered locally with the README's commands, not tracked (W-35): checked when present."""
     for name in ("preview-front.png", "preview-back.png"):
+        if not (HANDOUT / name).is_file():
+            continue
         head = (HANDOUT / name).read_bytes()[:24]
         assert head[:8] == b"\x89PNG\r\n\x1a\n", name
         assert struct.unpack(">II", head[16:24]) == (1191, 1678), name

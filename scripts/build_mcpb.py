@@ -1,6 +1,6 @@
 """Build the engine as an MCP bundle (.mcpb) a DJ installs by drag-and-drop (W-34, D-28, Q-31).
 
-    python3 scripts/build_mcpb.py [--out DIR] [--plugin] [--npx] [--smoke]
+    python3 scripts/build_mcpb.py [--out DIR] [--npx] [--smoke]
 
 Writes `<out>/dj-librarian-engine-<version>.mcpb` (default `dist/`, gitignored) and prints one JSON
 object: the bundle's path, size in bytes, file count and version. Standard library only, so it
@@ -28,8 +28,8 @@ The bundle is the same bytes for the same files with the same Python (sorted ent
 stamps, deflate). The files are read from the working copy, so a checkout with CRLF line endings
 (git's core.autocrlf on Windows) or another Python's zlib gives other bytes than the release
 built on CI; the files inside are the same code either way.
-`--plugin` also writes it to `plugin/engine.mcpb`, where `plugin.json`'s `mcpServers` points (a
-build product, gitignored; `claude plugin validate ./plugin` needs it). `--npx` packs the same
+The bundle is the standalone fallback (Settings -> Extensions); the plugin zip carries the
+engine's source instead (D-29, scripts/build_plugin_zip.py). `--npx` packs the same
 staged files with the official CLI at a pinned version (`npx @anthropic-ai/mcpb@<pin> pack`) instead,
 when Node's npx is on PATH (it fetches that package from npm; the built-in writer needs no
 network). `--smoke` starts the bundle the way a host does before anything is written: unpacked
@@ -60,9 +60,7 @@ from urllib.parse import urlsplit
 
 REPO = Path(__file__).resolve().parents[1]
 MANIFEST = REPO / "mcpb" / "manifest.json"
-PLUGIN = REPO / "plugin"
 PLUGIN_JSON = Path("plugin") / ".claude-plugin" / "plugin.json"
-IN_PLUGIN = "engine.mcpb"  # plugin/engine.mcpb: what plugin.json's mcpServers names
 NAME = "dj-librarian-engine-{version}.mcpb"
 # The official CLI, pinned: the first release line whose schemas include 0.4 (server type uv).
 # CI's manifest check uses the same pin (tests/test_mcpb.py holds them equal).
@@ -605,8 +603,7 @@ def handshake(data: bytes, *, offline: bool = False, timeout: float = SMOKE_SECO
 
 
 def bundle(repo: Path = REPO, *, npx: bool = False) -> tuple[bytes, dict[str, Any]]:
-    """Check the manifest, gather the files and pack them: (the bundle's bytes, its manifest).
-    build_plugin_zip.py calls this to put the engine in the plugin zip."""
+    """Check the manifest, gather the files and pack them: (the bundle's bytes, its manifest)."""
     manifest_path = repo / "mcpb" / "manifest.json"
     manifest = load_manifest(manifest_path)
     names = members(repo, manifest_path)
@@ -634,10 +631,9 @@ def _shown(path: Path, repo: Path) -> str:
     return path.relative_to(repo.resolve()).as_posix() if path.is_relative_to(repo.resolve()) else path.as_posix()
 
 
-def build(out_dir: Path, *, repo: Path = REPO, plugin_dir: Path | None = None, npx: bool = False,
-          smoke: bool = False) -> dict[str, Any]:  # fmt: skip
-    """Write the bundle into `out_dir` (and to `plugin_dir`/engine.mcpb when given) and say what
-    it is. `smoke`: start it first (handshake()). Nothing is written when a check fails."""
+def build(out_dir: Path, *, repo: Path = REPO, npx: bool = False, smoke: bool = False) -> dict[str, Any]:
+    """Write the bundle into `out_dir` and say what it is. `smoke`: start it first (handshake()).
+    Nothing is written when a check fails."""
     data, info = bundle(repo, npx=npx)
     started = handshake(data) if smoke else None
     version = info["manifest"]["version"]
@@ -645,9 +641,6 @@ def build(out_dir: Path, *, repo: Path = REPO, plugin_dir: Path | None = None, n
     _write(target, data)
     result: dict[str, Any] = {"path": _shown(target, repo), "size": len(data), "files": info["files"],
                               "version": version}  # fmt: skip
-    if plugin_dir is not None:
-        _write(plugin_dir / IN_PLUGIN, data)
-        result["plugin"] = _shown(plugin_dir / IN_PLUGIN, repo)
     if started is not None:
         result["smoke"] = started
     return result
@@ -656,14 +649,12 @@ def build(out_dir: Path, *, repo: Path = REPO, plugin_dir: Path | None = None, n
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build dist/dj-librarian-engine-<version>.mcpb (nothing is uploaded).")
     parser.add_argument("--out", type=Path, default=REPO / "dist", help="folder for the bundle (default: dist/)")
-    parser.add_argument("--plugin", action="store_true", help="also write plugin/engine.mcpb (plugin.json points there)")
     parser.add_argument("--npx", action="store_true", help=f"pack with `npx {MCPB_CLI} pack` (needs Node)")
     parser.add_argument("--smoke", action="store_true",
                         help="start the bundle with uv as a host would and compare its tools with the manifest's")  # fmt: skip
     args = parser.parse_args(argv)
     try:
-        result = build(args.out.resolve(), plugin_dir=PLUGIN if args.plugin else None, npx=args.npx,
-                       smoke=args.smoke)  # fmt: skip
+        result = build(args.out.resolve(), npx=args.npx, smoke=args.smoke)
     except BuildError as exc:
         print(json.dumps({"error": str(exc)}))
         return 1
