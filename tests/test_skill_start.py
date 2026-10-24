@@ -905,16 +905,28 @@ def test_steps_5_and_6_go_out_as_one_reply():
         assert TIME.search(_lines(block)[0])
 
 
+ENGINE_OFFER = "The engine is already in: say set me up and point me at your dj-library folder."
+
+
 def test_step_6_never_promises_play_history_from_the_engine():  # Q-13: DjmdHistory is not read
     step = _step(6)
-    offers = [ln for b in _templates(step) for ln in _lines(b) if "Install the engine" in ln]
+    offers = [ln for b in _templates(step) for ln in _lines(b) if "The engine is already in" in ln]
     assert len(offers) == 2
     for line in offers:
         assert "the engine reads your My Tags" in line
         assert not re.search(r"engine reads[^.;]*history", line), line
-        assert line.endswith("Install the engine (about 10 minutes): say set me up.")
+        assert line.endswith(ENGINE_OFFER)
         assert _lines(next(b for b in _templates(step) if line in b))[-1] == line  # the last line
     assert "never promise" in step
+
+
+def test_step_6_offers_the_engine_that_came_in_the_zip_without_an_install():  # W-34, D-28
+    """The plugin zip carries the engine: the offer asks for the folder, not for an install, and
+    names no install time; engine.md holds the fallback for a zip without it."""
+    step = _step(6)
+    assert "Install the engine" not in step and "about 10 minutes" not in step
+    prose = " ".join(step.split())
+    assert "The engine comes inside the plugin zip" in prose and "engine.md has the fallback" in prose
 
 
 def test_already_set_up_covers_every_case():  # R-101 device from library.yaml; a new export
@@ -944,7 +956,7 @@ def test_the_engine_is_offered_only_in_step_6():  # R-102
     for phrase in ("engine", "set me up"):
         assert step.count(phrase) > 0, phrase
         assert text.count(phrase) == step.count(phrase), f"{phrase!r} appears outside step 6"
-    assert "Install the engine (about 10 minutes): say set me up" in _step(6)
+    assert ENGINE_OFFER in _step(6)
 
 
 def test_step_6_offers_the_proposals_and_says_what_was_missing():  # R-102, Q-01

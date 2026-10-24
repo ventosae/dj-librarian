@@ -24,11 +24,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from dj.safety import REPO_ROOT
+from dj import hostenv
 from dj.spotify import SpotifyError, refused_status
 
-CACHE_DIR = REPO_ROOT / ".cache" / "library"
-REPORT_DIR = REPO_ROOT / "reports" / "library"
+# <repo>/.cache/library and <repo>/reports/library in a clone; in the desktop extension
+# <dj-library>/.cache/engine/.cache/library and <dj-library>/reports/library (dj.hostenv).
+CACHE_DIR = hostenv.state_root() / ".cache" / "library"
+REPORT_DIR = hostenv.report_root() / "library"
 TIME_RANGES = ("short_term", "medium_term", "long_term")
 TOP_N = 40
 

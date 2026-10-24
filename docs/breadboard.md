@@ -19,7 +19,7 @@ P0 Plugin ──► P1 Hello ──► P2 Export ──► P3 Folder ──► P
 | P3 | Folder | One line: connect a folder in Cowork; drop the XML in it. | Connects folder, drops file | Folder detected; `dj-library/` scaffold written; XML copied to `exports/` (the original stays where the DJ put it); `library.yaml` written | Connected-folder prompt |
 | P4 | Working | Task list: 5 steps ticking (read collection → profile → structure → taste → report). One line: "About 5 minutes. Go make a coffee." No questions asked. | Waits | `dj-profile`, `dj-structure`, `dj-taste` run on the XML; MD files written; `dj-report` renders HTML | Task list widget (progress) |
 | P5 | Report | The HTML opens in the side panel. 4 sections: who you are; how it's built (graph); 3 ways to rebuild it, each with a trigger prompt; one next action. | Reads, scrolls | File card delivered; copy saved to `reports/` | File / artifact card |
-| P6 | Next | One line, one action under 2 minutes: "Pick one: say *Build me the ___ structure*." Or, for builds on live data: "Install the engine (10 min) — say *set me up*." | Taps / types | — | Question widget (3 proposal chips + "not yet") |
+| P6 | Next | One line, one action under 2 minutes: "Pick one: say *Build me the ___ structure*." Last line: "The engine is already in: say *set me up* and point me at your dj-library folder." | Taps / types | — | Question widget (3 proposal chips + "not yet") |
 
 Rules for session 1:
 - Zero questions between P3 and P5. If something is missing, finish with what there is and say what was missing at P6.
@@ -41,8 +41,8 @@ Trigger prompt ──► Preview ──► Yes? ──► Output file ──► 
 | C1 | Crate me | Asks one thing only if needed (event or vibe; size chips 30 / 50 / 70). Then preview list with one-line reasons, spares marked. | Picks, reads | Spec from the brief; selection by code from `taste/` + fields | Chips + list card |
 | C2 | Gate → Output | Same as B2–B3; `proposals/crate-<name>.xml` + `crates/<name>.md`. | | | |
 | S1 | Style Barber | One question per turn, ≤ 10 min, progress stated. A/B picks from their own tracks. | Taps | `taste/` files updated, dated | Question widget (A/B chips) |
-| M1 | Engine install | Only when the DJ asks or a feature needs it (live DB read, Spotify, tidy). 3-step card per OS (install `uv`, enable the plugin's connector, set write tools to ask-every-time), "about 10 minutes", then `dj_status` as the proof. | Installs | MCP connector runs on their computer | Checklist card |
-| Y1 | Spotify setup | Only on request. Card: Premium check, create your app, paste two keys into `.env`. "About 8 minutes." | Follows | `dj pull` as proof | Checklist card |
+| M1 | Engine set-up | Only when the DJ asks or a feature needs it (live DB read, Spotify, tidy). The engine came inside the plugin zip (D-28). One card, no terminal: pick the dj-library folder in the engine settings, optional Spotify keys there, write tools on ask-every-time, "about 3 minutes", then `dj_status` as the proof. Fallback: the `.mcpb` in Settings → Extensions. | Fills a form | MCP connector runs on their computer | Checklist card |
+| Y1 | Spotify setup | Only on request. Card: Premium check, create your app, paste two keys into the engine settings. "About 8 minutes." | Follows | `dj pull` as proof | Checklist card |
 
 ## Open
 

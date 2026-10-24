@@ -12,11 +12,10 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from dj import libfolder, library
+from dj import hostenv, libfolder, library
 from dj.intake import slug
-from dj.safety import REPO_ROOT
 
-REPORT_DIR = REPO_ROOT / "reports"
+REPORT_DIR = hostenv.report_root()  # <repo>/reports; the extension: <dj-library>/reports
 ADD, SKIP = "ADD", "SKIP"
 
 

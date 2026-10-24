@@ -350,15 +350,24 @@ SPOTIFY_SKILL = Path(__file__).resolve().parents[1] / "plugin" / "skills" / "dj-
 
 
 def test_the_setup_card_matches_what_the_code_needs():
-    """R-801: Premium, their own app, the redirect URI the login uses, the two .env keys the code
-    reads (only in .env, never in the chat), and `dj pull` as the proof; scopes as the code asks."""
+    """R-801: Premium, their own app, the redirect URI the login uses, the two keys the code reads
+    (W-34: in the engine's settings form, no terminal; `.env` only in a clone; never in the chat),
+    and `dj pull` as the proof; scopes as the code asks."""
     text = SPOTIFY_SKILL.read_text(encoding="utf-8").replace("\r\n", "\n")
     card = re.search(r"^## Setup card: about \d+ minutes\n(.*?)(?=^## )", text, re.MULTILINE | re.DOTALL).group(1)
     steps = re.findall(r"^(\d)\. \*\*(.+?)\*\*", card, re.MULTILINE)
     assert [n for n, _ in steps] == ["1", "2", "3", "4", "5"]
     titles = [title for _, title in steps]
     assert titles[0].startswith("Premium") and titles[1].startswith("Your own app")
-    assert titles[2].startswith("Two keys into `.env`") and titles[4].startswith("Proof")
+    assert titles[2].startswith("Two keys into the engine settings") and titles[4].startswith("Proof")
+    form = " ".join(card.split())
+    assert "Settings > Extensions > dj-librarian engine" in form
+    # Claude Code 2.1.299 refuses the `uv` bundle inside a plugin (Q-31): no Configure page to send a DJ to.
+    assert "Configure" not in text and "Claude Code, which does not start the engine from the plugin yet, Q-31" in form
+    assert "**Spotify client ID**" in form and "**Spotify client secret**" in form
+    for terminal in ("Terminal", "PowerShell", "cp examples", "Copy-Item", "notepad", "open -e"):
+        assert terminal not in card, terminal
+    assert "In a clone of the repo (developers," in form
     assert f"`{spotify.REDIRECT}`" in card and "not `localhost`" in card
     for key in ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET"):
         assert f"`{key}=`" in card
@@ -370,3 +379,43 @@ def test_the_setup_card_matches_what_the_code_needs():
     assert read == set(spotify.READ_SCOPES) and "the first pull asks for these two" in scopes
     assert set(spotify.WRITE_SCOPES) - set(spotify.READ_SCOPES) == {"playlist-modify-private"}
     assert "`playlist-modify-private`: only for `dj push --apply` and `dj build --apply`" in scopes
+
+
+def _step3_row() -> str:
+    text = SPOTIFY_SKILL.read_text(encoding="utf-8").replace("\r\n", "\n")
+    table = text.split("## If something fails", 1)[1].split("\n## ", 1)[0]
+    (row,) = [line for line in table.split("\n") if "Step 3 is not done" in line]
+    return row.split(" | ")[0]
+
+
+def test_the_error_table_knows_the_clone_messages(tmp_path, monkeypatch):
+    """A clone reads the keys from `.env`; the step-3 row names what load_env says then."""
+    monkeypatch.delenv("DJ_ENGINE", raising=False)
+    for key in ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET"):
+        monkeypatch.delenv(key, raising=False)
+    row = _step3_row()
+    assert "`.env not found` or `SPOTIFY_CLIENT_ID is empty` (a clone)" in row
+    env = tmp_path / ".env"
+    with pytest.raises(SpotifyError, match=r"^\.env not found"):
+        spotify.load_env(env)
+    env.write_text("SPOTIFY_CLIENT_ID=\nSPOTIFY_CLIENT_SECRET=\n", encoding="utf-8")
+    with pytest.raises(SpotifyError, match=r"^SPOTIFY_CLIENT_ID is empty"):
+        spotify.load_env(env)
+
+
+def test_the_error_table_knows_the_engine_extension_message(tmp_path, monkeypatch):
+    """W-34: in the extension (DJ_ENGINE=mcpb) load_env names the settings form's fields, never `.env`."""
+    row = _step3_row()
+    assert "`Spotify client ID ... not set` or `Spotify client secret not set` (the engine)" in row
+    if importlib.util.find_spec("dj.hostenv") is None:
+        pytest.skip("the extension's message comes with the engine stream (W-34)")
+    monkeypatch.setenv("DJ_ENGINE", "mcpb")
+    for key in ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET"):
+        monkeypatch.delenv(key, raising=False)
+    missing = tmp_path / ".env"
+    with pytest.raises(SpotifyError, match=r"^Spotify client ID .*not set") as both:
+        spotify.load_env(missing)
+    assert ".env" not in str(both.value)
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "invented-client-id")
+    with pytest.raises(SpotifyError, match=r"^Spotify client secret not set"):
+        spotify.load_env(missing)

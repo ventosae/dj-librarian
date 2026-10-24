@@ -88,5 +88,5 @@ Operating knowledge that is not a rule. Rules live in `CLAUDE.md`. Add a dated l
 ## Platforms seen in the PM's runs
 
 - 2026-10-21 Cowork's device VM refuses `unlink` and rename in the connected folder: temp + `os.replace` left `.<name>.<rand>.tmp` siblings and a hardlinked target. Writers now fall back to writing the target directly and never leave a temp behind (W-30, Q-27).
-- 2026-10-21 GUI apps on macOS (Claude Desktop) start with a short PATH that has no `~/.local/bin`, so a bare `uv` is not found. The plugin's engine command is now a user setting (`uv_path`); the M1 card links uv into `/usr/local/bin`. Unverified until the first Mac test (Q-25).
+- 2026-10-21 GUI apps on macOS (Claude Desktop) start with a short PATH that has no `~/.local/bin`, so a bare `uv` is not found. The plugin's engine command is now a user setting (`uv_path`); the M1 card links uv into `/usr/local/bin`. Unverified until the first Mac test (Q-25). Superseded by W-34 (D-28): the engine is a `uv`-type MCPB whose host brings Python, `uv_path` and the link are gone; the write-gate hook still starts a bare `uv`.
 

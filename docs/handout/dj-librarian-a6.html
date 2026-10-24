@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>dj-librarian A6 card</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  @page { size: 105mm 148mm; margin: 0; }
+  :root{
+    --ink:#111; --paper:#fffdf5; --yellow:#ffd23f; --pink:#ff4f79; --cyan:#2ab7ca; --green:#5bd37c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#888}
+  body{font-family:'Comic Neue',system-ui,sans-serif;color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .page{width:105mm;height:148mm;background:var(--paper);position:relative;overflow:hidden;page-break-after:always;
+        background-image:radial-gradient(rgba(0,0,0,.08) .35mm, transparent .4mm);background-size:1.6mm 1.6mm}
+  .page:last-child{page-break-after:auto}
+  .pad{position:absolute;inset:4mm}
+  .title{font-family:'Bangers',Impact,sans-serif;letter-spacing:.5px;line-height:.9}
+  h1.title{font-size:10.8mm;margin:0;color:var(--yellow);-webkit-text-stroke:.45mm var(--ink);text-shadow:1.1mm 1.1mm 0 var(--ink)}
+  .kicker{font-family:'Patrick Hand',cursive;font-size:3.8mm;line-height:1.05;margin:1mm 0 0;max-width:72mm;transform:rotate(-1.5deg);display:inline-block}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:2.2mm;margin-top:3mm}
+  .panel{border:.75mm solid var(--ink);background:#fff;padding:1.8mm 2mm 3.6mm;position:relative;box-shadow:1mm 1mm 0 var(--ink);min-height:26mm}
+  .panel:nth-child(odd){transform:rotate(-.8deg)}
+  .panel:nth-child(even){transform:rotate(.7deg)}
+  .num{position:absolute;top:-3.2mm;left:-3mm;width:7mm;height:7mm;border:.6mm solid var(--ink);border-radius:50%;background:var(--pink);
+       font-family:'Bangers';font-size:5mm;display:flex;align-items:center;justify-content:center;color:#fff;-webkit-text-stroke:.2mm var(--ink)}
+  .panel h3{font-family:'Bangers';font-size:5mm;margin:0 0 .6mm;letter-spacing:.4px}
+  .panel p{margin:0;font-size:3.05mm;line-height:1.18}
+  .panel p b{font-weight:700}
+  .time{position:absolute;right:1.6mm;bottom:.9mm;font-family:'Patrick Hand';font-size:2.9mm;color:#333}
+  .bubble{position:relative;border:.6mm solid var(--ink);border-radius:3mm;background:#fff;padding:1.3mm 2mm;font-family:'Patrick Hand';font-size:3.6mm;line-height:1.08;box-shadow:.8mm .8mm 0 var(--ink)}
+  .bubble:after{content:"";position:absolute;left:5mm;bottom:-2.6mm;border-width:2.6mm 1.6mm 0 1.6mm;border-style:solid;border-color:var(--ink) transparent transparent transparent}
+  .bubble:before{content:"";position:absolute;left:5.35mm;bottom:-1.6mm;border-width:1.9mm 1.25mm 0 1.25mm;border-style:solid;border-color:#fff transparent transparent transparent;z-index:1}
+  .say{display:grid;grid-template-columns:1fr;gap:2mm;margin-top:2.2mm}
+  .row{display:grid;grid-template-columns:50mm 1fr;gap:2mm;align-items:start}
+  .row .what{font-size:3.05mm;line-height:1.18;padding-top:.8mm}
+  .row .what b{font-weight:700}
+  .box{border:.75mm solid var(--ink);background:var(--yellow);padding:1.6mm 2.2mm;box-shadow:1mm 1mm 0 var(--ink);margin-top:2.6mm;transform:rotate(-.6deg)}
+  .box h3{font-family:'Bangers';font-size:4.8mm;margin:0 0 .5mm}
+  .box p{margin:0;font-size:3.05mm;line-height:1.18}
+  .foot{position:absolute;left:4mm;right:4mm;bottom:1.8mm;font-family:'Patrick Hand';font-size:2.9mm;color:#333;display:flex;justify-content:space-between}
+  .pow{position:absolute;right:1mm;top:1mm;width:23mm;height:23mm;transform:rotate(8deg)}
+  .vinyl{width:13mm;height:13mm;float:right;margin:-.5mm -.5mm 0 1mm}
+</style>
+</head>
+<body>
+
+<!-- FRONT -->
+<section class="page">
+  <div class="pad">
+    <svg class="pow" viewBox="0 0 100 100" aria-hidden="true">
+      <polygon points="50,2 61,22 84,10 76,33 98,40 78,54 92,76 68,70 64,96 50,78 36,96 32,70 8,76 22,54 2,40 24,33 16,10 39,22" fill="#ffd23f" stroke="#111" stroke-width="3.5" stroke-linejoin="round"/>
+      <text x="50" y="47" text-anchor="middle" font-family="Bangers" font-size="22" fill="#111">3 MOVES</text>
+      <text x="50" y="66" text-anchor="middle" font-family="Bangers" font-size="15" fill="#111">THEN COFFEE</text>
+    </svg>
+    <h1 class="title">DJ<br>LIBRARIAN</h1>
+    <div class="kicker">Your first session. rekordbox stays untouched — it reads a copy.</div>
+
+    <div class="grid">
+      <div class="panel"><div class="num">1</div><h3>SAY HI</h3>
+        <p>Open a Cowork task. Type <b>hi</b>. It asks <b>Mac or Windows</b> and what they call you in the booth. Tap, type, done.</p>
+        <span class="time">under 1 min</span></div>
+      <div class="panel"><div class="num">2</div><h3>EXPORT</h3>
+        <p>In rekordbox: <b>File → Export Collection in xml format</b>. Name it <b>collection.xml</b>, save to Desktop. Say <b>done</b>.</p>
+        <span class="time">2 min</span></div>
+      <div class="panel"><div class="num">3</div><h3>FOLDER</h3>
+        <p>In Cowork: <b>Add folder</b> → a new one called <b>dj-library</b>. Drop <b>collection.xml</b> in it. That folder is yours: plain text, keep it.</p>
+        <span class="time">1 min</span></div>
+      <div class="panel"><div class="num">4</div><h3>COFFEE</h3>
+        <svg class="vinyl" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="46" fill="#111" stroke="#111" stroke-width="4"/><circle cx="50" cy="50" r="36" fill="none" stroke="#333" stroke-width="1.5"/><circle cx="50" cy="50" r="28" fill="none" stroke="#333" stroke-width="1.5"/><circle cx="50" cy="50" r="15" fill="#ff4f79" stroke="#111" stroke-width="3"/><circle cx="50" cy="50" r="3" fill="#fffdf5"/></svg>
+        <p>It reads the export, measures the library, learns your lanes. No questions. A task list ticks along. rekordbox untouched.</p>
+        <span class="time">~5 min</span></div>
+      <div class="panel"><div class="num">5</div><h3>THE REPORT</h3>
+        <p>Opens on the side. <b>Your sleeve</b> and archetype. How the library is built. <b>3 ways to rebuild it</b>, each with the words to say.</p>
+        <span class="time">5 min to read</span></div>
+      <div class="panel"><div class="num">6</div><h3>PICK ONE</h3>
+        <p>Say <b>“Build me the ___ structure”</b>. You see the tree first. Say <b>yes</b> → you get an XML. <b>You</b> import it in rekordbox. Until then, nothing changed.</p>
+        <span class="time">2 min + import</span></div>
+    </div>
+    <div class="foot"><span>dj-librarian v0.1 · a librarian you talk to</span><span>turn over →</span></div>
+  </div>
+</section>
+
+<!-- BACK -->
+<section class="page">
+  <div class="pad">
+    <h1 class="title" style="font-size:9.5mm">SAY THESE</h1>
+    <div class="kicker">It only proposes. You decide. Your call, always.</div>
+
+    <div class="say">
+      <div class="row"><div class="bubble">Build me the House Bases structure</div><div class="what">The tree, as an XML to import. Nothing moves until you import.</div></div>
+      <div class="row"><div class="bubble">Crate me 50 for Saturday</div><div class="what">30 / 50 / 70 tracks from <b>your own</b> library for a night or a vibe, with spares.</div></div>
+      <div class="row"><div class="bubble">Style barber</div><div class="what">Ten minutes of A/B picks. Sharpens your taste file so crates get better.</div></div>
+      <div class="row"><div class="bubble">Show my report</div><div class="what">The sleeve, the numbers, the three ways. After a new export it re-reads first.</div></div>
+      <div class="row"><div class="bubble">Set me up</div><div class="what">It’s already in — say set me up and point me at your dj-library folder.</div></div>
+    </div>
+
+    <div class="box">
+      <h3>IMPORT THE XML (rekordbox)</h3>
+      <p><b>Preferences → Advanced → Database → rekordbox xml</b>: pick the file in <b>dj-library/proposals/</b>. In the left tree open <b>rekordbox xml</b>, right-click a playlist → <b>Import Playlist</b>.</p>
+    </div>
+
+    <div class="box" style="background:#fff;transform:rotate(.5deg)">
+      <h3>THE RULES IT LIVES BY</h3>
+      <p>Adds only. Never deletes, renames or reorders. Every write: a preview, then it asks. Every number comes from the tool. Taste is yours.</p>
+    </div>
+    <div class="foot"><span>Export again whenever the library changed.</span><span>dj-librarian v0.1</span></div>
+  </div>
+</section>
+</body>
+</html>

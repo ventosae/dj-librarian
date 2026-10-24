@@ -39,6 +39,7 @@ DOOR1_MODULES = [
     "dj.sleeve",  # W-31: the sleeve (R-1403)
     "dj.analysis.identity",  # W-31: six axes, archetype, fingerprint (R-1401, R-1402)
     "dj.report_charts",  # W-31: the report's crate wall, axes and sleeve layers (R-403, R-408)
+    "dj.hostenv",  # W-34: the host's settings and where the engine keeps its files (D-28)
 ]
 
 

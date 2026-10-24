@@ -1,6 +1,6 @@
 ---
 name: dj-spotify
-description: Connect a DJ's own Spotify account to dj-librarian and use it. Guided setup (Premium check, their own Spotify developer app, the redirect URI, two keys in .env, first pull as proof), the Spotify limits since February 2026, the shopping list of missing tracks with Beatport and Bandcamp links, and pushing a rekordbox playlist or a text tracklist to Spotify. Use when the DJ wants to set up or connect Spotify, hits a Spotify login, redirect URI or 403 error, asks what to buy or for a shopping list, or wants a playlist or a tracklist on Spotify.
+description: Connect a DJ's own Spotify account to dj-librarian and use it. Guided setup (Premium check, their own Spotify developer app, the redirect URI, two keys in the engine settings, first pull as proof), the Spotify limits since February 2026, the shopping list of missing tracks with Beatport and Bandcamp links, and pushing a rekordbox playlist or a text tracklist to Spotify. Use when the DJ wants to set up or connect Spotify, hits a Spotify login, redirect URI or 403 error, asks what to buy or for a shopping list, or wants a playlist or a tracklist on Spotify.
 ---
 
 # dj-spotify
@@ -13,8 +13,8 @@ Spotify the tool only creates private playlists and adds to them.
 **Requirements:** R-801, R-802, R-803, R-804, R-805, C-06.
 
 Run this setup only when the DJ asks for Spotify or a Spotify feature needs it (breadboard Y1).
-It needs the engine (the `dj` CLI on their computer). If `dj_status` does not answer, set up the
-engine first (dj-start, engine card).
+It needs the engine on their computer (the dj-librarian tools). If `dj_status` does not answer,
+set up the engine first (dj-start, engine card).
 
 ## Setup card: about 8 minutes
 
@@ -26,12 +26,15 @@ Show the DJ this card, one step at a time. Wait for "done" before the next step.
    description: anything. Redirect URI, exactly: `http://127.0.0.1:8888/callback`
    (`127.0.0.1`, not `localhost`). Tick **Web API**. Save, then open the app's Settings: the
    Client ID is shown, the Client Secret sits behind "View client secret".
-3. **Two keys into `.env` (2 min).** In the dj-librarian folder, copy the example file, open the
-   copy, paste the two values after `SPOTIFY_CLIENT_ID=` and `SPOTIFY_CLIENT_SECRET=`, save.
-   - Mac, in Terminal: `cp examples/.env.example .env` then `open -e .env`
-   - Windows, in PowerShell: `Copy-Item examples\.env.example .env` then `notepad .env`
+3. **Two keys into the engine settings (2 min).** Open the engine settings, the same form the
+   engine card pointed the folder at (Claude desktop app: Settings > Extensions > dj-librarian
+   engine), paste the Client ID into **Spotify client ID** and the secret into **Spotify client
+   secret**, save. No terminal, no file to edit.
 
-   The keys go into that file only. Never into the chat.
+   The keys go into that form only. Never into the chat. In a clone of the repo (developers,
+   and Claude Code, which does not start the engine from the plugin yet, Q-31) they go into
+   `.env` instead, after `SPOTIFY_CLIENT_ID=` and `SPOTIFY_CLIENT_SECRET=`, as
+   `examples/.env.example` shows.
 4. **One link (1 min).** In `links.yaml` in their dj-library folder, one entry: `spotify:` the
    name of a Spotify playlist they own (their inbox), `crate:` the path of a normal rekordbox
    playlist that already exists (for example `house_base/0_INBOX`).
@@ -40,7 +43,8 @@ Show the DJ this card, one step at a time. Wait for "done" before the next step.
    number of tracks. Setup is finished.
 
 If they paste a key into the chat anyway: do not repeat it. Tell them to treat it as leaked,
-make a new secret in the app's Settings on the dashboard and put the new one in `.env`.
+make a new secret in the app's Settings on the dashboard and put the new one in the engine
+settings.
 
 ## Spotify limits since February 2026 (C-06)
 
@@ -72,8 +76,10 @@ one in use as `links_file`.
 On the switch nothing is lost: until the first `dj apply --apply` in the library folder, the
 repo's declined list and match memory are still read (`dj status`: `state_from_repo`), and
 that apply copies them over. Plans list file paths from this computer, so they stay out of git
-(`plans/*.plan.json` in the folder's `.gitignore`). `.env` and the login token stay in the
-dj-librarian folder, never in the dj-library folder.
+(`plans/*.plan.json` in the folder's `.gitignore`). The engine extension keeps the login token
+on the computer, in `.dj-librarian/.cache/` in the home folder (never in the library folder, which
+may sync), so an update does not log the DJ out. In a clone, `.env` and the login token stay in the dj-librarian folder, never in the
+dj-library folder.
 
 ## Shopping list (R-803)
 
@@ -92,7 +98,7 @@ bought or fetched.
 
 ## Push and build with their own app (R-805)
 
-Both work for any DJ whose `.env` holds their own app's keys.
+Both work for any DJ whose engine settings (in a clone: `.env`) hold their own app's keys.
 
 - `dj push "<rekordbox playlist path>"` (MCP `dj_push_preview`): matches the playlist on
   Spotify. MATCH, AMBIGUOUS, MISSING.
@@ -108,7 +114,7 @@ That creates one private playlist once and only ever adds to it.
 
 | Message | What it means, what to do |
 |---|---|
-| `.env not found` or `SPOTIFY_CLIENT_ID is empty` | Step 3 is not done. Redo it, then pull again. |
+| `Spotify client ID ... not set` or `Spotify client secret not set` (the engine); `.env not found` or `SPOTIFY_CLIENT_ID is empty` (a clone) | Step 3 is not done: the keys are not in the engine settings (in a clone: `.env`). Redo it, then pull again. |
 | Spotify shows "Invalid redirect URI" | The app's redirect URI differs. Set it to `http://127.0.0.1:8888/callback` exactly. |
 | `Spotify will not let this app read ... (403)` or `Spotify did not find ... (404)` | 403: the inbox playlist is not theirs. 404: it was deleted, the link is mistyped, or it is not theirs. Fix the link, or copy the tracks into their own playlist; update links.yaml. |
 | `No Spotify login within 180s` | The consent tab was not answered. Run the pull again and click Agree. |

@@ -10,6 +10,14 @@ set to "always allow" while every write keeps asking for approval.
 Results stay under the tool-result limit (NFR-03): a list that grows with the library comes back
 one page at a time, counts first (`paginate`). A bare file name resolves under the tool's folder
 (NFR-05): "set.txt" -> tracklists/set.txt, "x.plan.json" -> plans/x.plan.json.
+
+In the desktop extension (DJ_ENGINE=mcpb, W-34) the code sits in the extension's install folder:
+tree files and tidy plans are looked up in the dj-library folder; without a usable one only
+~/.dj-librarian/plans and ~/.dj-librarian/reports join the allowed roots (`allowed_roots`); and
+DJ_POWER_MODE false, or unset there, refuses every master.db write before anything runs. The CLI
+still runs with the install folder as its working folder: `python -m`
+puts the working folder first on the import path, and the DJ's folder must never be able to
+shadow the `dj` package.
 """
 
 from __future__ import annotations
@@ -29,7 +37,7 @@ from typing import Any, Callable, Mapping, Sequence
 from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
 
-from dj import libfolder
+from dj import hostenv, libfolder
 from dj.barber import MAX_QUESTIONS as BARBER_MAX_QUESTIONS
 from dj.gate import valid_id
 from dj.safety import REPO_ROOT
@@ -120,12 +128,51 @@ def repo_file(path: str, suffixes: tuple[str, ...], folder: str | None = None) -
 
 def library_root() -> Path:
     """The configured dj-library folder (dj.libfolder.configured_root): DJ_LIBRARY, else the
-    folder stored by remember_root, else <repo>/dj-library. A folder too wide to be a library
-    (a drive root, the home folder) is refused."""
+    folder stored by remember_root, else <repo>/dj-library (no default in the desktop extension).
+    A folder too wide to be a library (a drive root, the home folder) is refused."""
     try:
         return libfolder.configured_root()
     except libfolder.LibraryFolderError as exc:
         raise ToolInputError(str(exc)) from exc
+
+
+def allowed_roots() -> tuple[list[Path], str]:
+    """The folders a file argument may come from: the library folder and the repo (in the desktop
+    extension the library folder only: the repo is its install folder). In the extension without a usable library folder the engine keeps the DJ's plans and reports in
+    ~/.dj-librarian (dj.hostenv.home_root), and tool results name files there: its `plans/` and
+    `reports/` count too, never that folder itself (its state, backups and the Spotify token stay
+    out of reach). With a usable library folder both sit inside it and nothing is added. With an
+    unusable library setting, the second value says why it is left out."""
+    # in the desktop extension the code root is the install folder (README, manifest, src): never a DJ file
+    code = [] if hostenv.bundle_mode() else [REPO_ROOT.resolve()]
+    try:
+        roots = [library_root().resolve(), *code]
+        unusable = ""
+    except ToolInputError as exc:
+        roots, unusable = list(code), f" The library folder setting is not used: {exc}"
+    if hostenv.bundle_mode():
+        for extra in (hostenv.home_root() / PLANS, hostenv.report_root()):
+            folder = extra.resolve()
+            if not any(folder.is_relative_to(root) for root in roots):
+                roots.append(folder)
+    return roots, unusable
+
+
+def tree_file(path: str) -> str:
+    """A tree file (bases.yaml, tree.yaml): the dj-library folder's first, then the repo's (W-34).
+    In the desktop extension a relative name is the dj-library folder's only: a stray file in the
+    install folder never supplies a tree (as dj.hostenv.config_file)."""
+    if hostenv.bundle_mode() and not Path(path).is_absolute():
+        path = str(library_root() / path)
+    return library_file(path, (".yaml", ".yml"))
+
+
+def tidy_plan_file(path: str) -> str:
+    """A tidy plan: in the repo's plans/ in a clone (as before); in the desktop extension in the
+    dj-library folder's plans/, where dj_tidy_plan writes it (intake.tidy_paths)."""
+    if hostenv.bundle_mode():
+        return library_file(path, (".json",), folder=PLANS)
+    return repo_file(path, (".json",), folder=PLANS)
 
 
 def library_file(path: str, suffixes: tuple[str, ...], folder: str | None = None) -> str:
@@ -137,11 +184,7 @@ def library_file(path: str, suffixes: tuple[str, ...], folder: str | None = None
     An unusable library setting (a drive root, the home folder) leaves the repo as the only
     root, as the CLI falls back to the repo (intake.default_paths): repo files keep working,
     and the setting's error is named only for a path the repo does not hold."""
-    try:
-        roots = [library_root().resolve(), REPO_ROOT.resolve()]
-        unusable = ""
-    except ToolInputError as exc:
-        roots, unusable = [REPO_ROOT.resolve()], f" The library folder setting is not used: {exc}"
+    roots, unusable = allowed_roots()
     candidate = Path(path)
     exact = [candidate] if candidate.is_absolute() else [root / candidate for root in roots]
     inside = [p.resolve() for p in exact if any(p.resolve().is_relative_to(r) for r in roots)]
@@ -531,7 +574,13 @@ ADD_MODES = ("xml", "db")
 
 
 def power_mode_arg(power_mode: Any) -> None:
-    """R-205: a direct master.db write needs power_mode=true, checked before the preview id."""
+    """R-205: a direct master.db write needs power_mode=true, checked before the preview id. The
+    engine settings come first: DJ_POWER_MODE=false refuses whatever the call says, and so does an
+    unset value in the desktop extension (it fails closed); true, or unset in a clone, leaves this
+    rule. The setting never turns power mode on."""
+    refusal = hostenv.power_mode_refusal()
+    if refusal:
+        raise ToolInputError(refusal)
     if power_mode is not True:
         raise ToolInputError(POWER_MODE_REFUSAL)
 
@@ -575,10 +624,11 @@ def dj_status(page: int = 1, page_size: int = PAGE_SIZE, smart_xml: bool = False
 def dj_tree_preview(file: str = "tree.yaml", page: int = 1, page_size: int = PAGE_SIZE) -> str:
     """Dry-run of a tree file (e.g. bases.yaml): counts and one action per node - CREATE, SKIP,
     HOLD, CONFLICT - and a preview_id (null when there is a CONFLICT). Writes nothing. `file` is a
-    .yaml path inside the repo (e.g. "bases.yaml"). The `actions` come in pages (`paging`; the
-    preview_id is on every page). Show the DJ the result; dj_tree_apply needs this preview_id."""
+    .yaml path inside the dj-library folder or the repo (e.g. "bases.yaml": the dj-library folder's
+    first). The `actions` come in pages (`paging`; the preview_id is on every page). Show the DJ
+    the result; dj_tree_apply needs this preview_id."""
     page, page_size = page_args(page, page_size)
-    return run_paged(["tree", "--file", repo_file(file, (".yaml", ".yml"))], keys=("actions",), page=page,
+    return run_paged(["tree", "--file", tree_file(file)], keys=("actions",), page=page,
                      page_size=page_size)
 
 
@@ -737,7 +787,7 @@ def dj_tree_apply(preview_id: str, file: str = "tree.yaml", power_mode: bool = F
     log.md line) and leaves the final tree out: dj_status pages it."""
     power_mode_arg(power_mode)
     pid = preview_id_arg(preview_id, "dj_tree_preview")
-    options = ["tree", "--file", repo_file(file, (".yaml", ".yml")), "--apply", "--power-mode", "--preview-id", pid]
+    options = ["tree", "--file", tree_file(file), "--apply", "--power-mode", "--preview-id", pid]
     out = run_dj_data(options, as_json=False)
     if isinstance(out.get("output"), str):
         out["output"] = short_tree_output(out["output"])
@@ -955,11 +1005,11 @@ def dj_tidy_dupes(crate: str = "", folder: str = "", all_tracks: bool = False, p
 @guarded
 def dj_tidy_plan(crate: str = "", folder: str = "", all_tracks: bool = False, rename: bool = False,
                  rename_imported: bool = False, art: str = "local") -> str:
-    """Write plans/<date>-tidy-<target>.plan.json (a repo file; no audio file, no rekordbox
-    change) and one log.md line: tag values parsed from the file names for EMPTY tags only, plus
-    local cover art. `rename` also plans renames of files rekordbox does not know;
-    `rename_imported` renames known files too (needs the DJ's explicit words; Relocate in rekordbox
-    afterwards). Then set decision yes|no per item. A long `items` list comes back as its first
+    """Write plans/<date>-tidy-<target>.plan.json (in the repo; in the desktop extension in the
+    dj-library folder; no audio file, no rekordbox change) and one log.md line: tag values parsed
+    from the file names for EMPTY tags only, plus local cover art. `rename` also plans renames of
+    files rekordbox does not know; `rename_imported` renames known files too (needs the DJ's
+    explicit words; Relocate in rekordbox afterwards). Then set decision yes|no per item. A long `items` list comes back as its first
     page; `paging.items.rest_in` names the plan file with all of them."""
     options, positionals = tidy_target(crate, folder, all_tracks)
     if rename:
@@ -980,7 +1030,7 @@ def dj_tidy_apply_preview(plan_file: str, strict: bool = False, page: int = 1, p
     `strict` you will pass to dj_tidy_apply."""
     page, page_size = page_args(page, page_size)
     options = ["tidy", "apply"] + (["--strict"] if strict else [])
-    return run_paged(options, (repo_file(plan_file, (".json",), folder=PLANS),), keys=("items",), page=page,
+    return run_paged(options, (tidy_plan_file(plan_file),), keys=("items",), page=page,
                      page_size=page_size)
 
 
@@ -997,7 +1047,7 @@ def dj_tidy_apply(plan_file: str, preview_id: str, strict: bool = False) -> str:
     report with all of them."""
     pid = preview_id_arg(preview_id, "dj_tidy_apply_preview")
     options = ["tidy", "apply", "--apply", "--preview-id", pid] + (["--strict"] if strict else [])
-    return run_paged(options, (repo_file(plan_file, (".json",), folder=PLANS),), keys=("items",), rest_in="report")
+    return run_paged(options, (tidy_plan_file(plan_file),), keys=("items",), rest_in="report")
 
 
 @server.tool(annotations=READ)
@@ -1009,7 +1059,7 @@ def dj_tidy_undo_preview(plan_file: str, page: int = 1, page_size: int = PAGE_SI
     ("2026-10-20-tidy-all.plan.json" -> plans/2026-10-20-tidy-all.plan.json). dj_tidy_undo needs
     this preview_id."""
     page, page_size = page_args(page, page_size)
-    return run_paged(["tidy", "undo"], (repo_file(plan_file, (".json",), folder=PLANS),), keys=("items",),
+    return run_paged(["tidy", "undo"], (tidy_plan_file(plan_file),), keys=("items",),
                      page=page, page_size=page_size)
 
 
@@ -1024,7 +1074,7 @@ def dj_tidy_undo(plan_file: str, preview_id: str) -> str:
     line itself. A long `items` list comes back as its first page; `paging.items.rest_in` names the
     undo record with all of them."""
     pid = preview_id_arg(preview_id, "dj_tidy_undo_preview")
-    return run_paged(["tidy", "undo", "--apply", "--preview-id", pid], (repo_file(plan_file, (".json",), folder=PLANS),),
+    return run_paged(["tidy", "undo", "--apply", "--preview-id", pid], (tidy_plan_file(plan_file),),
                      keys=("items",), rest_in="undo")
 
 

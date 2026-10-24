@@ -16,7 +16,7 @@ One core, two doors, writes the DJ pulls the trigger on, data the DJ owns.
 │           dj-report · dj-build · dj-crate · dj-barber · dj-spotify │
 │ shared/   voice.md · adhd.md                                       │
 │ hooks/    PreToolUse deny on *_apply / *_write (Claude Code)       │ ← hard gate where hooks run
-│ .mcp.json dj-mcp = the engine, "Runs in each session"             │ ← loads in Cowork on the DJ's PC
+│ engine.mcpb dj-mcp = the engine (MCPB, uv type), its settings form │ ← loads in Cowork on the DJ's PC
 └───────────────┬──────────────────────────────────────────────────┘
                 │ runs
 ┌───────────────▼──────────── Core (Python; PyPI later) ───────────┐
@@ -33,7 +33,7 @@ One core, two doors, writes the DJ pulls the trigger on, data the DJ owns.
 
 **Two doors, one core.**
 - Door 1, *light*: the DJ exports a rekordbox XML into the folder. The skills run the core in Cowork's sandbox. Out: MD files + the HTML report. No install, Mac and Windows identical. This is first contact (D-10).
-- Door 2, *engine*: the plugin's MCP server on the DJ's machine reads live master.db (My Tags, history, play counts), runs Spotify, tidy, Crate me on fresh data. Same core, same files; the report gets richer. Pulled after the wow, never pushed first.
+- Door 2, *engine*: the MCP server on the DJ's machine reads live master.db (My Tags, history, play counts), runs Spotify, tidy, Crate me on fresh data. It ships as an MCPB of the `uv` type (the host brings Python): inside the plugin zip, or as `dj-librarian-engine-<version>.mcpb` on its own (D-28). Same core, same files; the report gets richer. Pulled after the wow, never pushed first.
 
 **Why it holds**
 1. Wow before install. 3 actions, one wait, one HTML.
@@ -47,7 +47,7 @@ One core, two doors, writes the DJ pulls the trigger on, data the DJ owns.
 
 - DJ: Claude desktop app → **Customize → Plugins → Add → Add marketplace** → GitHub URL of the repo (once public). Before that: **Add → Upload plugin** with a `.zip` of `plugin/` (D-17). The plugin then loads in Cowork tasks; its MCP connector runs on the DJ's computer in sessions that run there.
 - Claude Code: `claude plugin marketplace add <owner>/dj-librarian` → `claude plugin install dj-librarian@dj-librarian`.
-- Engine prerequisites (M1 card): `uv` installed; write tools set to "ask every time".
+- Engine (M1 card, `docs/install.md`): already in the plugin zip; the DJ picks the dj-library folder in its settings form and sets the write tools to "ask every time". No terminal. Fallback: the `.mcpb` dragged onto Settings → Extensions → Install (D-28).
 
 ## Repo layout
 
@@ -58,11 +58,12 @@ Reason: `claude plugin validate --strict` warns on a `CLAUDE.md` at the plugin r
 dj-librarian/
   .claude-plugin/marketplace.json     self-hosted marketplace, one entry, source "./plugin"
   plugin/
-    .claude-plugin/plugin.json        name, version (= pyproject), license, author, repository
+    .claude-plugin/plugin.json        name, version (= pyproject), license, author, repository; mcpServers "./engine.mcpb"
     skills/<name>/SKILL.md (+ scripts/)
     shared/voice.md  shared/adhd.md
     hooks/hooks.json  hooks/gate.py    PreToolUse deny on write tools without a plan id (Claude Code)
-    .mcp.json                         dj-mcp (stdio). Until PyPI: `uv run --directory <repo> dj-mcp`; after: `uvx --from dj-librarian==X dj-mcp`
+    engine.mcpb                       build product (gitignored): the engine bundle, `scripts/build_mcpb.py --plugin`
+  mcpb/manifest.json                  the engine's MCPB manifest: server type uv, dj-mcp, user_config (dj-library folder, Spotify keys, power mode)
   src/dj/                             core
   tests/                              pytest; synthetic XML + DB fixtures; writer tests
   examples/                           .env.example  links/tidy/bases/tree .example.yaml
@@ -93,5 +94,5 @@ dj-librarian/
 - Plugin hooks in Cowork (Q-03). MCP connectors: verified.
 - Core install in Cowork's sandbox at skill run time (Q-06).
 - `claude plugin validate` headless in GitHub Actions (Q-07).
-- `${CLAUDE_PLUGIN_ROOT}` / `uv run` as the engine command in Cowork and Claude Desktop (Q-08).
+- The `uv`-type engine bundle in the Claude desktop app on Windows and on a Mac, inside the plugin and on its own, and inside a Cowork session (Q-31). Claude Code 2.1.299 refuses it inside a plugin.
 - pyrekordbox master.db discovery and key on macOS (A-C1).

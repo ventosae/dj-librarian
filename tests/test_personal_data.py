@@ -1,9 +1,10 @@
 """scripts/check_personal.py: the widened personal-data grep (R-1206, C-05, Q-26).
 
-The grep covers src, tests, plugin, examples, README.md, CONTRIBUTING.md, templates, docs/samples
-and .claude-plugin. The owner's name may stand in exactly two fields, `author.name` in
-plugin.json and `owner.name` in marketplace.json; anything else fails. The names are read from
-plugin.json and docs/requirements.md, so none is written in this file (it is grepped too).
+The grep covers src, tests, plugin, examples, README.md, CONTRIBUTING.md, templates, docs/samples,
+.claude-plugin and mcpb. The owner's name may stand in exactly three fields, `author.name` in
+plugin.json, `owner.name` in marketplace.json and `author.name` in mcpb/manifest.json (the engine
+bundle, W-34); anything else fails. The names are read from plugin.json and docs/requirements.md,
+so none is written in this file (it is grepped too).
 """
 
 from __future__ import annotations
@@ -47,8 +48,23 @@ def test_the_repo_holds_the_owners_name_only_in_the_two_allowed_fields(cp):
 
 
 def test_the_grep_covers_the_widened_paths(cp):
-    for path in ("src", "tests", "plugin", "examples", "README.md", "templates", "docs/samples", ".claude-plugin"):
+    for path in ("src", "tests", "plugin", "examples", "README.md", "templates", "docs/samples", ".claude-plugin",
+                 "mcpb"):  # fmt: skip
         assert path in cp.PATHS, path
+
+
+def test_the_engine_bundle_manifest_may_hold_the_name_only_as_its_author(cp, tmp_path):
+    assert cp.ALLOWED[cp.MCPB_JSON] == ("author", "name")
+    root = _repo(tmp_path)
+    (root / "mcpb").mkdir()
+    bundle = {"name": "x", "author": {"name": NAME}, "description": "The engine."}
+    (root / "mcpb" / "manifest.json").write_text(json.dumps(bundle, indent=2), encoding="utf-8")
+    words = NAME.split()
+    assert cp.problems(root, words, _hits(root, words)) == []
+    bundle["long_description"] = f"Made by {NAME}."
+    (root / "mcpb" / "manifest.json").write_text(json.dumps(bundle, indent=2), encoding="utf-8")
+    found = cp.problems(root, words, _hits(root, words))
+    assert any("mcpb/manifest.json" in line and "also found in long_description" in line for line in found), found
 
 
 def test_the_names_come_from_plugin_json_and_the_named_personas(cp):

@@ -44,7 +44,8 @@ Rules adapted from the i-have-adhd skill by ayghri (MIT licence).
   clear yes. Silence or "sounds good" is not a yes.
 - The default write path is a rekordbox XML the DJ imports into rekordbox. Direct writes to
   rekordbox's database are a Windows power mode behind an explicit flag; never offer them first.
-- Never open or print `.env`. It holds the DJ's Spotify keys; the DJ types them in there.
+- The DJ's Spotify keys live in the engine's settings form (in a clone: `.env`). Never ask for or
+  repeat them, and never open or print `.env`.
 
 ## Folder conventions
 

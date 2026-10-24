@@ -1,60 +1,81 @@
-"""The plugin's `uv path` option (Q-25, W-30 item 9).
+"""The plugin's manifest and how it starts the engine (W-34, D-28, Q-31; replaces W-30's `uv path`
+option, Q-25).
 
-A Mac app started from the Dock gets a short PATH, so a bare `uv` may not start the engine. The
-plugin declares `userConfig.uv_path` (default `uv`) and `.mcp.json` starts the engine with it; the
-write-gate hook keeps a bare `uv`. The M1 card and the README give the Mac link into
-/usr/local/bin, labelled unverified until the first Mac test. `claude plugin validate --strict`
-(2.1.299) wants `type`, `title` and `description` on each option and checks every
-`${user_config.KEY}` against the declared keys; CI runs it.
+plugin.json names the engine bundle, `"mcpServers": "./engine.mcpb"` (a build product of
+scripts/build_mcpb.py --plugin, gitignored, inside the plugin zip by default), and declares no
+userConfig: the bundle carries its own settings (mcpb/manifest.json's user_config), which the
+host asks for when it loads the bundle. The old `.mcp.json` (`uv run --directory
+${CLAUDE_PLUGIN_ROOT}/..`, which needed a clone) and the `uv path` option are gone. The write-gate
+hook still starts a bare `uv` (a known gap, logged with Q-31). `claude plugin validate --strict`
+(2.1.299) checks every `${user_config.KEY}` against the declared keys; CI builds the bundle and
+then runs it.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 PLUGIN = REPO / "plugin"
-MAC_LINK = 'sudo ln -sf "$(command -v uv)" /usr/local/bin/uv'
+PLUGIN_JSON = PLUGIN / ".claude-plugin" / "plugin.json"
+HOOKS_JSON = PLUGIN / "hooks" / "hooks.json"
 
 
 def _json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_plugin_json_declares_the_uv_path_option():
-    option = _json(PLUGIN / ".claude-plugin" / "plugin.json")["userConfig"]["uv_path"]
-    assert option["type"] == "string" and option["title"] == "uv path" and option["default"] == "uv"
-    assert isinstance(option["description"], str) and "command -v uv" in option["description"]
-    assert set(option) <= {"type", "title", "description", "default", "required", "sensitive"}
+def test_plugin_json_names_the_engine_bundle():
+    assert _json(PLUGIN_JSON)["mcpServers"] == "./engine.mcpb"
 
 
-def test_mcp_json_starts_the_engine_with_the_uv_path_option():
-    server = _json(PLUGIN / ".mcp.json")["mcpServers"]["dj-librarian"]
-    assert server["type"] == "stdio" and server["command"] == "${user_config.uv_path}"
-    assert server["args"] == ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/..", "--no-sync", "dj-mcp"]
+def test_plugin_json_declares_no_options():
+    """The bundle's own user_config (library folder, Spotify keys, power mode) is the one settings
+    form; the `uv path` option went with the uv-on-PATH install."""
+    assert "userConfig" not in _json(PLUGIN_JSON)
+
+
+def test_there_is_no_mcp_json_and_no_clone_relative_command():
+    assert not (PLUGIN / ".mcp.json").exists()
+    for path in (PLUGIN_JSON, HOOKS_JSON):
+        text = path.read_text(encoding="utf-8")
+        assert "uv_path" not in text and "${CLAUDE_PLUGIN_ROOT}/.." not in text, path.name
+
+
+def test_the_bundle_is_the_plugins_server():
+    """The bundle's name is the server key, so tool names and the write-gate matcher stay
+    mcp__plugin_dj-librarian_dj-librarian__* and mcp__dj-librarian__*."""
+    plugin = _json(PLUGIN_JSON)
+    bundle = _json(REPO / "mcpb" / "manifest.json")
+    assert bundle["name"] == plugin["name"] == "dj-librarian"
+    assert bundle["version"] == plugin["version"]
 
 
 def test_every_user_config_reference_is_declared():
-    declared = set(_json(PLUGIN / ".claude-plugin" / "plugin.json")["userConfig"])
-    for path in (PLUGIN / ".mcp.json", PLUGIN / "hooks" / "hooks.json"):
+    declared = set(_json(PLUGIN_JSON).get("userConfig", {}))
+    for path in (PLUGIN_JSON, HOOKS_JSON):
         used = set(re.findall(r"\$\{user_config\.([A-Za-z0-9_]+)\}", path.read_text(encoding="utf-8")))
         assert used <= declared, (path.name, used - declared)
 
 
 def test_the_hook_keeps_a_bare_uv():
-    (entry,) = _json(PLUGIN / "hooks" / "hooks.json")["hooks"]["PreToolUse"]
+    (entry,) = _json(HOOKS_JSON)["hooks"]["PreToolUse"]
     (hook,) = entry["hooks"]
     assert hook["command"] == "uv" and hook["onFailure"] == "block"
 
 
-def test_the_mac_card_and_the_readme_give_the_link_and_say_it_is_unverified():
-    engine = (PLUGIN / "skills" / "dj-start" / "engine.md").read_text(encoding="utf-8").replace("\r\n", "\n")
-    mac, windows = re.findall(r"^(?:Mac|Windows):\n\n```text\n(.*?)\n```", engine, re.MULTILINE | re.DOTALL)
-    assert MAC_LINK in mac and MAC_LINK not in windows
-    prose = " ".join(engine.split())
-    assert "uv path" in prose and "unverified until the first Mac test (Q-25)" in prose
-    readme = (REPO / "README.md").read_text(encoding="utf-8")
-    assert MAC_LINK in readme and "unverified until the first Mac test (Q-25)" in readme
-    assert "`uv path` option" in readme
+def test_the_engine_bundle_in_plugin_is_never_tracked():
+    """plugin/engine.mcpb is built, not committed: the zip and CI build it fresh."""
+    if shutil.which("git") is None or not (REPO / ".git").exists():
+        pytest.skip("not a git checkout")
+    done = subprocess.run(["git", "-C", str(REPO), "ls-files", "--", "plugin/engine.mcpb", "plugin/.mcpb-cache"],
+                          capture_output=True, text=True, timeout=60)  # fmt: skip
+    assert done.returncode == 0 and done.stdout.strip() == ""
+    ignored = subprocess.run(["git", "-C", str(REPO), "check-ignore", "-q", "plugin/engine.mcpb"], timeout=60)
+    assert ignored.returncode == 0

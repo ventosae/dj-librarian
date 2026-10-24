@@ -1,14 +1,19 @@
-"""scripts/build_plugin_zip.py: the plugin zip with the Door-1 core vendored inside (D-22, Q-21).
+"""scripts/build_plugin_zip.py: the plugin zip with the Door-1 core vendored inside and the engine
+bundle (D-22, D-28, Q-21, Q-31).
 
-The zip holds plugin/ and plugin/vendor/dj/ (the core the Door-1 test guards, plus the identity,
-sleeve, design and report-chart modules and archetypes.yaml), never an engine module or a test.
-Unzipped where there is no src/ and `dj` cannot be imported, the skill scripts find the core in
-vendor/ and run the whole first-contact chain to the report. Nothing is uploaded.
+The zip holds plugin/, plugin/vendor/dj/ (the core the Door-1 test guards, plus the identity,
+sleeve, design and report-chart modules and archetypes.yaml), never an engine module or a test,
+and plugin/engine.mcpb (the engine bundle scripts/build_mcpb.py builds, where plugin.json's
+mcpServers points). `--no-engine` gives the light zip: no bundle, and a plugin.json without
+mcpServers. A zip over 15 MB is refused. Unzipped where there is no src/ and `dj` cannot be
+imported, the skill scripts find the core in vendor/ and run the whole first-contact chain to the
+report. Nothing is uploaded.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -56,6 +61,15 @@ def built(bz, tmp_path_factory):
     return result, out / f"dj-librarian-plugin-{result['version']}.zip"
 
 
+@pytest.fixture(scope="module")
+def light(bz, tmp_path_factory):
+    if not _git_checkout():
+        pytest.skip("not a git checkout: the zip is built from the files git tracks")
+    out = tmp_path_factory.mktemp("dist-light")
+    result = bz.build(out, engine=False)
+    return result, out / f"dj-librarian-plugin-{result['version']}-no-engine.zip"
+
+
 def _version() -> str:
     return tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 
@@ -78,9 +92,10 @@ def test_the_zip_holds_the_plugin_and_the_door1_core_only(built, bz):
     names = _names(path)
     assert all(name.startswith("plugin/") for name in names)
     plugin = {f"plugin/{p.relative_to(REPO / 'plugin').as_posix()}" for p in bz.plugin_files()}
-    assert plugin <= set(names) and "plugin/.claude-plugin/plugin.json" in plugin and "plugin/.mcp.json" in plugin
+    assert plugin <= set(names) and "plugin/.claude-plugin/plugin.json" in plugin
+    assert "plugin/.mcp.json" not in names  # the engine comes from the bundle (W-34)
     vendored = {name.removeprefix("plugin/vendor/") for name in names if name.startswith("plugin/vendor/")}
-    assert set(names) == plugin | {f"plugin/vendor/{v}" for v in vendored}
+    assert set(names) == plugin | {f"plugin/vendor/{v}" for v in vendored} | {"plugin/engine.mcpb"}
     for module in bz.door1_modules():  # the set tests/test_door1_imports.py guards
         stem = module.replace(".", "/")
         assert f"{stem}.py" in vendored or f"{stem}/__init__.py" in vendored, module
@@ -113,7 +128,68 @@ def test_flat_puts_the_plugin_at_the_zip_root(bz, tmp_path):
     bz.build(tmp_path, flat=True)
     names = _names(tmp_path / f"dj-librarian-plugin-{_version()}.zip")
     assert ".claude-plugin/plugin.json" in names and "vendor/dj/libfolder.py" in names
+    assert "engine.mcpb" in names
     assert not any(name.startswith("plugin/") for name in names)
+
+
+# -- the engine inside, and the light zip without it -----------------------------------------------
+
+
+def test_the_engine_bundle_is_in_the_zip_where_plugin_json_points(bz, built):
+    result, path = built
+    source = REPO / "plugin" / ".claude-plugin" / "plugin.json"
+    plugin_json = json.loads(source.read_text(encoding="utf-8"))
+    assert plugin_json["mcpServers"] == "./engine.mcpb"
+    data, _info = bz.mcpb.bundle()
+    with zipfile.ZipFile(path) as zf:
+        assert zf.read("plugin/engine.mcpb") == data  # built fresh: the same bytes as the .mcpb
+        assert zf.read("plugin/.claude-plugin/plugin.json") == source.read_bytes()
+    assert result["engine"] is True and result["engine_size"] == len(data)
+    with zipfile.ZipFile(io.BytesIO(data)) as engine:
+        assert json.loads(engine.read("manifest.json"))["name"] == plugin_json["name"]
+
+
+def test_no_engine_gives_the_light_zip(bz, built, light):
+    full_result, full = built
+    result, path = light
+    assert path.is_file() and path.name == f"dj-librarian-plugin-{_version()}-no-engine.zip"
+    assert result["engine"] is False and result["engine_size"] is None
+    names = _names(path)
+    assert set(names) == set(_names(full)) - {"plugin/engine.mcpb"}
+    assert result["files"] == full_result["files"] - 1 == len(names)
+    with zipfile.ZipFile(path) as zf:
+        zipped = json.loads(zf.read("plugin/.claude-plugin/plugin.json"))
+    source = json.loads((REPO / "plugin" / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    assert "mcpServers" not in zipped  # the light zip never points at a bundle it lacks
+    source.pop("mcpServers")
+    assert zipped == source
+
+
+def test_main_no_engine_prints_the_light_zip(bz, tmp_path, capsys):
+    if not _git_checkout():
+        pytest.skip("not a git checkout: the zip is built from the files git tracks")
+    assert bz.main(["--out", str(tmp_path), "--no-engine"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["engine"] is False and out["engine_size"] is None
+    assert [p.name for p in tmp_path.iterdir()] == [f"dj-librarian-plugin-{_version()}-no-engine.zip"]
+
+
+def test_a_zip_over_the_limit_is_refused_and_not_written(bz, tmp_path, monkeypatch):
+    if not _git_checkout():
+        pytest.skip("not a git checkout: the zip is built from the files git tracks")
+    assert bz.MAX_BYTES == 15 * 1024 * 1024
+    monkeypatch.setattr(bz, "MAX_BYTES", 10_000)
+    with pytest.raises(bz.BuildError, match="over the"):
+        bz.build(tmp_path)
+    assert list(tmp_path.iterdir()) == []  # neither the zip nor its temp file
+
+
+def test_the_zip_with_the_engine_needs_plugin_json_to_point_at_it(bz, tmp_path):
+    manifest = tmp_path / "plugin.json"
+    manifest.write_text(json.dumps({"name": "dj-librarian", "version": _version()}), encoding="utf-8")
+    with pytest.raises(bz.BuildError, match="engine.mcpb"):
+        bz.zipped_manifest(manifest, engine=True)
+    assert json.loads(bz.zipped_manifest(manifest, engine=False)) == {"name": "dj-librarian", "version": _version()}
 
 
 def test_build_refuses_when_plugin_json_and_pyproject_disagree(bz, tmp_path, monkeypatch):
@@ -128,7 +204,8 @@ def test_build_refuses_when_plugin_json_and_pyproject_disagree(bz, tmp_path, mon
 
 def _fake_plugin_repo(tmp_path: Path) -> Path:
     """A git checkout holding a small tracked plugin/, a .gitignore that ignores `.env`, and the
-    caches a local run leaves (never shipped, never a reason to refuse)."""
+    caches a local run leaves (never shipped, never a reason to refuse): among them a local
+    engine.mcpb (scripts/build_mcpb.py --plugin) and the .mcpb-cache/ Claude Code extracts it to."""
     if shutil.which("git") is None:
         pytest.skip("git is not installed")
     repo = tmp_path / "repo"
@@ -141,7 +218,8 @@ def _fake_plugin_repo(tmp_path: Path) -> Path:
         (plugin / rel).parent.mkdir(parents=True, exist_ok=True)
         (plugin / rel).write_text(text, encoding="utf-8")
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True, timeout=60)
-    for rel in ("skills/dj-start/scripts/__pycache__/start.cpython-313.pyc", "vendor/dj/libfolder.py", ".DS_Store"):
+    for rel in ("skills/dj-start/scripts/__pycache__/start.cpython-313.pyc", "vendor/dj/libfolder.py", ".DS_Store",
+                "engine.mcpb", ".mcpb-cache/dj-librarian/manifest.json"):  # fmt: skip
         (plugin / rel).parent.mkdir(parents=True, exist_ok=True)
         (plugin / rel).write_bytes(b"cache")
     return plugin
@@ -166,6 +244,7 @@ def test_an_untracked_file_in_plugin_stops_the_build_instead_of_shipping(bz, tmp
     message = str(refused.value)
     assert ".env" in message and "skills/dj-start/notes.local.md" in message
     assert "__pycache__" not in message and "vendor/" not in message and ".DS_Store" not in message
+    assert "engine.mcpb" not in message and ".mcpb-cache" not in message
     with pytest.raises(bz.BuildError, match="notes.local.md"):
         bz.build(tmp_path / "out")
     assert not (tmp_path / "out").exists()

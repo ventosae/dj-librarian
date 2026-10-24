@@ -11,13 +11,14 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from dj import libfolder, library, match
+from dj import hostenv, libfolder, library, match
 from dj.match import AMBIGUOUS, MATCH, Candidate, Local, Result
-from dj.safety import REPO_ROOT
 from dj.spotify import SpotifyError, refused_status
 
-STATE_FILE = REPO_ROOT / "state" / "push.json"
-REPORT_DIR = REPO_ROOT / "reports"
+# <repo>/state and <repo>/reports in a clone; in the desktop extension the state goes to
+# <dj-library>/.cache/engine/state and the reports to <dj-library>/reports (dj.hostenv).
+STATE_FILE = hostenv.state_root() / "state" / "push.json"
+REPORT_DIR = hostenv.report_root()
 
 
 class PushError(RuntimeError):

@@ -62,7 +62,8 @@ Read before changing anything: `docs/requirements.md` (numbered R-ids; authorita
 
 ```
 .claude-plugin/marketplace.json   self-hosted marketplace → ./plugin
-plugin/                           the Claude plugin: .claude-plugin/plugin.json, skills/, shared/, hooks/, .mcp.json
+plugin/                           the Claude plugin: .claude-plugin/plugin.json (mcpServers → ./engine.mcpb, built), skills/, shared/, hooks/
+mcpb/                             manifest.json of the engine bundle (scripts/build_mcpb.py → dist/dj-librarian-engine-<v>.mcpb)
 src/dj/                           core: safety, library, tree, rules, match, spotify, push, build, analyze,
                                   playlist_copy, intake, tidy/, cli, mcp_server (+ readers/, analysis/, writers/ as they land)
 tests/                            pytest; mocked db; synthetic audio and XML fixtures

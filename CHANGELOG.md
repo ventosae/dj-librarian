@@ -29,18 +29,21 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - Report redesign (W-31): the sleeve hero with handle, archetype, liner notes and the 5 stats; a crate wall with hatched dumps and the overlap arc; three proposal cards with mini sleeves; a sticky Next bar; Booth (dark, default) and Day themes; hover tooltips and a table link on every chart; phone and print layouts. `docs/design.md` is the design system and `scripts/check_palette.py` validates it in CI. `docs/samples/` with `report-booth.png` and `report-day.png`, made by `scripts/make_samples.py`.
 - `dj apply --xml` and `dj copy --xml`: approved inbox adds and copies as a rekordbox XML to import, on any OS; MCP `dj_apply_write` / `dj_copy_apply` take `mode` (W-30, Q-22).
 - `scripts/build_plugin_zip.py`: the plugin zip with the Door-1 core vendored in `plugin/vendor/dj/`; skill scripts find the core in an install, the clone or the zip (W-30, D-22).
-- `plugin.json` `userConfig.uv_path`: the engine command is a user setting for macOS GUI apps (W-30, Q-25, unverified on a Mac).
 - Gig feedback scores Crate me: `+` lines add a point, `-` lines take one off and never make a spare (W-30, Q-19).
 - `docs/samples/chat-session-1.md`: the six dj-start replies, checked against the reply rules (W-30, Q-15).
 - `.github/workflows/release.yml`: on a pushed `v*` tag it runs the CI checks (`ci.yml` via `workflow_call`), refuses a tag that is not on `main` or does not match `pyproject.toml` and `plugin.json`, cuts the version's CHANGELOG section (`scripts/release_notes.py`), builds the plugin zip and creates a draft GitHub release with the zip attached; no PyPI step (W-32, W-27).
-- README "Try it before the release": install the zip (Customize → Plugins → Add → Upload plugin), what Door 1 does, and that the engine needs a clone (W-32).
+- README "Try it before the release": install the zip (Customize → Plugins → Add → Upload plugin), what Door 1 does and where the engine comes from (W-32, W-34).
 - `docs/dijok-session.md`: the one-page run sheet for the first tester session (W-28): before, during, after, the A-01…A-08 checks and the three questions (W-32).
+- The engine as an MCPB desktop extension (W-34, D-28): `mcpb/manifest.json` (uv type; settings form: dj-library folder, Spotify keys, Power mode) and `scripts/build_mcpb.py` → `dj-librarian-engine-<v>.mcpb` (`--plugin`, `--smoke`, `--npx`). `scripts/build_plugin_zip.py` puts the engine inside the plugin zip (≤ 15 MB) and writes a light `-no-engine` zip; `release.yml` attaches the `.mcpb` and both zips.
+- The engine reads its settings from the host (`dj.hostenv`): `DJ_LIBRARY`, `SPOTIFY_CLIENT_ID/SECRET` (before any `.env`), `DJ_POWER_MODE` (false, or unset in the extension, refuses every master.db write), `DJ_ENGINE=mcpb`. Config files come from the dj-library folder first; as an extension its state (backups, previews, caches, tidy undo records) lives in `<dj-library>/.cache/engine/` so it survives updates (W-34).
+- `docs/install.md` (one upload, the `.mcpb` fallback, permissions, where the state lives), a terminal-free engine card, dj-start's "The engine is already in" line, the A6 handout with its re-render README (W-34).
 
 ### Changed
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.
 - Tests read the shipped `examples/` configs instead of a personal `tidy.yaml` / `tree.yaml`; two tests made portable to POSIX hosts (path separators, case-sensitive file names).
 - Skills moved from `.claude/skills/` to `plugin/skills/`. Ruff added with a baseline rule set.
 - Lane colours by size (Q-30, D-27): the four biggest lanes keep a colour, numbered 1-4 by BPM and assigned once in `identity.json`; every other lane is Other on every chart and on the sleeve (W-32).
+- The plugin names its engine bundle (`plugin.json` `mcpServers` → `./engine.mcpb`); `plugin/.mcp.json` and the `uv_path` option are gone; Spotify keys go in the engine settings form, with `.env` only for a clone (W-34).
 
 ### Fixed
 - `.gitignore`: the personal-state folders (`plans/`, `reports/`, …) are ignored at the repo root only, so `docs/prompts/plans/` is tracked.

@@ -17,12 +17,12 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Collection, Sequence
 
-from dj import intake, libfolder
-from dj.intake import Paths
+from dj import hostenv, intake, libfolder
+from dj.intake import Paths, ignore_plans
 from dj.tidy import TidyError, names, tags
 from dj.tidy.checks import Item
 from dj.tidy.config import TidyConfig
-from dj.tidy.report import relocate_md
+from dj.tidy.report import keep_reports_out_of_git, relocate_md
 from dj.tidy.scan import Target
 
 PENDING, YES, NO = intake.PENDING, intake.YES, intake.NO
@@ -54,8 +54,12 @@ def plan_path_for(target: Target, paths: Paths) -> Path:
 
 
 def undo_path_for(plan_path: Path, paths: Paths) -> Path:
+    """state/tidy/<plan>.undo.json under the machine folder: the repo's state/ in a clone; in the
+    desktop extension the engine's own state with the previews and backups (intake.tidy_paths,
+    dj.hostenv): <dj-library>/.cache/engine/state/, or ~/.dj-librarian/state/ without a library."""
     stem = Path(plan_path).name.removesuffix(".plan.json")
-    return paths.root / "state" / "tidy" / f"{stem}.undo.json"
+    machine = paths.root.joinpath(*hostenv.ENGINE_STATE) if hostenv.bundle_mode() and paths.library else paths.machine
+    return machine / "state" / "tidy" / f"{stem}.undo.json"
 
 
 def _write_json_atomic(path: Path, data: Any) -> None:
@@ -248,6 +252,7 @@ def write_plan(plan: dict[str, Any], paths: Paths) -> Path:
             item["applied"] = old.get("applied")
     plan["counts"] = counts(plan)
     _write_json_atomic(path, plan)
+    ignore_plans(paths)  # a plan in a library folder lists music file paths: kept out of git
     return path
 
 
@@ -520,13 +525,15 @@ def _write_ready(plan: dict[str, Any], plan_path: Path, cfg: TidyConfig, paths: 
 def write_apply_report(result: ApplyResult, plan: dict[str, Any], paths: Paths) -> Path:
     data = result.as_dict() | {"applied_at": datetime.now().isoformat(timespec="seconds"), "plan_id": plan["plan_id"]}
     # create-only: a second apply on one day gets -2, the first report stays
-    return libfolder.write_new_numbered(paths.reports / "tidy", f"{date.today().isoformat()}-tidy-apply-"
+    keep_reports_out_of_git(paths)
+    return libfolder.write_new_numbered(paths.report_root / "tidy", f"{date.today().isoformat()}-tidy-apply-"
                                         f"{plan['target']['slug']}", ".report.json",
                                         json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def write_relocate(plan: dict[str, Any], renames: Sequence[dict[str, Any]], paths: Paths) -> Path:
-    path = paths.reports / f"{date.today().isoformat()}-tidy-relocate-{plan['target']['slug']}.md"
+    keep_reports_out_of_git(paths)
+    path = paths.report_root / f"{date.today().isoformat()}-tidy-relocate-{plan['target']['slug']}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     existing = path.read_text(encoding="utf-8") if path.is_file() else ""
     text = relocate_md(plan, renames)

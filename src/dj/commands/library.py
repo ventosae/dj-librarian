@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
@@ -18,7 +17,7 @@ from typing import Any, Iterator
 
 import typer
 
-from dj import barber, build_structure, libfolder
+from dj import barber, build_structure, hostenv, libfolder
 from dj import crate as crate_mod
 from dj import report as report_mod
 from dj.analysis import identity as identity_analysis
@@ -436,18 +435,19 @@ def use(
                    "first, or point at the folder that holds library.yaml. Nothing was stored.", err=True)  # fmt: skip
         raise typer.Exit(EXIT_REFUSED)
     try:
-        if os.environ.get(libfolder.ENV_VAR, "").strip():
+        if hostenv.env_value(libfolder.ENV_VAR):
             libfolder.configured_root()  # an unusable DJ_LIBRARY refuses before anything is stored
         stored = libfolder.remember_root(path)
         effective = libfolder.configured_root()
     except libfolder.LibraryFolderError as exc:
         typer.echo(f"REFUSED {exc} Nothing was stored.", err=True)
         raise typer.Exit(EXIT_REFUSED)
-    data = {"library": str(stored), "stored_in": "state/library-path.txt", "in_use": str(effective)}
+    stored_in = str(libfolder._state_file()) if hostenv.bundle_mode() else "state/library-path.txt"
+    data = {"library": str(stored), "stored_in": stored_in, "in_use": str(effective)}
     if as_json:
         typer.echo(json.dumps(data, indent=2, ensure_ascii=False))
         return
-    lines = [f"Library folder: {stored}", "Stored in state/library-path.txt."]
+    lines = [f"Library folder: {stored}", f"Stored in {stored_in}."]
     if effective != stored:
         lines.append(f"DJ_LIBRARY is set and wins for now: {effective}")
     typer.echo("\n".join(lines))

@@ -1,4 +1,7 @@
-"""tidy.yaml -> TidyConfig. One file read, no other I/O."""
+"""tidy.yaml -> TidyConfig. One file read, no other I/O (beyond finding which tidy.yaml).
+
+Which tidy.yaml (W-34): the dj-library folder's first, the repo's as the clone's fallback; in the
+desktop extension the dj-library folder's only, never one in its install folder."""
 
 from __future__ import annotations
 
@@ -9,10 +12,30 @@ from typing import Any, Sequence
 
 import yaml
 
-from dj.safety import REPO_ROOT
+from dj import hostenv
 from dj.tidy import TidyError
 
-DEFAULT_PATH = REPO_ROOT / "tidy.yaml"
+
+def default_path() -> Path:
+    """tidy.yaml: the dj-library folder's when it has one, else the repo's (the clone's place);
+    in the desktop extension the dj-library folder's, and without one a TidyError that names the
+    engine settings. See dj.hostenv.config_file."""
+    try:
+        return hostenv.config_file("tidy.yaml")
+    except hostenv.HostSettingError as exc:
+        raise TidyError(str(exc)) from exc
+
+
+def _process_default() -> Path | None:
+    try:
+        return default_path()
+    except TidyError:  # the desktop extension without a library folder: load_config() says so
+        return None
+
+
+# This process's default (the CLI's --config; None: no library folder in the desktop extension).
+# load_config() without a path asks again.
+DEFAULT_PATH = _process_default()
 AUDIO_FORMATS = ("mp3", "m4a", "wav", "aiff", "flac")
 
 
@@ -140,8 +163,10 @@ def _bpm_expectation(raw: dict[str, Any], index: int) -> BpmExpectation:
     return BpmExpectation(regex=regex, bpm=int(fixed) if fixed is not None else None)
 
 
-def load_config(path: Path | str = DEFAULT_PATH) -> TidyConfig:
-    path = Path(path)
+def load_config(path: Path | str | None = None) -> TidyConfig:
+    """tidy.yaml at `path`; without one (None or ""), `default_path()` at call time (the MCP
+    server runs for hours, the library folder setting may change under it)."""
+    path = Path(path) if path else default_path()
     if not path.is_file():
         raise TidyError(f"Config not found: {path}")
     try:

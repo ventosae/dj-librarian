@@ -39,7 +39,7 @@ Paths are relative to this skill's folder. Each command prints one JSON object.
 1. Script (Cowork, no install): `python3 scripts/barber.py next --library DIR` and
    `python3 scripts/barber.py record N ANSWER --library DIR` (`python` on Windows,
    `uv run python` in a clone of the repo; `--today YYYY-MM-DD` fixes the date).
-2. CLI (engine or Claude Code): `uv run dj library barber next [--library DIR] [--json]` and
+2. CLI (a clone of the repo, Claude Code): `uv run dj library barber next [--library DIR] [--json]` and
    `uv run dj library barber record N ANSWER [--library DIR] [--json]`. Without `--library` it
    uses the configured folder.
 3. MCP (engine connector): `dj_barber_next()` and `dj_barber_record(n, answer)`.

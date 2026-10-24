@@ -12,12 +12,11 @@ import re
 from pathlib import Path
 from typing import Any
 
-from dj import push
+from dj import hostenv, push
 from dj.intake import slug
 from dj.match import Local, Result
-from dj.safety import REPO_ROOT
 
-STATE_FILE = REPO_ROOT / "state" / "build.json"
+STATE_FILE = hostenv.state_root() / "state" / "build.json"  # <repo>/state; the extension: dj.hostenv
 DESCRIPTION = "Built from a tracklist by dj-librarian."
 
 # leading track numbers, timestamps and bullets: "01. ", "3) ", "[12:34] ", "1:02:03 ", "- "

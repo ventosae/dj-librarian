@@ -18,7 +18,11 @@ Feb 2026), other users' playlist endpoints (removed), audio features (closed to
 new apps since Nov 2024). popularity, genres, external_ids and label are read with .get and
 may be missing.
 
-Credentials come from .env and are never printed. The token cache lives in .cache/.
+Credentials come from the environment (the desktop extension's settings form passes
+SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET), else the dj-library folder's .env, else the repo's .env
+(a clone only); each key on its own. They are never printed or logged. The token cache lives in
+the repo's .cache/; in the desktop extension in ~/.dj-librarian/.cache/ (dj.hostenv.machine_root),
+never in the dj-library folder, which may be cloud-synced or mounted for Claude.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from typing import Any, Iterator
 
 import httpx
 
+from dj import hostenv
 from dj.safety import REPO_ROOT
 
 API = "https://api.spotify.com/v1"
@@ -46,7 +51,7 @@ READ_SCOPES = ("playlist-read-private", "playlist-read-collaborative")
 WRITE_SCOPES = READ_SCOPES + ("playlist-modify-private",)
 # dj analyze only. All read-only; approved by the user on 2026-09-22.
 LIBRARY_SCOPES = READ_SCOPES + ("user-library-read", "user-follow-read", "user-top-read")
-TOKEN_CACHE = REPO_ROOT / ".cache" / "spotify_token.json"
+TOKEN_CACHE = hostenv.machine_root() / ".cache" / "spotify_token.json"  # per computer, never synced
 LOGIN_TIMEOUT_S = 180
 MAX_RETRY_WAIT_S = 30
 
@@ -84,19 +89,57 @@ def unreadable_playlist(name: str, status: int) -> str:
     return UNREADABLE_PLAYLIST[status].format(name=name)
 
 
-def load_env(path: Path | None = None) -> dict[str, str]:
-    path = path or REPO_ROOT / ".env"
-    if not path.is_file():
-        raise SpotifyError(f"{path.name} not found. Copy examples/.env.example to .env and fill it in.")
-    env = {}
+KEYS = (hostenv.SPOTIFY_CLIENT_ID, hostenv.SPOTIFY_CLIENT_SECRET)
+KEY_TITLES = {hostenv.SPOTIFY_CLIENT_ID: "Spotify client ID", hostenv.SPOTIFY_CLIENT_SECRET: "Spotify client secret"}
+
+
+def env_files() -> list[Path]:
+    """The .env files, in the order they are read: the dj-library folder's, then the repo's. The
+    desktop extension never reads one from its install folder: there the library's only."""
+    library = hostenv.configured_library()
+    files = [library / ".env"] if library is not None else []
+    return files if hostenv.bundle_mode() else files + [REPO_ROOT / ".env"]
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    """KEY=value lines of a .env file; `#` lines skipped, quotes around a value dropped."""
+    env: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         if "=" in line and not line.lstrip().startswith("#"):
             key, value = line.split("=", 1)
             env[key.strip()] = value.strip().strip('"').strip("'")
-    for key in ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET"):
-        if not env.get(key):
-            raise SpotifyError(f"{key} is empty in {path.name}.")
     return env
+
+
+def load_env(path: Path | None = None) -> dict[str, str]:
+    """SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET, each on its own: from the environment first
+    (the desktop extension's settings form; empty or an unsubstituted `${...}` is unset), else
+    from the first .env file that has a value for it (`env_files`, or `path` alone), so a library
+    .env without the keys does not hide the repo's. A key still missing -> SpotifyError that says
+    where to put it. No message ever holds a value."""
+    found = {key: value for key in KEYS if (value := hostenv.env_value(key))}
+    if len(found) == len(KEYS):
+        return found
+    files = [path] if path is not None else env_files()
+    read = [f for f in files if f.is_file()]
+    env: dict[str, str] = {}
+    for source in read:  # per key, the first file with a value wins
+        for key, value in _read_env_file(source).items():
+            if value and not env.get(key):
+                env[key] = value
+    env |= found
+    missing = [key for key in KEYS if not env.get(key)]
+    if not missing:
+        return env
+    if hostenv.bundle_mode():
+        titles = " and ".join(KEY_TITLES[key] for key in missing)
+        them = "it" if len(missing) == 1 else "them"
+        raise SpotifyError(f"{titles} not set: add {them} in the dj-librarian engine settings, then try again.")
+    if not read:
+        name = path.name if path is not None else ".env"
+        raise SpotifyError(f"{name} not found. Copy examples/.env.example to .env (in your dj-library folder "
+                           "or the repo) and fill it in.")  # fmt: skip
+    raise SpotifyError(f"{missing[0]} is empty in {' and in '.join(str(f) for f in read)}.")
 
 
 # -- auth --------------------------------------------------------------------------------

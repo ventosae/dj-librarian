@@ -8,6 +8,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Sequence
 
+from dj import libfolder
 from dj.analyze import table
 from dj.intake import Paths
 from dj.tidy.checks import (
@@ -175,8 +176,20 @@ def audit_md(audit: dict[str, Any]) -> str:
     return "\n".join(L)
 
 
+# The tidy reports name music files by their paths: in a library folder they stay out of git (R-905).
+REPORT_IGNORE_LINES = ("reports/tidy/", "reports/*-tidy-relocate-*.md")
+
+
+def keep_reports_out_of_git(paths: Paths) -> None:
+    """In a library folder (the desktop extension, intake.tidy_paths), the tidy report lines go into
+    its .gitignore (add only). In the repo its own .gitignore holds /reports/."""
+    if paths.library:
+        libfolder.ensure_gitignore(paths.root, REPORT_IGNORE_LINES)
+
+
 def write_audit(audit: dict[str, Any], paths: Paths) -> tuple[Path, Path]:
-    folder = paths.reports / "tidy"
+    keep_reports_out_of_git(paths)
+    folder = paths.report_root / "tidy"
     folder.mkdir(parents=True, exist_ok=True)
     stem = f"{date.today().isoformat()}-{audit['target']['slug']}"
     json_path = folder / f"{stem}.audit.json"

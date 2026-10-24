@@ -220,11 +220,12 @@ one action under 2 minutes. Chips: one per proposal in the report (2 or 3), each
 `Build me the <name> structure` exactly as the report shows it, plus `not yet`. The last line
 says what was missing and is the only place for the engine offer (R-102): the XML has no My Tags
 or play history (Q-01; the init JSON lists them under `not_in_xml`). The engine reads My Tags,
-but in this version not play history (Q-13), so never promise history.
+but in this version not play history (Q-13), so never promise history. The engine comes inside the
+plugin zip, so set me up only points it at the folder (engine.md has the fallback).
 
 ```text
 Step 6 of 6 · under 2 minutes. Pick one below: I show you the new tree before anything gets written.
-The XML has no My Tags or play history; the engine reads your My Tags. Install the engine (about 10 minutes): say set me up.
+The XML has no My Tags or play history; the engine reads your My Tags. The engine is already in: say set me up and point me at your dj-library folder.
 ```
 
 No chips: this version.
@@ -235,7 +236,7 @@ Step 6 of 6 · under 2 minutes. Reply with a number: I show you the new tree bef
 2. Build me the <name 2> structure
 3. Build me the <name 3> structure
 4. Not yet
-The XML has no My Tags or play history; the engine reads your My Tags. Install the engine (about 10 minutes): say set me up.
+The XML has no My Tags or play history; the engine reads your My Tags. The engine is already in: say set me up and point me at your dj-library folder.
 ```
 
 A returning DJ with no new export (see Already set up): the same chips and last line, this first

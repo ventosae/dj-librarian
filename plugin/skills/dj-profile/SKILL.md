@@ -33,9 +33,10 @@ Step 1 of 2, about a minute.
 1. Door 1, no engine (Cowork): from this skill's folder run
    `python3 scripts/profile.py --library <dj-library folder>` (`python` on Windows). Options: `--xml FILE` reads one
    export instead of the latest in `exports/`; `--today YYYY-MM-DD` fixes the date in the files.
-2. Engine (Claude Code, or the DJ in a terminal at the repo root):
+2. A clone of the repo (Claude Code at the repo root, for developers):
    `uv run dj library profile --json`. `--library DIR` defaults to the configured folder;
-   `--xml` and `--today` work as above.
+   `--xml` and `--today` work as above. The engine's MCP tools run it inside
+   `dj_library_analyze`.
 
 Both print one JSON object: `written` (`profile/stats.md`, `profile/facts.json`), `headline` (the
 5 stats that matter) and `source` (the export that was read). The run adds one line to `log.md`.

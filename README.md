@@ -20,7 +20,7 @@ The full rules are in [CLAUDE.md](CLAUDE.md) and [docs/requirements.md](docs/req
 
 Until the first release, a tester runs the plugin from a zip. This is Door 1: no clone and no install beyond the zip, about 15 minutes to your first report.
 
-1. Get the zip. Build it in a clone with `uv run python scripts/build_plugin_zip.py` (it writes `dist/dj-librarian-plugin-<version>.zip`), or, once a version is tagged, ask the maintainer for the one on the draft GitHub release (only maintainers see a draft).
+1. Get the zip: once a version is tagged, ask the maintainer for `dj-librarian-plugin-<version>.zip` from the draft GitHub release (only maintainers see a draft), or build it in a clone with `uv run python scripts/build_plugin_zip.py` (it writes `dist/dj-librarian-plugin-<version>.zip`).
 2. In the Claude app: **Customize → Plugins → Add → Upload plugin**, and pick the zip.
 3. Open a new Cowork task and say "start". Door 1 runs in Cowork: an ordinary chat cannot connect a folder.
 4. Three moves from you: say Mac or Windows, export your collection from rekordbox (File → Export Collection in xml format), connect a folder in Cowork (a new one called `dj-library`) and drop the XML into it.
@@ -28,9 +28,13 @@ Until the first release, a tester runs the plugin from a zip. This is Door 1: no
 
 rekordbox is never touched: Door 1 reads a copy of your export, and you do the import. Crate me and Style Barber run from the zip too. If the upload refuses the zip, build it again with `--flat` (the plugin at the zip's root; which layout the upload wants is still open, Q-21).
 
-The engine is not in the zip: live reads of your rekordbox database (My Tags), Spotify and `dj tidy` on your audio files need a clone of this repo and `uv`. Say "set me up" after the report and the engine card ([plugin/skills/dj-start/engine.md](plugin/skills/dj-start/engine.md), about 10 minutes) walks you through it; the details per OS are in [The engine on Windows and macOS](#the-engine-on-windows-and-macos).
+The engine comes in the same zip: live reads of your rekordbox database (My Tags), Spotify and `dj tidy` on your audio files. No clone, no terminal: say "set me up" after the report and point Claude at your dj-library folder; the engine card ([plugin/skills/dj-start/engine.md](plugin/skills/dj-start/engine.md), about 3 minutes) shows where the engine's settings are. Whether the engine starts from inside the zip is unverified (Q-31). The fallback is the engine on its own, `dj-librarian-engine-<version>.mcpb`: Claude desktop app → Settings → Extensions → drag it in → Install. The light zip, `dj-librarian-plugin-<version>-no-engine.zip`, is Door 1 only. All of it in one place: [docs/install.md](docs/install.md).
 
 ## Install
+
+DJs: [docs/install.md](docs/install.md) is the one install doc. One upload, the plugin zip with the engine inside; the engine's `.mcpb` on its own as the fallback; which tools to leave on "ask every time"; the Spotify keys in the engine's settings form. Nothing to type in a terminal.
+
+### From a clone (developers)
 
 You need [uv](https://docs.astral.sh/uv/) and rekordbox 7.
 
@@ -42,6 +46,14 @@ uv run dj status
 ```
 
 `dj status` is read-only and works while rekordbox is open. If the clone sits in a cloud-synced folder (Dropbox, iCloud Drive and the like), keep the virtual environment outside it; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+The three release files come from the clone:
+
+| Command | Writes |
+|---|---|
+| `uv run python scripts/build_mcpb.py` | `dist/dj-librarian-engine-<version>.mcpb`, the engine on its own |
+| `uv run python scripts/build_plugin_zip.py` | `dist/dj-librarian-plugin-<version>.zip`, the plugin with the engine inside |
+| `uv run python scripts/build_plugin_zip.py --no-engine` | `dist/dj-librarian-plugin-<version>-no-engine.zip`, the light zip (Door 1 only) |
 
 ## Commands
 
@@ -76,23 +88,25 @@ Through Claude, the MCP tools return counts first and long lists in pages (`page
 
 ## Configuration
 
-Your own configuration is gitignored. `links.yaml` belongs in your dj-library folder (the repo's `links.yaml` is the fallback while the library's holds no link); the other files live next to the code. Copy what you need from [examples/](examples/):
+Your configuration lives in your dj-library folder: the engine reads `links.yaml`, `tidy.yaml`, `bases.yaml` and `tree.yaml` there first. In a clone, the same files at the repo root (gitignored) are the fallback, and the repo's `links.yaml` is used while the library's holds no link. The engine extension takes the Spotify keys in its settings form; a clone reads them from `.env`. Copy what you need from [examples/](examples/):
 
 | Example | Copy to | Used by |
 |---|---|---|
-| `examples/.env.example` | `.env` | Spotify commands. Create an app at the Spotify developer dashboard with redirect URI `http://127.0.0.1:8888/callback`. |
+| `examples/.env.example` | `.env` (a clone only) | Spotify commands. Create an app at the Spotify developer dashboard with redirect URI `http://127.0.0.1:8888/callback`. |
 | `examples/links.example.yaml` | `links.yaml` in your dj-library folder | `pull`, `match`, `plan`: pairs a Spotify playlist with a rekordbox crate. |
-| `examples/tree.example.yaml` | `tree.yaml` | `dj tree`: the playlist tree you want. |
-| `examples/bases.example.yaml` | `bases.yaml` | `dj tree --file bases.yaml`: one folder per genre, same shape. |
-| `examples/tidy.example.yaml` | `tidy.yaml` | `dj tidy`: your music roots, naming rule and CDJ profiles. File writes are limited to the roots. |
+| `examples/tree.example.yaml` | `tree.yaml` in your dj-library folder | `dj tree`: the playlist tree you want. |
+| `examples/bases.example.yaml` | `bases.yaml` in your dj-library folder | `dj tree --file bases.yaml`: one folder per genre, same shape. |
+| `examples/tidy.example.yaml` | `tidy.yaml` in your dj-library folder | `dj tidy`: your music roots, naming rule and CDJ profiles. File writes are limited to the roots. |
 
 ## Claude plugin
 
-The plugin adds twelve skills (see `plugin/skills/`) and an MCP server with a fixed list of `dj` tools. A DJ starts with **dj-start** ("start"): it sets up the dj-library folder from a rekordbox XML export and writes the first report. Read tools and write tools are separate, so you can leave every write tool on "ask every time"; which tool is which: [docs/permissions.md](docs/permissions.md). In Claude Code the plugin also brings a PreToolUse hook (`plugin/hooks/`) that denies a write tool called without a `preview_id`.
+The plugin adds twelve skills (see `plugin/skills/`) and the engine: `engine.mcpb`, an MCP server with a fixed list of `dj` tools, which `plugin.json` names under `mcpServers`. A DJ starts with **dj-start** ("start"): it sets up the dj-library folder from a rekordbox XML export and writes the first report. Read tools and write tools are separate, so you can leave every write tool on "ask every time"; which tool is which: [docs/permissions.md](docs/permissions.md). In Claude Code the plugin also brings a PreToolUse hook (`plugin/hooks/`) that denies a write tool called without a `preview_id`. The hook starts `uv`, so on a machine without uv it blocks every write tool (it fails closed; a known gap).
 
-The plugin starts its MCP server from the folder above the plugin folder (`uv run --directory <plugin folder>/..`), so it works only while the plugin runs from your clone, after `uv sync` there.
+The engine is an [MCP bundle](https://github.com/modelcontextprotocol/mcpb) of the `uv` type: the host brings Python and the dependencies, so a DJ installs nothing. Its settings form asks for the dj-library folder, the optional Spotify client ID and secret, and Power mode (Windows); the host hands them to the engine as `DJ_LIBRARY`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` and `DJ_POWER_MODE`. The engine then keeps its state in `<dj-library>/.cache/engine/`, so an update of the extension loses nothing. Claude Code 2.1.299 refuses a `uv` bundle inside a plugin: it loads the skills, not the engine. Whether the Claude desktop app starts it, from the plugin or as an extension, on Windows, on a Mac and in Cowork, is open (Q-31).
 
-- **Claude Code:** add the marketplace from your clone, so the plugin loads in place. Run this inside the clone folder:
+`plugin/engine.mcpb` is a build product (gitignored): `uv run python scripts/build_mcpb.py --plugin` writes it, and `claude plugin validate ./plugin` needs it.
+
+- **Claude Code, from a clone:** build the engine into the plugin as above, then add the marketplace from the clone. Run this inside the clone folder:
 
 ```bash
 claude plugin marketplace add ./
@@ -102,27 +116,23 @@ claude plugin marketplace add ./
 claude plugin install dj-librarian@dj-librarian
 ```
 
-A marketplace added from GitHub (`OWNER/dj-librarian`), or the plugin uploaded as a zip, runs a cached copy of the plugin with no engine next to it. The skills that need no engine (dj-start through the report, crates, builds, Style Barber) still run from the plugin zip: `uv run python scripts/build_plugin_zip.py` writes `dist/dj-librarian-plugin-<version>.zip`, which carries their core in `vendor/` (D-22). A copy without it (a GitHub marketplace, until the core is on PyPI) answers with a one-line error that the dj-librarian core does not load. The skill scripts look for the core in this order: an importable `dj` (the engine's venv), a clone of the repo, the zip's `vendor/`.
+Until Claude Code takes a `uv` bundle in a plugin (Q-31), register the engine from the clone by hand: [The engine on Windows and macOS](#the-engine-on-windows-and-macos) has the line for Claude Code and the config entry for Claude Desktop.
 
-- **Claude desktop app:** Customize → Plugins → Add → Add marketplace. Whether the plugin's MCP server then starts from your clone is not verified yet (open question Q-08). If `dj_status` does not answer, register the engine by hand as below.
-
-On macOS, an app started from the Dock or Finder gets a short `PATH`. Where `uv` sits in `~/.local/bin` or Homebrew's folder, the engine may not start, and a hook that cannot run blocks every write tool. Two fixes, both unverified until the first Mac test (Q-25):
-
-- Link `uv` into `/usr/local/bin`, which apps started from the Dock usually see. In Terminal:
-
-```bash
-sudo mkdir -p /usr/local/bin && sudo ln -sf "$(command -v uv)" /usr/local/bin/uv
-```
-
-- The plugin starts its engine with its `uv path` option (default `uv`). Set it to the full path `command -v uv` prints (Claude Code: `/plugin configure dj-librarian`). The write-gate hook keeps a bare `uv`, so it needs the link.
-
-If `dj_status` still does not answer, register the engine by hand with the full path to `uv` (below). The plugin's engine also gets no `UV_PROJECT_ENVIRONMENT` from `~/.zshrc`: on a Mac, keep the clone out of cloud-synced folders so uv uses `.venv/` inside it.
+The skills that need no engine (dj-start through the report, crates, builds, Style Barber) run from the plugin zip: it carries their core in `vendor/` (D-22). A copy without it (a GitHub marketplace, until the core is on PyPI) answers with a one-line error that the dj-librarian core does not load. The skill scripts look for the core in this order: an importable `dj` (the engine's venv), a clone of the repo, the zip's `vendor/`.
 
 Optional: [templates/project/instructions.md](templates/project/instructions.md) is a Cowork Project template you can paste into a new Project's instructions; the plugin works without it.
 
 ### The engine on Windows and macOS
 
-The engine is the MCP server `dj-mcp`; it runs on your computer. The plugin starts it for you. To register it in Claude Desktop by hand instead, add it to Claude Desktop's config file:
+The engine is the MCP server `dj-mcp`; it runs on your computer. A DJ gets it from the plugin zip or the `.mcpb` ([docs/install.md](docs/install.md)). From a clone (developers), register it by hand.
+
+Claude Code, one line (`--scope user` makes it available in every folder; Claude Code started from your shell passes `UV_PROJECT_ENVIRONMENT` on):
+
+```bash
+claude mcp add --scope user dj-librarian -- uv run --directory /path/to/dj-librarian --no-sync dj-mcp
+```
+
+Claude Desktop, in its config file:
 
 | OS | Claude Desktop config file |
 |---|---|
@@ -145,10 +155,11 @@ On macOS, Claude Desktop starts programs with a short `PATH`: if it cannot find 
 
 - **master.db.** Found through pyrekordbox, else at rekordbox's default location: `%APPDATA%\Pioneer\rekordbox\master.db` on Windows, `~/Library/Pioneer/rekordbox/master.db` on macOS. Set `DJ_MASTER_DB` to use another file. Reads work while rekordbox is open.
 - **Is rekordbox running?** Checked with `tasklist` on Windows and `/usr/bin/pgrep` on macOS. If the check cannot answer, writes are refused.
-- **Writes.** Direct master.db writes (`dj tree`, `dj apply`, `dj copy` with `--apply`) need `--power-mode` and stay Windows-only; on macOS they refuse with a one-line reason. `dj tidy apply --apply` and `dj tidy undo --apply` write audio files on Windows only in v0.1; on macOS they refuse with a one-line reason (macOS support is planned for v0.2). Their dry-runs only read.
+- **Writes.** Direct master.db writes (`dj tree`, `dj apply`, `dj copy` with `--apply`) need `--power-mode` and stay Windows-only; on macOS they refuse with a one-line reason. In the engine extension, Power mode (Windows) in its settings is off by default, and while it is off every master.db write is refused. `dj tidy apply --apply` and `dj tidy undo --apply` write audio files on Windows only in v0.1; on macOS they refuse with a one-line reason (macOS support is planned for v0.2). Their dry-runs only read.
 
 ## Documentation
 
+- [docs/install.md](docs/install.md): the install doc for DJs, both doors, no terminal.
 - [docs/requirements.md](docs/requirements.md): numbered requirements (authoritative).
 - [docs/architecture.md](docs/architecture.md): plugin architecture and repo layout.
 - [docs/decisions.md](docs/decisions.md): decisions and their reasons.

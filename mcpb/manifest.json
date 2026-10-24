@@ -1,0 +1,101 @@
+{
+  "manifest_version": "0.4",
+  "name": "dj-librarian",
+  "display_name": "dj-librarian engine",
+  "version": "0.1.0",
+  "description": "The engine of dj-librarian: reads your rekordbox library and Spotify inboxes, proposes crates, playlist trees and tag fixes. Create and add only, dry-run first, nothing written without your yes.",
+  "long_description": "The part of dj-librarian that talks to rekordbox and Spotify. It reads your library, matches Spotify inboxes against your crates, builds playlist trees and tidies empty tags. rekordbox stays the source of truth: every write tool has a preview first and runs only after you say yes, and it only ever adds. Point it at your dj-library folder; your Spotify keys stay in this extension's settings.",
+  "author": {
+    "name": "Anton Surov"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OWNER/dj-librarian"
+  },
+  "keywords": ["rekordbox", "dj", "spotify", "playlists", "music-library", "id3", "mcp"],
+  "server": {
+    "type": "uv",
+    "entry_point": "src/dj/mcp_server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "--no-dev", "--frozen", "dj-mcp"],
+      "env": {
+        "DJ_LIBRARY": "${user_config.library_folder}",
+        "SPOTIFY_CLIENT_ID": "${user_config.spotify_client_id}",
+        "SPOTIFY_CLIENT_SECRET": "${user_config.spotify_client_secret}",
+        "DJ_POWER_MODE": "${user_config.power_mode}",
+        "DJ_ENGINE": "mcpb",
+        "UV_PROJECT_ENVIRONMENT": "${__dirname}/.venv"
+      }
+    }
+  },
+  "user_config": {
+    "library_folder": {
+      "type": "directory",
+      "title": "dj-library folder",
+      "description": "Your dj-library folder: where your rekordbox export, links.yaml, tidy.yaml, plans and reports live. Pick the folder, not a file in it.",
+      "required": true
+    },
+    "spotify_client_id": {
+      "type": "string",
+      "title": "Spotify client ID",
+      "description": "The Client ID of your own Spotify app (developer.spotify.com, Dashboard). Only needed to pull Spotify inboxes or push playlists. Leave empty to skip Spotify.",
+      "sensitive": true,
+      "required": false
+    },
+    "spotify_client_secret": {
+      "type": "string",
+      "title": "Spotify client secret",
+      "description": "The Client secret of the same Spotify app. Kept in this extension's settings, never in a file.",
+      "sensitive": true,
+      "required": false
+    },
+    "power_mode": {
+      "type": "boolean",
+      "title": "Power mode (Windows)",
+      "description": "Off: changes reach rekordbox only as an XML file you import. On: write tools may also write straight into rekordbox's database on Windows, with rekordbox closed and a backup first. Leave it off unless you know you want it.",
+      "default": false,
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "python": ">=3.12"
+    }
+  },
+  "privacy_policies": ["https://www.spotify.com/legal/privacy-policy/"],
+  "tools": [
+    {"name": "dj_status", "description": "Library overview: counts, whether rekordbox is running, the playlist tree and each Spotify link's state."},
+    {"name": "dj_tree_preview", "description": "Dry-run of a tree file (e.g. bases.yaml): one action per node and a preview_id. Writes nothing."},
+    {"name": "dj_library_inspect", "description": "Library summary: counts, a sample of the playlist tree, which fields the source lacks."},
+    {"name": "dj_library_analyze", "description": "Analyse the library in one go: profile, identity, structure proposals, taste, and the HTML report."},
+    {"name": "dj_pull", "description": "Download a Spotify inbox playlist into the inbox. Read-only on Spotify and rekordbox."},
+    {"name": "dj_match", "description": "Match the last pull of a link against the library: in crate, propose, ambiguous, missing, declined."},
+    {"name": "dj_plan", "description": "Write a plan and a wishlist for a crate (text files in the dj-library folder; rekordbox untouched)."},
+    {"name": "dj_wishlist_shop", "description": "Write the shopping list of a crate's missing tracks with Beatport and Bandcamp search links."},
+    {"name": "dj_apply_preview", "description": "Dry-run of a plan: which yes tracks would be added to the crate, and a preview_id. Writes nothing."},
+    {"name": "dj_copy_preview", "description": "Dry-run: which tracks of one playlist would be appended to another, and a preview_id. Writes nothing."},
+    {"name": "dj_build_preview", "description": "Dry-run: match the lines of a tracklist file on Spotify, and a preview_id. Writes nothing."},
+    {"name": "dj_push_preview", "description": "Dry-run: match a rekordbox playlist on Spotify, and a preview_id. Writes nothing."},
+    {"name": "dj_tree_apply", "description": "WRITES to rekordbox master.db: create the missing folders and playlists of a tree file."},
+    {"name": "dj_apply_write", "description": "WRITES the yes tracks of a plan for its crate, as an XML to import or in power mode."},
+    {"name": "dj_copy_apply", "description": "WRITES the tracks one playlist has and the other lacks, as an XML to import or in power mode."},
+    {"name": "dj_build_apply", "description": "WRITES to Spotify: create a private playlist from a tracklist file and add the matched tracks."},
+    {"name": "dj_push_apply", "description": "WRITES to Spotify: create a private playlist for a rekordbox playlist and add the matched tracks."},
+    {"name": "dj_structure_preview", "description": "Preview a structure proposal against the current tree, and a preview_id. Writes nothing."},
+    {"name": "dj_structure_write", "description": "WRITES a rekordbox XML of the chosen structure for you to import, and records the choice."},
+    {"name": "dj_crate_preview", "description": "Preview a crate picked from your own library, with a reason per pick, and a preview_id."},
+    {"name": "dj_crate_write", "description": "WRITES a rekordbox XML of the crate for you to import, and the crate record."},
+    {"name": "dj_tidy_audit", "description": "Hygiene audit of the audio files behind a crate, a folder or the collection: tags, artwork, names, playability."},
+    {"name": "dj_tidy_dupes", "description": "Read-only duplicate report with a suggested keeper per group. Never deletes or moves."},
+    {"name": "dj_tidy_plan", "description": "Write a tidy plan: values for empty tags parsed from file names, plus local cover art."},
+    {"name": "dj_tidy_apply_preview", "description": "Dry-run of a tidy plan: which items would be written and which cannot run, and a preview_id."},
+    {"name": "dj_tidy_apply", "description": "WRITES AUDIO FILES: the yes tag changes and planned renames of a tidy plan, undo record first."},
+    {"name": "dj_tidy_undo_preview", "description": "Dry-run of undoing a tidy plan's apply, and a preview_id. Writes nothing."},
+    {"name": "dj_tidy_undo", "description": "WRITES AUDIO FILES: restores the tags and names a tidy plan's apply changed."},
+    {"name": "dj_barber_next", "description": "Style Barber: plan or resume today's short taste session and return the next question."},
+    {"name": "dj_barber_record", "description": "Record your answer to a Style Barber question as one dated line in your taste files."}
+  ]
+}

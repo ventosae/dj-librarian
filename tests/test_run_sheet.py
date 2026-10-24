@@ -119,9 +119,9 @@ def test_a04_asks_a_yes_only_for_the_writes_that_need_one(sheet):
 
 
 def test_the_engine_and_spotify_checks_keep_their_conditions(sheet):
-    """A-06 records the Cowork add path (Q-08); R-801's pass mark is a setup without the operator
+    """A-06 records which engine route worked (Q-31); R-801's pass mark is a setup without the operator
     and a working `dj pull`."""
     after = _sections(sheet)["After"]
-    assert "Q-08" in _check(after, 6)
+    assert "Q-31" in _check(after, 6)
     a07 = _check(after, 7)
     assert "Spotify set up without " in a07 and "`dj pull` works" in a07

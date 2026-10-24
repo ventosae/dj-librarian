@@ -52,7 +52,7 @@ Scripts run with `python3` (`python` on Windows, `uv run python` inside a clone 
 1. Both steps, as dj-start step 4 runs it: `python3 scripts/report.py --library <folder>`.
 2. One step: `python3 scripts/report.py propose --library <folder>` or
    `python3 scripts/report.py render --library <folder>`. `--today YYYY-MM-DD` fixes the date.
-3. Engine (Claude Code or a terminal at the repo root): `uv run dj library report --json`
+3. A clone of the repo (Claude Code at the repo root): `uv run dj library report --json`
    (`--render-only` after a rename), or the whole chain from one read of the library:
    `uv run dj library analyze [--source xml|db] --json` (MCP: `dj_library_analyze`).
    `--source db` reads a snapshot of master.db, so My Tags count.

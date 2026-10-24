@@ -3,8 +3,9 @@ README's "Try it before the release".
 
 release.yml runs only on a pushed `v*` tag (the owner's, W-29). It runs ci.yml's checks through
 `workflow_call`, then checks that the tagged commit is on main, checks the tag against pyproject.toml
-and plugin.json, cuts the version's CHANGELOG.md section, builds the plugin zip and creates a DRAFT
-GitHub release with the zip attached.
+and plugin.json, cuts the version's CHANGELOG.md section, builds the engine bundle and both plugin
+zips and creates a DRAFT GitHub release with the three attached (W-34): dj-librarian-engine-<v>.mcpb,
+dj-librarian-plugin-<v>.zip (engine inside) and dj-librarian-plugin-<v>-no-engine.zip.
 No package index step, nothing public. Nothing here talks to the network.
 """
 
@@ -257,11 +258,22 @@ def test_ci_can_be_called_and_still_runs_when_it_did(release):
 def test_release_checks_the_tag_and_the_notes_before_it_builds(draft):
     runs = [str(step.get("run", "")) for step in draft["steps"]]
     check = next(i for i, run in enumerate(runs) if "scripts/release_notes.py --check-tag \"$TAG\"" in run)
-    build = next(i for i, run in enumerate(runs) if "scripts/build_plugin_zip.py" in run)
+    builds = [i for i, run in enumerate(runs) if "scripts/build_plugin_zip.py" in run or "scripts/build_mcpb.py" in run]
     notes = next(i for i, run in enumerate(runs) if re.search(r"release_notes\.py \"\$VERSION\" --out", run))
     create = next(i for i, run in enumerate(runs) if "gh release create" in run)
-    assert check < notes < build < create  # a stub changelog stops the run before the build
+    assert len(builds) == 3
+    assert check < notes < min(builds) and max(builds) < create  # a stub changelog stops the run before a build
     assert draft["env"]["TAG"] == "${{ github.ref_name }}"
+
+
+def test_release_builds_the_engine_and_both_zips(draft):
+    """The standalone engine (Settings -> Extensions), the plugin zip with the engine inside (one
+    upload) and the light zip (skills only), all from the tagged commit (W-34, D-28)."""
+    runs = [" ".join(str(step.get("run", "")).split()) for step in draft["steps"]]
+    assert "uv run python scripts/build_mcpb.py" in runs
+    assert "uv run python scripts/build_plugin_zip.py" in runs
+    assert "uv run python scripts/build_plugin_zip.py --no-engine" in runs
+    assert not any("--plugin" in run or "--flat" in run or "--npx" in run for run in runs)
 
 
 def test_release_drafts_only_a_commit_that_is_on_main(draft):
@@ -278,12 +290,14 @@ def test_release_drafts_only_a_commit_that_is_on_main(draft):
     assert on_main == 1 and on_main < check < create
 
 
-def test_release_creates_a_draft_with_the_zip_and_the_notes(draft):
+def test_release_creates_a_draft_with_the_three_files_and_the_notes(draft):
     step = next(step for step in draft["steps"] if "gh release create" in str(step.get("run", "")))
     run = " ".join(step["run"].split())
     assert run.startswith('gh release create "$TAG" --draft --verify-tag')
     assert '--notes-file "$RUNNER_TEMP/notes.md"' in run
-    assert run.endswith('"dist/dj-librarian-plugin-$VERSION.zip"')
+    files = run.split('--notes-file "$RUNNER_TEMP/notes.md"', 1)[1].split()
+    assert files == ['"dist/dj-librarian-engine-$VERSION.mcpb"', '"dist/dj-librarian-plugin-$VERSION.zip"',
+                     '"dist/dj-librarian-plugin-$VERSION-no-engine.zip"']  # fmt: skip
     assert step["env"]["GH_TOKEN"] == "${{ secrets.GITHUB_TOKEN }}"
     assert step["env"]["GH_REPO"] == "${{ github.repository }}"
 
@@ -339,10 +353,57 @@ def test_readme_sends_the_tester_to_cowork_and_starts_with_start():
     assert '"start"' in skill.split("---", 2)[1]
 
 
-def test_readme_says_the_engine_needs_a_clone_and_links_the_card():
+def test_readme_says_the_zip_carries_the_engine_and_links_the_card():
+    """W-34 (D-28): the plugin zip carries the engine, "set me up" points it at the folder, the
+    `.mcpb` is the fallback and the light zip is Door 1 only; no clone for the engine (Q-31 open)."""
     section = _readme_section("Try it before the release")
-    assert "The engine is not in the zip" in section and "clone" in section
+    flat = " ".join(section.split())
+    assert "The engine is not in the zip" not in section and "need a clone" not in section
+    assert "The engine comes in the same zip" in flat and "No clone, no terminal" in flat
+    assert 'say "set me up" after the report and point Claude at your dj-library folder' in flat
+    assert "unverified (Q-31)" in flat
+    assert "`dj-librarian-engine-<version>.mcpb`" in flat and "Settings → Extensions" in flat
+    assert "`dj-librarian-plugin-<version>-no-engine.zip`, is Door 1 only" in flat
     links = re.findall(r"\]\(([^)]+)\)", section)
-    assert "plugin/skills/dj-start/engine.md" in links and "#the-engine-on-windows-and-macos" in links
+    assert "plugin/skills/dj-start/engine.md" in links and "docs/install.md" in links
     assert (REPO / "plugin" / "skills" / "dj-start" / "engine.md").is_file()
-    assert "### The engine on Windows and macOS" in README.read_text(encoding="utf-8")
+
+
+def test_readme_install_points_to_install_md_and_keeps_the_clone_for_developers():
+    section = _readme_section("Install")
+    assert section.strip().startswith("DJs: [docs/install.md](docs/install.md) is the one install doc.")
+    assert (REPO / "docs" / "install.md").is_file()
+    dj_part, developers = section.split("### From a clone (developers)")
+    assert "git clone" not in dj_part and "uv " not in dj_part
+    assert "git clone" in developers and "uv sync" in developers
+    for built in ("dist/dj-librarian-engine-<version>.mcpb", "dist/dj-librarian-plugin-<version>.zip",
+                  "dist/dj-librarian-plugin-<version>-no-engine.zip"):  # fmt: skip
+        assert built in developers, built
+    assert "scripts/build_plugin_zip.py --no-engine" in developers
+
+
+def test_readme_drops_the_uv_path_option_and_the_plugin_folder_engine():
+    readme = README.read_text(encoding="utf-8")
+    for gone in ("uv path", "uv_path", "--directory <plugin folder>/..", "/usr/local/bin/uv", ".mcp.json"):
+        assert gone not in readme, gone
+    plugin = _readme_section("Claude plugin")
+    assert "`engine.mcpb`" in plugin and "`mcpServers`" in plugin and "(Q-31)" in plugin
+    assert "`<dj-library>/.cache/engine/`" in plugin
+    for env in ("DJ_LIBRARY", "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET", "DJ_POWER_MODE"):
+        assert f"`{env}`" in plugin, env
+
+
+def test_readme_registers_the_clone_engine_in_claude_code_and_claude_desktop():
+    """Until Claude Code takes a `uv` bundle in a plugin (Q-31), a developer registers the clone's
+    engine by hand; the section the README points to covers both hosts."""
+    plugin = " ".join(_readme_section("Claude plugin").split())
+    assert "[The engine on Windows and macOS](#the-engine-on-windows-and-macos)" in plugin
+    assert "the line for Claude Code and the config entry for Claude Desktop" in plugin
+    text = README.read_text(encoding="utf-8").replace("\r\n", "\n")
+    engine = text.split("### The engine on Windows and macOS", 1)[1].split("\n## ", 1)[0]
+    blocks = re.findall(r"```(\w+)\n(.*?)\n```", engine, re.DOTALL)
+    (line,) = [body for lang, body in blocks if lang == "bash"]
+    assert line == "claude mcp add --scope user dj-librarian -- uv run --directory /path/to/dj-librarian --no-sync dj-mcp"
+    (config,) = [json.loads(body) for lang, body in blocks if lang == "json"]
+    args = config["mcpServers"]["dj-librarian"]["args"]
+    assert line.split(" -- ", 1)[1].split() == [config["mcpServers"]["dj-librarian"]["command"], *args]

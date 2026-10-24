@@ -211,6 +211,9 @@ def test_checklist_is_referenced_not_copied(text, sections):
         "is not a yes",
         "the default write path is a rekordbox xml the dj imports",
         "never open or print `.env`",
+        # W-34: the engine extension takes the keys in its settings form; `.env` is a clone's
+        "the dj's spotify keys live in the engine's settings form (in a clone: `.env`)",
+        "never ask for or repeat them",
     ],
 )
 def test_safety_statement(sections, statement):

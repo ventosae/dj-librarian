@@ -2,10 +2,12 @@ name: Release
 
 # Runs only when a v* tag is pushed, and the tag is the owner's (W-29): no branch, pull request,
 # schedule or manual trigger. It runs the CI checks, checks that the tagged commit is on main and
-# matches the version, builds the plugin zip and creates a DRAFT
-# GitHub release with the zip and the CHANGELOG.md section. The owner reads the draft and makes
-# it public by hand. No package index step: PyPI comes later, with the owner's yes (W-32, D-27,
-# D-17, D-22).
+# matches the version, builds the engine bundle and both plugin zips and creates a DRAFT GitHub
+# release with the three files and the CHANGELOG.md section: dj-librarian-engine-<v>.mcpb (the
+# standalone engine), dj-librarian-plugin-<v>.zip (skills with the engine inside) and
+# dj-librarian-plugin-<v>-no-engine.zip (skills only). The owner reads the draft and makes it
+# public by hand. No package index step: PyPI comes later, with the owner's yes (W-32, W-34,
+# D-27, D-28, D-17, D-22).
 on:
   push:
     tags: ["v*"]
@@ -54,8 +56,12 @@ jobs:
           echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
       - name: Release notes from CHANGELOG.md
         run: uv run python scripts/release_notes.py "$VERSION" --out "$RUNNER_TEMP/notes.md"
-      - name: Build the plugin zip
+      - name: Build the engine bundle
+        run: uv run python scripts/build_mcpb.py
+      - name: Build the plugin zip (engine inside)
         run: uv run python scripts/build_plugin_zip.py
+      - name: Build the light plugin zip (no engine)
+        run: uv run python scripts/build_plugin_zip.py --no-engine
       - name: Create the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -64,4 +70,6 @@ jobs:
           gh release create "$TAG" --draft --verify-tag
           --title "dj-librarian $VERSION"
           --notes-file "$RUNNER_TEMP/notes.md"
+          "dist/dj-librarian-engine-$VERSION.mcpb"
           "dist/dj-librarian-plugin-$VERSION.zip"
+          "dist/dj-librarian-plugin-$VERSION-no-engine.zip"

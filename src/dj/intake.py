@@ -4,7 +4,9 @@ rekordbox is the truth. Spotify playlists are candidates, not members. The tool 
 proposes: nothing enters a crate without `decision: yes` in the plan file.
 
 Where the files live (R-802): in the DJ's library folder when its links.yaml holds at least
-one link (`default_paths`), else in the repo root as before. See `Paths`.
+one link (`default_paths`), else in the repo root as before. See `Paths`. In the desktop
+extension (DJ_ENGINE=mcpb, W-34) always in the library folder: the repo there is the install
+folder an update replaces (`dj.hostenv`).
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from typing import Any, Sequence
 
 import yaml
 
-from dj import libfolder, library, match
+from dj import hostenv, libfolder, library, match
 from dj.match import Candidate, Local, Scored
 from dj.safety import REPO_ROOT
 from dj.spotify import SpotifyError, refused_status, unreadable_playlist
@@ -80,6 +82,11 @@ class Paths:
         return self.root / "reports" / "apply" if self.library else self.root / "reports"
 
     @property
+    def report_root(self) -> Path:
+        """`reports/` itself, in either layout: the dj tidy reports go to its `tidy/` (W-34)."""
+        return self.root / "reports"
+
+    @property
     def wishlist(self) -> Path:
         return self.root / "wishlist"
 
@@ -129,11 +136,43 @@ def library_links_root() -> Path | None:
 
 
 def default_paths() -> Paths:
-    """Paths for the inbox loop: the DJ's library folder (R-802), else the repo root."""
+    """Paths for the inbox loop: the DJ's library folder (R-802), else the repo root.
+
+    In the desktop extension (W-34): the library folder whenever it can be used, links or not,
+    with nothing carried from the install folder; without one, the engine's fallback folder
+    (`~/.dj-librarian`, dj.hostenv.home_root) in the repo layout."""
+    if hostenv.bundle_mode():
+        root = usable_library_root()
+        return Paths(root, library=True) if root is not None else Paths(hostenv.home_root())
     root = library_links_root()
     if root is None:
         return Paths()
     return Paths(root, library=True, carry_from=REPO_ROOT)
+
+
+def usable_library_root() -> Path | None:
+    """The configured library folder when it can be used and exists as a folder, else None."""
+    try:
+        root = libfolder.configured_root()
+        return root if root.is_dir() else None
+    except (libfolder.LibraryFolderError, OSError, ValueError):
+        return None
+
+
+def tidy_paths() -> Paths:
+    """Where the dj tidy commands keep plans, reports and undo records: the repo in a clone, as
+    before (plans/, reports/tidy/, state/tidy/); in the desktop extension the inbox loop's place,
+    the library folder (plans/, reports/tidy/; the undo records in the engine's state,
+    .cache/engine/state/tidy/, dj.tidy.plan.undo_path_for)."""
+    return default_paths() if hostenv.bundle_mode() else Paths()
+
+
+def ignore_plans(paths: Paths) -> None:
+    """In a library folder, plans stay out of git: they list the paths of music files (R-905).
+    The line goes into its .gitignore (add only); plans/.gitignore is created once."""
+    if paths.library:
+        libfolder.ensure_gitignore(paths.root, (PLANS_IGNORE_LINE,))  # add only
+        libfolder.write_new_text(paths.plans / ".gitignore", PLANS_GITIGNORE)  # SKIP if there
 
 
 def slug(text: str) -> str:
@@ -409,9 +448,7 @@ def write_plan(link: Link, items: list[Item], in_crate: set[str], paths: Paths) 
         "items": out,
     }
     _write_json(path, plan)
-    if paths.library:
-        libfolder.ensure_gitignore(paths.root, (PLANS_IGNORE_LINE,))  # add only
-        libfolder.write_new_text(paths.plans / ".gitignore", PLANS_GITIGNORE)  # SKIP if there
+    ignore_plans(paths)
     return path
 
 

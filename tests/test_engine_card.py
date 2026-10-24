@@ -1,10 +1,13 @@
-"""The engine install card (M1, R-102), `dj library use`, and the permissions doc (R-1101, R-1105).
+"""The engine set-up card (M1, R-102), `dj library use`, and the permissions doc (R-1101, R-1105).
 
-engine.md: offered only on "set me up" or when a feature needs live data, about 10 minutes, three
-numbered steps per OS with only that OS shown, every write tool on "ask every time", dj_status as
-the proof. docs/permissions.md: every MCP tool in exactly one of read / library-text / write, and
-the write list is what the Claude Code hook matches. Both name only the tools the engine has today
-(W-23's dj_crate_write joins them when it ships; the hook already matches its name).
+engine.md (W-34, D-28): offered only on "set me up" or when a feature needs live data. The engine
+comes inside the plugin zip or as the `.mcpb` on its own, so the card holds no terminal command:
+one card for both OSes, three numbered steps in about 3 minutes (the dj-library folder in the
+engine settings, the optional Spotify keys in the same form, every write tool on "ask every time"),
+dj_status as the proof, a new task and then the `.mcpb` as the fallback; no card in Claude Code,
+which refuses the bundle inside a plugin (Q-31). docs/permissions.md: every MCP tool in exactly
+one of read / library-text / write, and the write list is what the Claude Code hook matches. Both
+name only the tools the engine has today.
 """
 
 from __future__ import annotations
@@ -26,8 +29,26 @@ REPO = Path(__file__).resolve().parents[1]
 START = REPO / "plugin" / "skills" / "dj-start"
 ENGINE = START / "engine.md"
 PERMISSIONS = REPO / "docs" / "permissions.md"
-UV_MAC = "curl -LsSf https://astral.sh/uv/install.sh | sh"
-UV_WINDOWS = 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
+MANIFEST = REPO / "mcpb" / "manifest.json"
+# The titles of the engine's settings form (mcpb/manifest.json `user_config`), as the DJ sees them.
+FORM = {
+    "library_folder": "dj-library folder",
+    "spotify_client_id": "Spotify client ID",
+    "spotify_client_secret": "Spotify client secret",
+    "power_mode": "Power mode (Windows)",
+}
+# `<engine settings>` per way the engine came in. The plugin's own settings place is unverified
+# (Q-31), so its row says "not there? say so". Claude Code gets no card: 2.1.299 refuses the bundle.
+SETTINGS = {
+    "Inside the plugin zip": "Settings > Extensions > dj-librarian engine (not there? say so)",
+    "The `.mcpb` on its own": "Settings > Extensions > dj-librarian engine",
+}
+# What a terminal step looks like: the DJ path holds none of these (D-28). The apps by their names
+# (Terminal, PowerShell), so prose may still say that nobody opens a terminal.
+TERMINAL = re.compile(
+    r"\buv (?:run|sync|tool|pip|add)\b|\bgit clone\b|\bcurl\b|\birm\b|\bsudo\b|\b[Pp]ower[Ss]hell\b|\bTerminal\b"
+    r"|\bpip install\b|\bnpx\b|\bclaude (?:plugin|mcp)\b|\bcd \w|\bln -s|uv_path|uv path|\.mcp\.json"
+)
 
 runner = CliRunner()
 
@@ -42,11 +63,10 @@ def _section(text: str, title: str) -> str:
     return m_.group(1)
 
 
-def cards() -> dict[str, str]:
-    """{"Mac": card, "Windows": card} from engine.md's card section."""
-    section = _section(_text(ENGINE), "The card")
-    blocks = re.findall(r"^(Mac|Windows):\n\n```text\n(.*?)\n```", section, re.MULTILINE | re.DOTALL)
-    return dict(blocks)
+def card() -> str:
+    """The one card in engine.md's card section."""
+    (block,) = re.findall(r"^```text\n(.*?)\n```", _section(_text(ENGINE), "The card"), re.MULTILINE | re.DOTALL)
+    return block
 
 
 def _tools() -> dict:
@@ -76,40 +96,89 @@ def test_offered_only_when_asked_or_when_a_feature_needs_live_data():
         assert need in when, need
     assert "Never before the first report (R-102)" in when
     assert "Play history" in when and "Never promise it" in when  # Q-13: the engine does not read it
+    # A new task after the form is saved: "set me up" there finds the tools and goes to the proof.
+    assert '`dj_status` is already there when the DJ says "set me up": skip the card, go to the proof' in when
 
 
-def test_one_card_per_os_and_only_that_os_is_shown():
+def test_the_engine_comes_in_the_zip_or_as_the_mcpb_and_needs_no_terminal():
+    top = " ".join(_text(ENGINE).split("\n## ")[0].split())
+    assert "inside the plugin zip" in top and "`dj-librarian-engine-<version>.mcpb`" in top
+    assert "installs nothing and never opens a terminal" in top
+    assert "about 3 minutes" in top
+    assert "unverified until it has run once (Q-31)" in top and "the `.mcpb` is the fallback" in top
+
+
+def test_no_terminal_command_anywhere_in_the_card_file():  # D-28: no clone, no uv, no terminal
+    text = _text(ENGINE)
+    assert TERMINAL.findall(text) == []
+    assert "git" not in re.findall(r"\b\w+\b", text.lower())
+
+
+def test_one_card_for_both_oses_with_the_settings_per_way_the_engine_came_in():
     section = _section(_text(ENGINE), "The card")
-    assert "Show only the block for that device, never both" in section
-    found = cards()
-    assert list(found) == ["Mac", "Windows"]
-    assert "Windows" not in found["Mac"] and "PowerShell" not in found["Mac"]
-    assert "Mac" not in found["Windows"] and "Terminal" not in found["Windows"]
-    assert UV_MAC in found["Mac"] and UV_WINDOWS in found["Windows"]
-    assert UV_WINDOWS not in found["Mac"] and UV_MAC not in found["Windows"]
+    assert "One card for Mac and Windows, in the Claude desktop app and in Cowork" in section
+    assert "Mac:" not in section and "Windows:\n" not in section
+    rows = dict(re.findall(r"^\| ([^|]+?) \| ([^|]+?) \|$", section, re.MULTILINE))
+    assert rows.pop("How the engine came in") == "`<engine settings>`"
+    assert rows == SETTINGS
+    prose = " ".join(section.split())
+    assert "inside the plugin zip unless the DJ says they installed the `.mcpb`" in prose
+    assert "Where a plugin's own engine settings show is unverified (Q-31)" in prose
+    assert "Settings > Extensions is where the fallback puts them" in prose
+    assert "Configure" not in section  # Claude Code's plugin Configure page exists only for a bundle it takes
 
 
-@pytest.mark.parametrize("device", ["Mac", "Windows"])
-def test_the_card_is_three_numbered_steps_in_about_10_minutes(device):
-    card = cards()[device]
-    lines = [line for line in card.split("\n") if line.strip()]
-    assert lines[0].startswith("Step 1 of 2 · about 10 minutes.")
-    assert re.findall(r"^(\d)\. ", card, re.MULTILINE) == ["1", "2", "3"]
-    install, engine, permissions = re.findall(r"^\d\. (.+)$", card, re.MULTILINE)
-    assert install.startswith("Install uv:")
-    assert engine.startswith("Get the engine:")
-    for part in ("uv sync", "uv run dj library use <your dj-library folder>", "Customize > Plugins",
-                 "claude plugin marketplace add ./ then claude plugin install dj-librarian@dj-librarian",
-                 "restart Claude", "git clone"):  # fmt: skip
-        assert part in engine, part
-    # Claude Code loads a plugin from a marketplace added from a local folder in place, so the
-    # plugin's .mcp.json (`uv run --directory <plugin folder>/..`) finds the clone (Q-08)
-    assert engine.index("claude plugin marketplace add ./") < engine.index("claude plugin install")
+def test_claude_code_gets_no_card():
+    """Claude Code 2.1.299 refuses a `uv` bundle inside a plugin (Q-31): no settings to point at."""
+    prose = " ".join(_section(_text(ENGINE), "The card").split())
+    assert "Claude Code: send no card. Claude Code 2.1.299 does not start this engine from the plugin (Q-31)." in prose
+    assert "the report, builds and crates keep running on the XML" in prose
+
+
+def test_the_card_names_the_folder_never_a_cowork_path():
+    """In Cowork, Claude sees the folder where Cowork mounts it, not where it sits on the DJ's computer."""
+    section = _section(_text(ENGINE), "The card")
+    assert "<your dj-library folder>" not in section and "full path" not in section
+    assert "Never send them a path you see in Cowork" in " ".join(section.split())
+    (folder,) = re.findall(r"^1\. (.+)$", card(), re.MULTILINE)
+    assert "your dj-library folder there, the one you connected in Cowork (library.yaml is in it)" in folder
+
+
+def test_the_card_is_three_numbered_steps_in_about_3_minutes():
+    text = card()
+    lines = [line for line in text.split("\n") if line.strip()]
+    assert lines[0].startswith("Step 1 of 2 · about 3 minutes. The engine is already in.")
+    assert re.findall(r"^(\d)\. ", text, re.MULTILINE) == ["1", "2", "3"]
+    folder, spotify, permissions = re.findall(r"^\d\. (.+)$", text, re.MULTILINE)
+    assert folder.startswith("Open <engine settings> and pick your dj-library folder")
+    assert "Leave Power mode off" in folder
+    assert spotify.startswith("Spotify client ID and secret") and "leave both empty" in spotify
     assert "Ask every time" in permissions and "Read tools can stay on Allow" in permissions
-    named = set(re.findall(r"\bdj_[a-z_]+\b", permissions))
-    assert named == _write_tools()  # only tools the DJ can find in the connector today
-    assert "under a minute" in lines[-1]
-    assert len(lines) <= 5 and text_problems(card) == []
+    assert re.findall(r"\bdj_[a-z_]+\b", permissions) == []  # adhd.md rule 9: no list of 9 in the card
+    write = _write_tools()
+    assert f"every tool whose name ends in _apply, _write or _undo to Ask every time ({len(write)} tools)" in permissions
+    assert {name for name in _tools() if re.search(r"_(?:apply|write|undo)$", name)} == write
+    assert "under a minute" in lines[-1] and lines[-1].startswith("Say done")
+    assert len(lines) <= 5 and text_problems(text) == []
+    assert TERMINAL.findall(text) == []
+
+
+def test_the_card_names_the_settings_form_the_way_the_manifest_does():
+    section = " ".join(_section(_text(ENGINE), "The card").split())
+    for title in FORM.values():
+        assert title in section, title
+    assert "never into the chat or a `.env`" in section
+    assert "`.cache/engine/`" in section  # state outlives an engine update
+    named = re.search(r"The \d+ write tools are (.+?)\.", section).group(1)
+    assert set(re.findall(r"\bdj_[a-z_]+\b", named)) == _write_tools()  # for Claude, if the DJ asks
+
+
+def test_the_form_titles_match_the_manifest():
+    """The bundle's own manifest (W-34 item 1) asks for exactly these four fields."""
+    if not MANIFEST.is_file():
+        pytest.skip("mcpb/manifest.json is built by the engine bundle stream")
+    config = json.loads(MANIFEST.read_text(encoding="utf-8"))["user_config"]
+    assert {key: field["title"] for key, field in config.items()} == FORM
 
 
 def test_the_proof_is_dj_status_with_the_track_count():
@@ -117,19 +186,18 @@ def test_the_proof_is_dj_status_with_the_track_count():
     assert "call `dj_status`" in proof and "`tracks`" in proof
     (reply,) = re.findall(r"```text\n(.*?)\n```", proof, re.DOTALL)
     assert reply.startswith("Step 2 of 2 · ") and "<tracks> tracks" in reply
-    failures = re.findall(r"^- ", proof, re.MULTILINE)
+    failures = re.findall(r"^- (.+)$", proof, re.MULTILINE)
     assert 1 <= len(failures) <= 5
-    assert re.search(r"^- `dj-mcp` not found, or no `pyproject.toml`: .*\(Q-08\)", proof, re.MULTILINE)
-
-
-def test_the_card_says_where_the_plugin_must_run_from_and_that_cowork_is_open():
-    """The plugin starts the engine from the folder above it, so it must run from the clone.
-    For Cowork that is unverified (Q-08): the manual registration from the README is the way out."""
-    text = " ".join(_text(ENGINE).split())
-    assert ".mcp.json" in text and "loads in place" in text and "unverified (Q-08)" in text
-    assert "The engine on Windows and macOS" in text
-    mcp = json.loads((REPO / "plugin" / ".mcp.json").read_text(encoding="utf-8"))
-    assert "${CLAUDE_PLUGIN_ROOT}/.." in mcp["mcpServers"]["dj-librarian"]["args"]
+    no_tools = next(line for line in failures if line.startswith("No `dj_status` tool"))
+    for part in ("the fallback", "`dj-librarian-engine-<version>.mcpb`", "Settings > Extensions",
+                 "Install", "from the release or from whoever is testing with them"):  # fmt: skip
+        assert part in no_tools, part
+    # A new task (or a restart) first: a second engine next to the first shows every tool twice.
+    new_task = "Saved: the DJ opens a new Cowork task (or restarts Claude) and says set me up there."
+    assert new_task in no_tools and no_tools.index(new_task) < no_tools.index("the fallback")
+    assert any("no library folder" in line and "<engine settings>" in line for line in failures)
+    assert any("(Q-31)" in line for line in failures)
+    assert not any("Configure" in line for line in failures)
 
 
 def test_engine_card_passes_the_mechanical_checklist():

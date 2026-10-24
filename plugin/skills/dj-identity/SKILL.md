@@ -47,7 +47,7 @@ Step 1 of 2, under a minute. Run it after profile, structure and taste: it reads
    `python3 scripts/identity.py --library <dj-library folder>` (`python` on Windows). Options:
    `--today YYYY-MM-DD` fixes the date the axes are measured at (default: the date in
    `profile/facts.json`); `--xml FILE` reads one export instead of the latest.
-2. Engine (Claude Code, or the DJ in a terminal at the repo root):
+2. A clone of the repo (Claude Code at the repo root, for developers):
    `uv run dj library identity --json`. `--library DIR` defaults to the configured folder;
    `--xml` and `--today` work as above. `dj library analyze` runs it too, after taste and before
    the report.

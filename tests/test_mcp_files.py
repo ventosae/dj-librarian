@@ -199,3 +199,88 @@ def test_each_description_shows_one_example():
         assert example and example.group(1) == example.group(2), name
     assert '"2026-10-20-collection.xml" -> exports/2026-10-20-collection.xml' in tools["dj_library_inspect"]
     assert "set.txt -> tracklists/set.txt" in m.server.instructions
+
+
+# -- the desktop extension (W-34): tree files, tidy plans, the engine's own folders --------------
+
+
+@pytest.fixture
+def bundle(repo, tmp_path, monkeypatch):
+    """DJ_ENGINE=mcpb with a made-up home folder; the library folder of `repo` exists."""
+    home = tmp_path / "home" / "someone"
+    home.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("DJ_ENGINE", "mcpb")
+    return NS(root=repo.root, library=repo.library, outside=repo.outside, home=home)
+
+
+def tree_arg(cmd):
+    return cmd[cmd.index("--file") + 1]
+
+
+def test_a_tree_file_comes_from_the_library_folder_first(repo, calls):
+    in_repo = write(repo.root / "bases.yaml", "[]")
+    assert json.loads(m.dj_tree_preview("bases.yaml"))["ok"] is True
+    assert tree_arg(calls[-1]) == str(in_repo.resolve())  # the repo, while the library has none
+    in_library = write(repo.library / "bases.yaml", "[]")
+    assert json.loads(m.dj_tree_preview("bases.yaml"))["ok"] is True
+    assert json.loads(m.dj_tree_apply(preview_id=PID, file="bases.yaml", power_mode=True))["ok"] is True
+    assert tree_arg(calls[-2]) == tree_arg(calls[-1]) == str(in_library.resolve())
+
+
+def test_the_bundle_reads_a_tree_file_by_name_from_the_library_folder_only(bundle, calls, monkeypatch):
+    """In the extension the repo is the install folder: a bases.yaml there is never picked up by
+    name; the library folder's is, and a missing one is named where the DJ should put it."""
+    write(bundle.root / "bases.yaml", "[]")
+    answer = json.loads(m.dj_tree_preview("bases.yaml"))
+    named = repr(str((bundle.library / "bases.yaml").resolve()))
+    assert answer["ok"] is False and answer["error"] == f"{named} not found: no file at that path."
+    assert calls == []
+    in_library = write(bundle.library / "bases.yaml", "[]")
+    assert json.loads(m.dj_tree_preview("bases.yaml"))["ok"] is True
+    assert tree_arg(calls[-1]) == str(in_library.resolve())
+    monkeypatch.delenv("DJ_LIBRARY")
+    answer = json.loads(m.dj_tree_preview("bases.yaml"))
+    assert answer["ok"] is False and "engine settings" in answer["error"] and len(calls) == 1
+
+
+def test_a_clone_keeps_tidy_plans_in_the_repo(repo, calls):
+    write(repo.library / "plans" / "t.plan.json", "{}")
+    answer = json.loads(m.dj_tidy_apply_preview("t.plan.json"))
+    assert answer["ok"] is False and "the repo root" in answer["error"] and calls == []
+
+
+def test_the_bundle_finds_tidy_plans_in_the_library_folder(bundle, calls):
+    plan = write(bundle.library / "plans" / "t.plan.json", "{}")
+    tools = (lambda: m.dj_tidy_apply_preview("t.plan.json"), lambda: m.dj_tidy_apply("t.plan.json", preview_id=PID),
+             lambda: m.dj_tidy_undo_preview("t.plan.json"), lambda: m.dj_tidy_undo("t.plan.json", preview_id=PID))
+    for call in tools:
+        assert json.loads(call())["ok"] is True
+        assert calls[-1][-1] == str(plan.resolve())
+
+
+def test_the_bundle_with_a_library_folder_adds_no_other_root(bundle):
+    roots, unusable = m.allowed_roots()
+    assert roots == [bundle.library.resolve()] and unusable == ""  # the install folder is no DJ folder
+
+
+def test_the_bundle_without_a_library_folder_allows_only_its_plans_and_reports(bundle, monkeypatch):
+    """The plans and reports then live in ~/.dj-librarian: the files a tool names there (a tidy
+    plan, a report) can be passed back. That folder itself never counts: its state (preview
+    records, undo records, backups) and the Spotify token stay out of reach. A clone allows none."""
+    monkeypatch.setenv("DJ_LIBRARY", str(bundle.home))  # too wide: not a library folder
+    fallback = (bundle.home / ".dj-librarian").resolve()
+    roots, unusable = m.allowed_roots()
+    assert roots == [fallback / "plans", fallback / "reports"] and "not used" in unusable
+    plan = write(fallback / "plans" / "t.plan.json", "{}")
+    assert m.tidy_plan_file("t.plan.json") == str(plan.resolve())
+    assert m.tidy_plan_file(str(plan)) == str(plan.resolve())
+    report = write(fallback / "reports" / "tidy" / "x.report.json", "{}")
+    assert m.library_file(str(report), (".json",)) == str(report.resolve())
+    for private in (fallback / ".cache" / "spotify_token.json", fallback / "state" / "tidy" / "t.undo.json",
+                    fallback / "state" / "previews" / "0123456789ab.json", bundle.home / "elsewhere.json"):
+        with pytest.raises(m.ToolInputError, match="is outside"):
+            m.library_file(str(write(private, "{}")), (".json",))
+    monkeypatch.delenv("DJ_ENGINE")
+    assert not any(root.is_relative_to(fallback) for root in m.allowed_roots()[0])

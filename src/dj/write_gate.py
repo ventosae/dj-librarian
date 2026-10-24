@@ -1,6 +1,6 @@
 """The preview gate for the dj CLI's write commands (R-1102) and power mode (R-205).
 
-Stdlib only (+ `dj.gate`, `dj.safety`, which import no engine package at module level).
+Stdlib only (+ `dj.gate`, `dj.hostenv`, `dj.safety`, which import no engine package at module level).
 
     changes = [...]                              # what the write would do, as plain JSON values
     pid = record("copy", args, changes)          # the dry-run: prints "Preview id: <pid>"
@@ -21,8 +21,9 @@ earlier state (the DJ removed the added rows in rekordbox, deleted the Spotify p
 `dj tidy undo`), and the same plan must then be writable again, as it was before the gate. A
 replay of the used id stays refused.
 
-Records live in `REPO_ROOT/state/previews/` (gitignored). `STATE_DIR` is read at call time,
-so tests point it at a temporary folder.
+Records live in `REPO_ROOT/state/previews/` (gitignored); in the desktop extension in
+`<dj-library>/.cache/engine/state/previews/` (dj.hostenv.state_root). `STATE_DIR` is read at call
+time, so tests point it at a temporary folder.
 """
 
 from __future__ import annotations
@@ -34,10 +35,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from dj import safety
+from dj import hostenv, safety
 from dj.gate import Gate, GateError, require_id
 
-STATE_DIR = safety.REPO_ROOT / "state"
+STATE_DIR = hostenv.state_root() / "state"
 
 POWER_MODE_REFUSAL = (
     "master.db writes are power mode (Windows only): add --power-mode. The default is an XML to "
@@ -137,8 +138,14 @@ def consume(preview_id: str, written: str | None = None) -> str | None:
 
 def require_power_mode(power_mode: bool) -> None:
     """R-205: a master.db write needs --power-mode, and Windows. GateError (one line) otherwise.
+    The engine settings come first: DJ_POWER_MODE false refuses whatever the flag says, and so
+    does an unset value in the desktop extension (it fails closed); true, or unset in a clone,
+    leaves this rule as it was (the setting never turns power mode on).
 
     Runs before the preview id is looked at and before any read, process check or backup."""
+    refusal = hostenv.power_mode_refusal()
+    if refusal:
+        raise GateError(refusal)
     if not power_mode:
         raise GateError(POWER_MODE_REFUSAL)
     if sys.platform not in safety.DB_WRITE_PLATFORMS:

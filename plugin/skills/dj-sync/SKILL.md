@@ -25,9 +25,9 @@ rekordbox is the truth. Spotify playlists are candidates. You only propose.
 | `dj copy A B` / `--apply --xml` | `dj_copy_preview(source, target)` / `dj_copy_apply(source, target, preview_id)` (mode `xml`; `mode="db", power_mode=true` for master.db) |
 | `dj push P` / `--apply` | `dj_push_preview(playlist)` / `dj_push_apply(playlist, preview_id)` |
 
-Every tool returns `{ok, exit_code, result | output, stderr}`. File arguments are paths
-inside the repo (`bases.yaml`, `plans/....plan.json`); plans and tracklists may also sit in
-the dj-library folder. A bare name is looked up in its folder
+Every tool returns `{ok, exit_code, result | output, stderr}`. File arguments are names
+in the dj-library folder (`bases.yaml`, `tree.yaml`, `plans/....plan.json`); in a clone the
+repo's files are the fallback. A bare name is looked up in its folder
 (`2026-10-20-house.plan.json` -> `plans/`, `set.txt` -> `tracklists/`).
 Results put the counts first. A long list comes in pages: `paging` says per list `page`, `pages`
 and `total`; call the same preview or read tool with the same arguments and `page=2` for more.
@@ -52,7 +52,7 @@ serves either mode, once.
 `exit_code: 2` = rekordbox is open: ask them to close it, call again with the same `preview_id`.
 Never hand them a shell command when a tool exists.
 
-## How to run the CLI (Claude Code, or the DJ in a terminal)
+## How to run the CLI (a clone of the repo, Claude Code)
 Always from the repo root:
 
     uv run dj <command> --json

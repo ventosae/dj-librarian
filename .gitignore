@@ -48,9 +48,12 @@ local/
 # Claude Code local settings
 .claude/settings.local.json
 
-# Plugin caches, and the core scripts/build_plugin_zip.py vendors into the zip only (D-22)
-plugin/.mcpb-cache/
+# Plugin caches, and the core scripts/build_plugin_zip.py vendors into the zip only (D-22).
+# plugin/engine.mcpb is the engine bundle scripts/build_mcpb.py --plugin writes (W-34); Claude
+# Code extracts a plugin's bundle into .mcpb-cache/.
+.mcpb-cache/
 /plugin/vendor/
+/plugin/engine.mcpb
 
 # OS / editors
 .DS_Store

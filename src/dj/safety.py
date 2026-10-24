@@ -17,8 +17,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-BACKUP_DIR = REPO_ROOT / "backups"
+from dj import hostenv
+
+REPO_ROOT = hostenv.REPO_ROOT  # the clone, or the desktop extension's install folder
+# Verified master.db backups: <repo>/backups in a clone; in the desktop extension
+# <dj-library>/.cache/engine/backups (or ~/.dj-librarian/backups), so they outlive an update.
+BACKUP_DIR = hostenv.state_root() / "backups"
 PLAYLIST_XML = "masterPlaylists6.xml"
 PROCESS_NAME = "rekordbox.exe"  # Windows image name, as tasklist shows it
 MAC_PROCESS_NAME = "rekordbox"  # macOS process name, as pgrep -x matches it
@@ -182,6 +186,12 @@ class Backup:
         ]
 
 
+def backup_folder_text() -> str:
+    """How a message names the backup folder: `backups/` in a clone (as before), the full path in
+    the desktop extension (it is not next to the code there)."""
+    return f"{BACKUP_DIR}{os.sep}" if hostenv.bundle_mode() else "backups/"
+
+
 def backup(db_path: Path, dest: Path | None = None) -> Backup:
     """Copy master.db (+ masterPlaylists6.xml, -wal, -shm) and verify every copy."""
     dest = dest or BACKUP_DIR
@@ -241,11 +251,17 @@ def open_db(write: bool = False, db_path: Path | None = None) -> Iterator[Any]:
     """Open master.db and yield the pyrekordbox database.
 
     write=False: never commits; rolls back on exit.
-    write=True:  Windows only (DB_WRITE_PLATFORMS) -> refuses if rekordbox runs ->
+    write=True:  refused when the engine settings turn power mode off (DJ_POWER_MODE false, or
+                 unset in the desktop extension) ->
+                 Windows only (DB_WRITE_PLATFORMS) -> refuses if rekordbox runs ->
                  verified backup -> yield -> exactly one commit on clean exit.
                  Any exception -> rollback, no commit.
                  The db object is closed and discarded either way.
     """
+    if write:
+        refusal = hostenv.power_mode_refusal()  # power mode off in the settings: refused before anything else
+        if refusal:
+            raise SafetyError(refusal)
     if write and sys.platform not in DB_WRITE_PLATFORMS:
         raise SafetyError(
             f"Direct master.db writes are Windows-only power mode; this is {sys.platform}. "
@@ -280,7 +296,7 @@ def open_db(write: bool = False, db_path: Path | None = None) -> Iterator[Any]:
                 names = ", ".join(p.name for p in changed)
                 exc.add_note(
                     f"WARNING: changed on disk despite the failure: {names}. "
-                    f"Restore from backups/*_{bk.timestamp}.* (see README)."
+                    f"Restore from {backup_folder_text()}*_{bk.timestamp}.* (see README)."
                 )
             else:
                 exc.add_note("Rolled back. master.db and the playlist XML are unchanged.")

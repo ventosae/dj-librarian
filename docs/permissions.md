@@ -15,8 +15,10 @@ A write needs a preview, then your explicit yes, then the write tool with the pr
 
 Plugin hooks are not a Cowork component (C-10, Q-03), so in Cowork the permission setting is the
 hard gate. Direct master.db writes (`dj_tree_apply`, and `dj_apply_write` / `dj_copy_apply` with
-`mode="db"`) are a Windows power mode on top: they also need `power_mode=true` (R-205). Inbox adds
-and copies default to `mode="xml"`: an XML you import, any OS.
+`mode="db"`) are a Windows power mode on top: they also need `power_mode=true` (R-205). The engine
+from the plugin zip or the `.mcpb` adds a switch in its settings form, Power mode (Windows): off,
+the default, refuses every master.db write whatever the call says. Inbox adds and copies default
+to `mode="xml"`: an XML you import, any OS.
 
 ## Read tools: Allow (or Ask, your call)
 
@@ -79,7 +81,8 @@ roots too.
 ## Where to set it
 
 - **Cowork / Claude desktop app:** open the dj-librarian connector's tool permissions and set each
-  write tool above to Ask every time. Read tools can stay on Allow.
+  write tool above to Ask every time. Read tools can stay on Allow. The same goes for the engine
+  installed on its own from the `.mcpb` (Settings → Extensions, `docs/install.md`).
 - **Claude Code:** put the write tools under `ask` in your settings (`~/.claude/settings.json`).
   The plugin's tools are named `mcp__plugin_dj-librarian_dj-librarian__<tool>`; a server you
   registered by hand as `dj-librarian` is `mcp__dj-librarian__<tool>`.
@@ -111,6 +114,8 @@ through silently. It runs through `uv` (no system Python needed) and fails close
 2.1.295 or later (`onFailure: "block"`): if `uv` is missing, the script crashes or it times out, the
 write is blocked. An older Claude Code has no `onFailure`: there a hook that cannot run may let the
 call through, and ask-every-time and the engine's own preview-id check are the gates left.
+The engine from the plugin zip or the `.mcpb` needs no uv on the DJ's machine, but this hook does:
+on a machine without uv, Claude Code refuses every write tool (a known gap, logged with Q-31).
 
 The hook has run in tests and from a terminal, not yet inside a live Claude Code session with the
 plugin installed (R-1105 asks for that run).

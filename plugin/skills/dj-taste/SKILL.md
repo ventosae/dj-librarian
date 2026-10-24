@@ -35,7 +35,7 @@ docstring of `src/dj/analysis/taste.py`. Quote it when the DJ asks "why is that 
    path is looked up in the library folder first, then in the current folder); `--rebuild` only
    after the DJ's explicit yes (see below). `python` on Windows. In a clone of the repo the
    script finds the core by itself.
-2. CLI (engine or Claude Code): `uv run dj library taste [--library DIR] [--xml FILE]
+2. CLI (a clone of the repo, Claude Code): `uv run dj library taste [--library DIR] [--xml FILE]
    [--today YYYY-MM-DD] [--rebuild] [--json]`. Without `--library` it uses the configured folder.
 
 Both read the latest export (`exports.latest` in `library.yaml`, else the newest `exports/*.xml`).

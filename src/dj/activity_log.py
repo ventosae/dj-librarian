@@ -8,7 +8,8 @@ Where it goes:
 - the configured dj-library folder (`dj.libfolder.configured_root`) when that folder is set up:
   a `library.yaml` that `validate_meta` accepts. The DJ reads one log there.
 - else `log.md` at the top of the repo (gitignored), the maintainer's workflow before a library
-  folder exists.
+  folder exists. In the desktop extension (W-34) the repo is the install folder: there it is the
+  dj-library folder the settings name, set up or not, or `~/.dj-librarian` without a usable one.
 
 The file in the line is relative to the folder of that log.md; a file in the repo (plans/,
 reports/, state/) logged into the library folder's log.md is written relative to the repo; any
@@ -34,11 +35,13 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Mapping
 
-from dj import libfolder
-from dj.safety import REPO_ROOT
+from dj import hostenv, libfolder
 
-# Read at call time: tests point it at a temporary folder (tests/conftest.py).
-REPO_DIR = REPO_ROOT
+# Where log.md goes while no dj-library is set up: the repo in a clone; in the desktop extension
+# the dj-library folder the settings name even before it is set up (the DJ reads log.md there; a
+# later scaffold keeps it), or ~/.dj-librarian without a usable one (dj.hostenv.home_root), never
+# the install folder. Read at call time: tests point it at a temporary folder (tests/conftest.py).
+REPO_DIR = hostenv.home_root()
 
 
 @dataclass(frozen=True)

@@ -37,10 +37,10 @@ Do not help with:
 - [ ] A-03 he picks a proposal, says yes, imports `proposals/<slug>.xml`; the playlists appear.
 - [ ] A-04 rekordbox unchanged before his import; audio untouched; each build or crate XML follows his yes (the analysis log lines need none).
 - [ ] A-05 the profile sounds like him (question 1).
-- [ ] A-06 engine from the card, without Anton in the room; `dj_status` answers; add path (Q-08).
+- [ ] A-06 engine from the card, without Anton in the room; `dj_status` answers; engine route (Q-31).
 - [ ] A-07 a crate he'd play; a Barber line in `taste/`; Spotify set up without Anton, `dj pull` works.
 - [ ] A-08 Anton watched it all; lessons written; in `docs/plan.md` W-28 Done, R-106 from the tally.
-- [ ] R-1003 (a reply vs `adhd.md`, `voice.md`), Q-16 (two XMLs imported), Q-24; Mac: Q-02, Q-25.
+- [ ] R-1003 (a reply vs `adhd.md`, `voice.md`), Q-16 (two XMLs imported), Q-24; Mac: Q-02, Q-31.
 
 Lessons in `docs/lessons.md` (dated, no names): minutes per step, misread replies verbatim, widgets, zip layout, the import, any write without a yes.
 

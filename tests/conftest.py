@@ -166,6 +166,15 @@ def no_real_library_folder(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def no_host_settings(monkeypatch):
+    """The desktop extension's settings (W-34) reach the engine as environment variables. A test
+    machine that has any of them set must not change what a test sees: every test starts as a
+    clone with no host settings; a test that needs one sets it itself."""
+    for name in ("DJ_ENGINE", "DJ_POWER_MODE", "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def gate_records_in_a_temp_folder(monkeypatch, tmp_path_factory, request):
     """The CLI's preview records (dj.write_gate, R-1102) go to a folder of this test's own, never
     to REPO_ROOT/state. Created only when a test records a preview."""

@@ -41,7 +41,7 @@ The write gate (R-1102): `dj_tidy_apply_preview` and `dj_tidy_undo_preview` retu
 `preview_id`. The write tool needs that id and refuses without it, after any change since the
 preview (a file, a decision), or with an id already used: preview again. Never invent an id.
 
-CLI (Claude Code or the DJ): from the repo root, `uv run dj tidy <cmd> --json`
+CLI (a clone of the repo, Claude Code): from the repo root, `uv run dj tidy <cmd> --json`
 (venv outside any cloud-synced folder via `UV_PROJECT_ENVIRONMENT`, see CONTRIBUTING.md).
 Exit codes 0 / 1 / 2 as above; 1 with `REFUSED` = no valid preview id. The write is the dry-run's
 command with `--apply --preview-id <id>`.
@@ -74,7 +74,8 @@ command with `--apply --preview-id <id>`.
 ## Undo
 `dj_tidy_undo_preview(plan)` is the dry-run: what would be restored, and a `preview_id`. After the
 DJ's yes, `dj_tidy_undo(plan, preview_id)` restores tags and names from
-`state/tidy/<plan>.undo.json`, newest first, and refuses a file that changed since. Never pass
+the undo record in the engine's state (`.cache/engine/state/tidy/<plan>.undo.json` in the
+dj-library folder; `state/tidy/` in a clone), newest first, and refuses a file that changed since. Never pass
 `--force` on your own. Then Reload Tag again.
 
 ## Rules

@@ -30,7 +30,7 @@ from tidy_fixtures import make_audio
 from typer.testing import CliRunner
 
 from dj import build as build_mod
-from dj import cli, safety, spotify, write_gate
+from dj import cli, hostenv, safety, spotify, write_gate
 from dj import mcp_server as m
 from dj import playlist_copy as copy_mod
 from dj import push as push_mod
@@ -792,3 +792,177 @@ def test_mcp_each_preview_id_writes_through_its_write_tool_once(name, request, t
     again = json.loads(pair.write(pid))
     assert (again["ok"], again["exit_code"]) == (False, 1) and "already used" in again["stderr"][-1], again
     assert pair.state() == before
+
+
+# -- the engine settings: DJ_POWER_MODE (W-34, D-28) ---------------------------------------------
+
+
+def test_db_write_with_power_mode_off_in_the_settings_is_refused_before_anything(job, rb, monkeypatch):
+    """The extension's Power mode switch off: every master.db write refuses in one line, before the
+    flag, the preview id, a read, the process check or a backup. The dry-run still previews."""
+    monkeypatch.setenv("DJ_POWER_MODE", "false")
+    pid = dry_run_id(job.dry)
+    connects = rb.connects
+    line = f"REFUSED {hostenv.POWER_MODE_OFF}"
+    assert refused(run(*job.dry, *gated(pid, "--power-mode"))) == line
+    assert refused(run(*job.dry, *gated(None, "--power-mode"))) == line  # before the preview id
+    assert refused(run(*job.dry, *gated(pid))) == line  # before the flag
+    assert rb.connects == connects and rb.backups == [] and job.db.commits == 0
+    assert not job.written() and not used(pid)
+
+
+def test_power_mode_on_in_the_settings_never_turns_power_mode_on_by_itself(job, rb, monkeypatch):
+    monkeypatch.setenv("DJ_POWER_MODE", "true")
+    pid = dry_run_id(job.dry)
+    assert refused(run(*job.dry, *gated(pid))) == POWER_MODE_LINE  # still needs --power-mode
+    result = run(*job.dry, *gated(pid, "--power-mode"))
+    assert result.exit_code == 0 and "APPLIED" in result.stdout, result.output
+    assert len(rb.backups) == 1 and job.db.commits == 1 and used(pid)
+
+
+def test_a_power_mode_setting_that_is_neither_true_nor_false_refuses_in_one_line(job, rb, monkeypatch):
+    monkeypatch.setenv("DJ_POWER_MODE", "sometimes")
+    pid = dry_run_id(job.dry)
+    assert "DJ_POWER_MODE must be true or false" in refused(run(*job.dry, *gated(pid, "--power-mode")))
+    assert rb.backups == [] and job.db.commits == 0 and not job.written() and not used(pid)
+
+
+def test_power_mode_off_leaves_the_xml_route_open(rb, tmp_path, db, monkeypatch):
+    """--xml writes no master.db: the settings switch does not touch it."""
+    job = db_job("apply", tmp_path, db)
+    rb.db = job.db
+    monkeypatch.setenv("DJ_POWER_MODE", "false")
+    monkeypatch.setattr(cli, "_apply_as_xml", lambda *a, **k: ({"applied": True, "xml": "x.xml"}, ["XML written"]))
+    pid = dry_run_id(job.dry)
+    result = run(*job.dry, *gated(pid, "--xml"))
+    assert result.exit_code == 0, result.output
+    assert rb.backups == [] and job.db.commits == 0
+
+
+@pytest.mark.parametrize("tool", sorted(DB_TOOLS))
+def test_master_db_write_tools_refuse_first_when_the_settings_turn_power_mode_off(calls, tool, monkeypatch):
+    monkeypatch.setenv("DJ_POWER_MODE", "false")
+    for pid in (PID, ""):
+        answer = json.loads(DB_TOOLS[tool](pid, power_mode=True))
+        assert answer["ok"] is False and answer["error"] == hostenv.POWER_MODE_OFF
+    monkeypatch.setenv("DJ_POWER_MODE", "maybe")
+    answer = json.loads(DB_TOOLS[tool](PID, power_mode=True))
+    assert answer["ok"] is False and "DJ_POWER_MODE must be true or false" in answer["error"]
+    assert calls == []
+
+
+@pytest.mark.parametrize("tool", sorted(DB_TOOLS))
+def test_power_mode_on_in_the_settings_still_needs_power_mode_true(calls, tool, monkeypatch):
+    monkeypatch.setenv("DJ_POWER_MODE", "true")
+    assert json.loads(DB_TOOLS[tool](PID))["error"] == m.POWER_MODE_REFUSAL
+    assert json.loads(DB_TOOLS[tool](PID, power_mode=True))["ok"] is True
+    (cmd,) = calls
+    assert "--power-mode" in cmd
+
+
+def test_power_mode_off_leaves_the_xml_writes_and_the_other_write_tools(calls, monkeypatch):
+    monkeypatch.setenv("DJ_POWER_MODE", "false")
+    assert json.loads(m.dj_apply_write("p.plan.json", preview_id=PID, mode="xml"))["ok"] is True
+    assert json.loads(m.dj_copy_apply("a", "b", preview_id=PID))["ok"] is True  # empty mode: the XML
+    for name in ("dj_push_apply", "dj_build_apply", "dj_tidy_apply", "dj_tidy_undo"):
+        assert json.loads(OTHER_TOOLS[name](PID))["ok"] is True, name
+    assert len(calls) == 6 and not any("--power-mode" in cmd for cmd in calls)
+
+
+# -- the desktop extension fails closed: no Power mode value is off (W-34) -----------------------
+
+
+@pytest.fixture
+def bundle_settings(monkeypatch, tmp_path):
+    """Turns this test into the desktop extension (DJ_ENGINE=mcpb, a made-up home folder) with the
+    given DJ_POWER_MODE (None: not passed at all)."""
+    home = tmp_path / "home"
+    home.mkdir()
+
+    def turn_on(power_mode: str | None) -> None:
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        monkeypatch.setenv("DJ_ENGINE", "mcpb")
+        if power_mode is None:
+            monkeypatch.delenv("DJ_POWER_MODE", raising=False)
+        else:
+            monkeypatch.setenv("DJ_POWER_MODE", power_mode)
+
+    return turn_on
+
+
+NO_VALUE = [None, "", "${user_config.power_mode}"]  # not passed, empty, not filled in by the host
+
+
+@pytest.mark.parametrize("value", NO_VALUE)
+def test_db_write_in_the_bundle_without_a_power_mode_value_is_refused_before_anything(job, rb, bundle_settings,
+                                                                                       value):
+    pid = dry_run_id(job.dry)  # previewed as a clone; the write comes from the extension
+    connects = rb.connects
+    bundle_settings(value)
+    line = f"REFUSED {hostenv.POWER_MODE_UNSET}"
+    assert refused(run(*job.dry, *gated(pid, "--power-mode"))) == line
+    assert refused(run(*job.dry, *gated(None, "--power-mode"))) == line  # before the preview id
+    assert rb.connects == connects and rb.backups == [] and job.db.commits == 0
+    assert not job.written() and not used(pid)
+
+
+def test_power_mode_on_in_the_bundle_still_needs_the_flag(job, rb, bundle_settings):
+    pid = dry_run_id(job.dry)
+    bundle_settings("true")
+    assert refused(run(*job.dry, *gated(pid))) == POWER_MODE_LINE
+    assert rb.backups == [] and job.db.commits == 0 and not used(pid)
+
+
+@pytest.mark.parametrize("value", NO_VALUE)
+@pytest.mark.parametrize("tool", sorted(DB_TOOLS))
+def test_master_db_write_tools_in_the_bundle_refuse_without_a_power_mode_value(calls, tool, value, bundle_settings):
+    bundle_settings(value)
+    answer = json.loads(DB_TOOLS[tool](PID, power_mode=True))
+    assert answer["ok"] is False and answer["error"] == hostenv.POWER_MODE_UNSET
+    assert calls == []
+
+
+# -- the dry-run says when the settings refuse the master.db route (W-34) ------------------------
+
+
+def test_a_db_dry_run_with_power_mode_off_does_not_offer_the_power_mode_write(job, rb, monkeypatch):
+    """No yes is asked for a write that cannot happen: the last line drops the --power-mode route
+    and says why; tree, which has no XML route, offers no write at all. The preview is still
+    recorded (the DJ sees the plan); --json carries the reason as `master_db_write`."""
+    monkeypatch.setenv("DJ_POWER_MODE", "false")
+    result = run(*job.dry)
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    pid = lines[-2].removeprefix("Preview id: ")
+    assert valid_id(pid) and record_path(pid).is_file()
+    assert lines[-1].startswith("DRY-RUN. Nothing written.") and "--power-mode" not in lines[-1]
+    assert lines[-1].endswith(hostenv.POWER_MODE_OFF)
+    if job.kind == "tree":
+        assert "This preview cannot be written" in lines[-1] and "--apply" not in lines[-1]
+    else:
+        assert f"--apply --xml --preview-id {pid} (an XML to import, any OS). Not master.db:" in lines[-1]
+    data = json.loads(run(*job.dry, "--json").stdout)
+    assert data["master_db_write"] == hostenv.POWER_MODE_OFF and valid_id(data["preview_id"])
+    monkeypatch.delenv("DJ_POWER_MODE")
+    assert "master_db_write" not in json.loads(run(*job.dry, "--json").stdout)  # a clone: as before
+    assert run(*job.dry).stdout.splitlines()[-1].endswith(f"--power-mode --preview-id {data['preview_id']}")
+
+
+def test_the_mcp_preview_says_the_settings_refuse_master_db(monkeypatch, rb):
+    """dj_copy_preview runs the CLI (in-process here): its result names the settings' refusal, and
+    the power-mode write it would lead to is refused before anything runs."""
+    rb.db = TxCopyDB([song("1", 1), song("2", 2)])
+
+    def in_process(cmd, **kwargs):
+        result = runner.invoke(cli.app, cmd[3:])
+        return NS(returncode=result.exit_code, stdout=result.stdout, stderr=result.stderr)
+
+    monkeypatch.setattr(m.subprocess, "run", in_process)
+    monkeypatch.setenv("DJ_POWER_MODE", "false")
+    preview = json.loads(m.dj_copy_preview("jazzy", "jazz_base/2.1_jazzy"))
+    assert preview["result"]["master_db_write"] == hostenv.POWER_MODE_OFF
+    pid = preview["result"]["preview_id"]
+    done = json.loads(m.dj_copy_apply("jazzy", "jazz_base/2.1_jazzy", preview_id=pid, power_mode=True))
+    assert done["ok"] is False and done["error"] == hostenv.POWER_MODE_OFF
+    assert rb.db.added == [] and rb.backups == [] and not used(pid)

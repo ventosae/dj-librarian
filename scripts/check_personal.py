@@ -7,9 +7,10 @@ the real people the project knows: the owner's name as `plugin.json` gives it un
 and the named personas of docs/requirements.md (a bold name followed by a role, like the operator
 and the test DJ). The names are read, never written here, so this file holds none.
 
-The only hits allowed are the owner's name in exactly two fields: `author.name` in
-`plugin/.claude-plugin/plugin.json` and `owner.name` in `.claude-plugin/marketplace.json`. A hit
-anywhere else, or a second hit in those two files, fails. Prints one line per problem and exits 1,
+The only hits allowed are the owner's name in exactly three fields: `author.name` in
+`plugin/.claude-plugin/plugin.json`, `owner.name` in `.claude-plugin/marketplace.json` and
+`author.name` in `mcpb/manifest.json` (the engine bundle, W-34). A hit anywhere else, or a second
+hit in those files, fails. Prints one line per problem and exits 1,
 or prints `ok` and exits 0. CI runs it; tests/test_personal_data.py runs the same check.
 """
 
@@ -24,11 +25,12 @@ from typing import Any, Iterable
 
 REPO = Path(__file__).resolve().parents[1]
 PATHS = ("src", "tests", "plugin", "examples", "README.md", "CONTRIBUTING.md", "templates", "docs/samples",
-         ".claude-plugin")  # fmt: skip
+         ".claude-plugin", "mcpb")  # fmt: skip
 PLUGIN_JSON = "plugin/.claude-plugin/plugin.json"
 MARKETPLACE_JSON = ".claude-plugin/marketplace.json"
+MCPB_JSON = "mcpb/manifest.json"  # the engine bundle's manifest (W-34): author as in plugin.json
 # The one field per file where the owner's name belongs (R-1206 as widened by Q-26).
-ALLOWED = {PLUGIN_JSON: ("author", "name"), MARKETPLACE_JSON: ("owner", "name")}
+ALLOWED = {PLUGIN_JSON: ("author", "name"), MARKETPLACE_JSON: ("owner", "name"), MCPB_JSON: ("author", "name")}
 _PERSONA = re.compile(r"^\| P-\d+ \| \*\*(.+?)\*\* — ", re.MULTILINE)  # `| P-2 | **Name** — role |`
 
 

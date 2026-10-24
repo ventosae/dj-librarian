@@ -46,6 +46,12 @@ uv run pytest
 uv run ruff check .
 ```
 
+`plugin.json` points its MCP server at `./engine.mcpb`, a build product git ignores. Build it into the plugin before you validate, or both validate commands fail with `Path not found: ./engine.mcpb`:
+
+```bash
+uv run python scripts/build_mcpb.py --plugin
+```
+
 ```bash
 claude plugin validate ./plugin --strict
 ```
@@ -53,6 +59,8 @@ claude plugin validate ./plugin --strict
 ```bash
 claude plugin validate .
 ```
+
+Then remove `plugin/engine.mcpb` again (and a `plugin/.mcpb-cache/` if Claude Code made one), so nobody tests against a stale engine. `uv run python scripts/build_mcpb.py --smoke` also starts the built engine with the command and env `mcpb/manifest.json` gives a host, and compares its tools with the manifest's.
 
 `tests/conftest.py` blocks the real rekordbox database and all network sockets. No test may open a real database or an audio file outside `tmp_path`. After any pyrekordbox upgrade, run `tests/test_contract.py` before any write.
 
@@ -62,8 +70,8 @@ claude plugin validate .
 - Conventional commit titles: `feat:`, `fix:`, `docs:`, `chore:`, `test:`. Pull requests are squash-merged; the PR title becomes the commit.
 - **Every PR cites the requirement ids it satisfies** (`R-…`, `NFR-…`, `C-…`) from [docs/requirements.md](docs/requirements.md). A change with no requirement starts as an issue.
 - Update [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`.
-- `pyproject.toml` version and `plugin/.claude-plugin/plugin.json` version stay equal.
-- Run `claude plugin validate ./plugin --strict` before opening a PR that touches `plugin/`.
+- The versions in `pyproject.toml`, `plugin/.claude-plugin/plugin.json` and `mcpb/manifest.json` stay equal (`scripts/build_mcpb.py` refuses to build otherwise).
+- Run `uv run python scripts/build_mcpb.py --plugin`, then `claude plugin validate ./plugin --strict`, before opening a PR that touches `plugin/` or `mcpb/`.
 
 ## Writes: the safety rule
 

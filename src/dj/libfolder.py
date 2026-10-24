@@ -33,11 +33,12 @@ import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Iterator, Mapping
 
 import yaml
 
+from dj import hostenv
 from dj.model import LibraryError
 from dj.safety import REPO_ROOT, sha256
 
@@ -57,7 +58,7 @@ META_KEYS = (
 # Keys a library.yaml may hold but need not: files written before them stay valid (R-1406).
 OPTIONAL_META_KEYS = ("dj_name",)
 DJ_NAME_MAX = 40  # characters of the DJ's handle (what they call you in the booth)
-ENV_VAR = "DJ_LIBRARY"
+ENV_VAR = hostenv.LIBRARY  # "DJ_LIBRARY"
 _DATED_EXPORT = re.compile(r"^(\d{4}-\d{2}-\d{2})-collection(?:-(\d+))?\.xml$")
 _DRIVE = re.compile(r"^[A-Za-z]:")
 _CHUNK = 1 << 20
@@ -135,7 +136,8 @@ class LibraryFolder:
     def gitignore(self) -> Path:
         return self.root / ".gitignore"
 
-    # tool scratch state (gate previews, sessions); gitignored
+    # the tool's own state (gate previews, sessions; in the desktop extension also engine/: the
+    # master.db backups and tidy undo records, dj.hostenv); gitignored, never to be deleted
     @property
     def cache(self) -> Path:
         return self.root / ".cache"
@@ -205,9 +207,15 @@ rekordbox until you import a file yourself.
 The folder is ready for git: `git init`, `git add .`, `git commit`. The XML files in
 `exports/` and `proposals/` hold the paths of your music on this computer, so they are
 gitignored (`exports/*.xml`, `proposals/*.xml`), and so is any XML you drop at the top.
-`.cache/` is the tool's scratch space, `.env` holds secrets and `*.tmp` is a temp file left
-by a crash, or by a disk that does not let files be deleted: all gitignored too. Everything
+`.cache/` is the tool's own state, `.env` holds secrets and `*.tmp` is a temp file left by
+a crash, or by a disk that does not let files be deleted: all gitignored too. Everything
 else is text you can commit, diff and back up.
+
+Never delete `.cache/` to save space. It holds the tracks you declined and the matches you
+picked. When dj-librarian runs as the desktop extension it also holds
+`.cache/engine/backups/`, the verified backups of your rekordbox master.db, and
+`.cache/engine/state/tidy/`, the records `dj tidy undo` needs to put file names and tags
+back. Without them neither can be undone.
 
 On a disk that does not let files be deleted (Claude's Cowork can mount your folder that way)
 the tool writes each file in place instead of through a temp file, and says so in
@@ -238,7 +246,7 @@ proposals/*.xml
 /*.xml
 # A half-written temp file, left behind if the computer stopped mid-write.
 *.tmp
-# The tool's scratch space, and secrets.
+# The tool's own state (master.db backups, undo records: never delete it), and secrets.
 .cache/
 .env
 """
@@ -816,28 +824,38 @@ def _log_path(root: Path, file: str | Path) -> str:
 
 
 def _state_file() -> Path:
+    """Where `remember_root` stores the folder: `state/library-path.txt` in the clone; in the
+    desktop extension `~/.dj-librarian/state/library-path.txt` (dj.hostenv.library_path_file)."""
+    if hostenv.bundle_mode():
+        return hostenv.library_path_file()
     return REPO_ROOT / "state" / "library-path.txt"
 
 
 def configured_root() -> Path:
     """DJ_LIBRARY env var, else the path stored by remember_root, else REPO_ROOT/dj-library.
 
+    DJ_LIBRARY empty, or holding an unsubstituted `${...}`, counts as unset (dj.hostenv). In the
+    desktop extension (DJ_ENGINE=mcpb) there is no default: the install folder holds no library,
+    so with nothing set this refuses and names the engine settings.
+
     Always absolute (resolved). MCP path checks treat it as a boundary, so a drive root, the
     home folder or a folder above it is refused (LibraryFolderError) rather than returned.
     """
-    env = os.environ.get(ENV_VAR, "").strip()
-    if env:
-        return _library_root(env, f"{ENV_VAR}")
-    stored = _state_file()
-    if stored.is_file():
-        text = stored.read_text(encoding="utf-8").strip()
-        if text:
-            return _library_root(text, "state/library-path.txt")
-    return _library_root(REPO_ROOT / "dj-library", "the default library folder")
+    bundle = hostenv.bundle_mode()
+    state = _state_file()
+    try:
+        return hostenv.library_setting(
+            state,
+            None if bundle else REPO_ROOT / "dj-library",
+            str(state) if bundle else "state/library-path.txt",
+        )
+    except hostenv.HostSettingError as exc:
+        raise LibraryFolderError(str(exc)) from exc
 
 
 def remember_root(path: str | Path) -> Path:
-    """Store the folder's absolute path in REPO_ROOT/state/library-path.txt (gitignored).
+    """Store the folder's absolute path in REPO_ROOT/state/library-path.txt (gitignored; in the
+    desktop extension under ~/.dj-librarian/state/).
 
     A drive root, the home folder or a folder above it is refused: nothing is stored.
     """
@@ -851,36 +869,13 @@ def remember_root(path: str | Path) -> Path:
 def _library_root(path: str | Path, where: str) -> Path:
     """`path` expanded and resolved; refused if it is too wide to be one library folder."""
     try:
-        resolved = Path(path).expanduser().resolve()
-    except (OSError, RuntimeError) as exc:  # RuntimeError: `~` with no home folder known
-        raise LibraryFolderError(f"{where}: cannot use {path}: {exc}") from exc
-    too_wide = resolved.parent == resolved or _volume_root(resolved)  # a filesystem, drive or volume root
-    try:
-        home = Path.home().resolve()
-    except (OSError, RuntimeError):
-        home = None
-    if home is not None and home.is_relative_to(resolved):
-        too_wide = True  # the home folder, or a folder that holds it
-    if too_wide:
-        raise LibraryFolderError(
-            f"{where}: {resolved} is a whole drive or home folder, not a library folder. "
-            "Point it at the dj-library folder itself."
-        )
-    return resolved
+        return hostenv.check_library_root(path, where)
+    except hostenv.HostSettingError as exc:
+        raise LibraryFolderError(str(exc)) from exc
 
 
-# Where macOS and Linux desktops mount a whole drive, and how deep the drive's own folder sits:
-# /Volumes/<drive>, /media/<drive> or /media/<user>/<drive>, /run/media/<user>/<drive>. Not /mnt:
-# a sandbox may mount the connected folder itself there (and WSL is not supported anyway).
-_VOLUME_MOUNTS = ((("/", "Volumes"), 3), (("/", "media"), 4), (("/", "run", "media"), 5))
-
-
-def _volume_root(path: str | Path) -> bool:
-    """True for a mounted drive's own folder, or a folder above it (a DJ's external music drive
-    on a Mac is /Volumes/<drive>). By path, not os.path.ismount: Cowork mounts the folder the DJ
-    connected, the dj-library folder itself, and that one must stay usable."""
-    parts = PurePosixPath(Path(path).as_posix()).parts
-    return any(parts[: len(base)] == base and len(parts) <= depth for base, depth in _VOLUME_MOUNTS)
+# A mounted drive's own folder (or one above it) is too wide to be a library: by path, dj.hostenv.
+_volume_root = hostenv.volume_root
 
 
 def relative(root: str | Path, path: str | Path) -> str:

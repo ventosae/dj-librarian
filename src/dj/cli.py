@@ -12,7 +12,7 @@ from typing import Any
 
 import typer
 
-from dj import activity_log, intake, library, safety, spotify, write_gate
+from dj import activity_log, hostenv, intake, library, safety, spotify, write_gate
 from dj import analyze as analyze_mod
 from dj import build as build_mod
 from dj import playlist_copy as copy_mod
@@ -99,10 +99,25 @@ def _preview_keys(recorded: write_gate.Recorded | None) -> dict[str, Any]:
     return {"preview_id": recorded.preview_id if recorded else None}
 
 
+def _db_off_keys() -> dict[str, Any]:
+    """A master.db dry-run's --json key when the engine settings refuse master.db writes
+    (DJ_POWER_MODE, dj.hostenv; additive, absent otherwise): the preview tool's result then tells
+    the DJ that the power-mode route cannot be written."""
+    off = hostenv.power_mode_refusal()
+    return {"master_db_write": off} if off else {}
+
+
 def _to_write(preview_id: str, power_mode: bool = False, xml: bool = False) -> str:
     """The dry-run's last line: how the write is called, after the DJ's yes. `xml`: the command
-    also writes an XML to import (`dj apply`, `dj copy`), named first."""
+    also writes an XML to import (`dj apply`, `dj copy`), named first. When the engine settings
+    refuse master.db writes, the power-mode route is not offered: the line says why instead."""
     flags = "--apply --power-mode" if power_mode else "--apply"
+    off = hostenv.power_mode_refusal() if power_mode else None
+    if off and xml:
+        return (f"DRY-RUN. Nothing written. To write, after the DJ's yes: --apply --xml --preview-id {preview_id} "
+                f"(an XML to import, any OS). Not master.db: {off}")
+    if off:
+        return f"DRY-RUN. Nothing written. This preview cannot be written: {off}"
     if xml:
         return (f"DRY-RUN. Nothing written. To write, after the DJ's yes: --apply --xml --preview-id {preview_id} "
                 f"(an XML to import, any OS), or master.db on Windows: {flags} --preview-id {preview_id}")
@@ -340,10 +355,20 @@ def _print_plan(actions: list[tree_mod.Action]) -> dict[str, int]:
     return totals
 
 
+def _config_arg(path: Path) -> Path:
+    """A tree file given by a relative name ("bases.yaml", "tree.yaml"): the dj-library folder's
+    when it has that file, else the name as given (from the working folder, as before; the MCP
+    server runs the CLI in the repo). In the desktop extension the dj-library folder's only (no
+    library folder: HostSettingError). An absolute path is taken as it is (W-34)."""
+    if path.is_absolute():
+        return path
+    return hostenv.config_file(path, fallback=path)
+
+
 @app.command()
 def tree(
     apply: bool = typer.Option(False, "--apply", help="Really write. Default is a dry-run."),
-    file: Path = typer.Option(Path("tree.yaml"), "--file", help="The tree file."),
+    file: Path = typer.Option(Path("tree.yaml"), "--file", help="The tree file (a bare name: the dj-library folder's first)."),
     allow_uncalibrated: bool = typer.Option(
         False,
         "--allow-uncalibrated",
@@ -362,8 +387,9 @@ def tree(
     if apply:
         _gate_db_write(power_mode, preview_id)
     try:
+        file = _config_arg(file)
         nodes = tree_mod.load_tree(file)
-    except (tree_mod.TreeError, OSError) as exc:
+    except (tree_mod.TreeError, OSError, hostenv.HostSettingError) as exc:
         typer.echo(f"ERROR {exc}", err=True)
         raise typer.Exit(EXIT_ERROR)
     gate_args = {"file": write_gate.path_arg(file), "allow_uncalibrated": allow_uncalibrated}
@@ -383,7 +409,7 @@ def tree(
     if as_json:
         recorded = None if blocked else write_gate.record("tree", gate_args, changes)
         rows = [{"op": a.op, "kind": a.kind, "path": list(a.path), "note": a.note} for a in actions]
-        data = {"counts": tree_mod.counts(actions), "actions": rows} | _preview_keys(recorded)
+        data = {"counts": tree_mod.counts(actions), "actions": rows} | _preview_keys(recorded) | _db_off_keys()
         typer.echo(json.dumps(data, indent=2))
         return
     if apply and not blocked:  # a refused write is one REFUSED line, without the plan before it
@@ -423,7 +449,7 @@ def tree(
     except safety.SafetyError as exc:  # e.g. not Windows (DB_WRITE_PLATFORMS): one line, nothing written
         _fail(exc)
     _used(preview_id, f"{created} node(s) in master.db")
-    typer.echo(f"APPLIED. Created {created} node(s) in one commit. Backup in backups/.")
+    typer.echo(f"APPLIED. Created {created} node(s) in one commit. Backup in {safety.backup_folder_text()}.")
     if created:
         for line in _logged(_log("tree", _tree_log_counts(changes, created), file)):
             typer.echo(line)
@@ -752,7 +778,7 @@ def apply_plan(
                      f"{len(by['no'])} no, {len(by['pending'])} pending")
         if not apply:
             recorded = write_gate.record("apply", gate_args, changes)
-            payload |= _preview_keys(recorded)
+            payload |= _preview_keys(recorded) | _db_off_keys()
             lines += recorded.lines() + [_to_write(recorded.preview_id, power_mode=True, xml=True)]
         elif xml:
             write_gate.check(preview_id, "apply", gate_args, changes)  # before the XML is written
@@ -896,7 +922,7 @@ def copy_playlist(
             lines.append(f"Target '{target}' does not exist yet. Create it first (dj tree).")
         if not apply:
             recorded = write_gate.record("copy", gate_args, changes)
-            payload |= _preview_keys(recorded)
+            payload |= _preview_keys(recorded) | _db_off_keys()
             lines += recorded.lines() + [_to_write(recorded.preview_id, power_mode=True, xml=True)]
         elif xml:
             write_gate.check(preview_id, "copy", gate_args, changes)  # before the XML is written
@@ -927,7 +953,7 @@ def copy_playlist(
                 payload = done.as_dict() | {"applied": True, "added": len(done.adds),
                                             "report": str(report), "log": line}
                 lines.append(f"APPLIED. Added {len(done.adds)} track(s) to '{target}'. "
-                             "Backup in backups/.")
+                             f"Backup in {safety.backup_folder_text()}.")
                 lines.append(f"report: {report}")
                 lines += _logged(line)
     except safety.RekordboxRunningError as exc:
@@ -1019,7 +1045,8 @@ TIDY_ERRORS = (TidyError, library.LibraryError, db_reader.LibraryError)
 _CRATE_ARG = typer.Argument(None, help="rekordbox playlist path, e.g. house_base/0_INBOX.")
 _FOLDER_OPT = typer.Option(None, "--folder", help="A folder on disk (inside tidy.yaml roots) instead of a crate.")
 _ALL_OPT = typer.Option(False, "--all", help="The whole rekordbox collection.")
-_CONFIG_OPT = typer.Option(str(tidy_config.DEFAULT_PATH), "--config", help="tidy.yaml to use.")
+# The default tidy.yaml; empty in the desktop extension without a library folder (load_config says so).
+_CONFIG_OPT = typer.Option(str(tidy_config.DEFAULT_PATH or ""), "--config", help="tidy.yaml to use.")
 _HASH_OPT = typer.Option("collisions", "--hash", help="Hash files for exact duplicates: collisions (same size only), all, none.")
 
 
@@ -1073,7 +1100,7 @@ def audit(
         findings = [tidy_checks.check_item(it, profiles, cfg, known) for it in items]
         groups = [] if no_dupes else _dupe_groups(items, cfg)
         audit_d = tidy_report.audit_dict(target, cfg, profiles, items, findings, groups, meta)
-        written = None if no_report else tidy_report.write_audit(audit_d, intake.Paths())
+        written = None if no_report else tidy_report.write_audit(audit_d, intake.tidy_paths())
     except TIDY_ERRORS as exc:
         _fail(exc)
     c = audit_d["counts"]
@@ -1152,7 +1179,7 @@ def tidy_plan_cmd(
             raise TidyError("--overwrite is not in v1: only empty tags get proposals.")
         cfg, target, items, meta, known = _tidy_scan(crate, folder, all_tracks, config, "none")
         plan = tidy_plan.build_plan(items, target, cfg, known, rename=rename, rename_imported=rename_imported, art=art)
-        path = tidy_plan.write_plan(plan, intake.Paths())
+        path = tidy_plan.write_plan(plan, intake.tidy_paths())
     except TIDY_ERRORS as exc:
         _fail(exc)
     c = plan["counts"]
@@ -1214,14 +1241,14 @@ def tidy_apply(
             write_gate.require_id(preview_id)
         gate_args = {"plan": write_gate.path_arg(plan_file), "strict": strict, "config": write_gate.path_arg(config)}
         # The dry-run reads the files and writes nothing; --apply recomputes it before the first write.
-        result = tidy_plan.apply_plan(plan, Path(plan_file), cfg, intake.Paths(), strict=strict, dry_run=True)
+        result = tidy_plan.apply_plan(plan, Path(plan_file), cfg, intake.tidy_paths(), strict=strict, dry_run=True)
         changes = _tidy_apply_changes(result.applied)
         if not apply:
             recorded = write_gate.record("tidy-apply", gate_args, changes)
         else:
             write_gate.check(preview_id, "tidy-apply", gate_args, changes)
             target = _tidy_target(plan.get("target"))  # before apply_plan updates the plan dict
-            result = tidy_plan.apply_plan(plan, Path(plan_file), cfg, intake.Paths(), strict=strict, dry_run=False)
+            result = tidy_plan.apply_plan(plan, Path(plan_file), cfg, intake.tidy_paths(), strict=strict, dry_run=False)
             if result.applied:  # only a write uses the id up: a run where every item failed can be retried
                 _used(preview_id, str(result.undo_path))
             if result.applied or result.failed:  # a failed item has an undo record and may be half-written
@@ -1299,14 +1326,14 @@ def tidy_undo(
             write_gate.require_id(preview_id)
         gate_args = {"plan": write_gate.path_arg(plan_file), "force": force, "config": write_gate.path_arg(config)}
         # The dry-run reads the files and writes nothing; --apply recomputes it before the first write.
-        result = tidy_plan.undo_plan(plan, Path(plan_file), cfg, intake.Paths(), dry_run=True, force=force)
+        result = tidy_plan.undo_plan(plan, Path(plan_file), cfg, intake.tidy_paths(), dry_run=True, force=force)
         changes = _tidy_undo_changes(result.restored)
         if not apply:
             recorded = write_gate.record("tidy-undo", gate_args, changes)
         else:
             write_gate.check(preview_id, "tidy-undo", gate_args, changes)
             target = _tidy_target(plan.get("target"))
-            result = tidy_plan.undo_plan(plan, Path(plan_file), cfg, intake.Paths(), dry_run=False, force=force)
+            result = tidy_plan.undo_plan(plan, Path(plan_file), cfg, intake.tidy_paths(), dry_run=False, force=force)
             if result.restored:  # only a write uses the id up: a run where every item failed can be retried
                 _used(preview_id, str(result.undo_path))
             if result.restored or result.failed:  # a failed restore may have renamed the file back already

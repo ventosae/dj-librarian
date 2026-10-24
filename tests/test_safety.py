@@ -69,6 +69,50 @@ def test_refuses_to_write_while_rekordbox_runs(db, fake_env, tmp_path):
     assert not (tmp_path / "backups").exists()
 
 
+def test_power_mode_off_in_the_engine_settings_refuses_before_the_backup(db, fake_env, tmp_path, monkeypatch):
+    """W-34: DJ_POWER_MODE=false refuses a write session first (the CLI and the MCP server refuse
+    earlier still); a read is not a write and stays open."""
+    db_path, _ = fake_env
+    monkeypatch.setenv("DJ_POWER_MODE", "false")
+    with pytest.raises(safety.SafetyError, match="power mode is off in the engine settings"):
+        with safety.open_db(write=True, db_path=db_path):
+            pytest.fail("must not yield")
+    assert (db.commits, db.closes) == (0, 0)
+    assert not (tmp_path / "backups").exists()
+    with safety.open_db(write=False, db_path=db_path):
+        pass
+    assert (db.commits, db.rollbacks) == (0, 1)
+
+
+@pytest.mark.parametrize("value", [None, "", "${user_config.power_mode}"])
+def test_the_extension_without_a_power_mode_value_refuses_a_write_session(db, fake_env, tmp_path, monkeypatch, value):
+    """W-34: in the desktop extension (DJ_ENGINE=mcpb) a Power mode value that did not arrive is off:
+    the write session fails closed before the process check and the backup."""
+    db_path, _ = fake_env
+    monkeypatch.setenv("DJ_ENGINE", "mcpb")
+    if value is None:
+        monkeypatch.delenv("DJ_POWER_MODE", raising=False)
+    else:
+        monkeypatch.setenv("DJ_POWER_MODE", value)
+    with pytest.raises(safety.SafetyError, match="^power mode is off: the engine settings passed no"):
+        with safety.open_db(write=True, db_path=db_path):
+            pytest.fail("must not yield")
+    assert (db.commits, db.closes) == (0, 0)
+    assert not (tmp_path / "backups").exists()
+    monkeypatch.delenv("DJ_ENGINE")  # a clone with no setting: today's rule, the session opens
+    with safety.open_db(write=True, db_path=db_path):
+        pass
+    assert db.commits == 1
+
+
+def test_power_mode_on_in_the_engine_settings_changes_nothing_by_itself(db, fake_env, tmp_path, monkeypatch):
+    db_path, _ = fake_env
+    monkeypatch.setenv("DJ_POWER_MODE", "true")
+    with safety.open_db(write=True, db_path=db_path):
+        pass
+    assert db.commits == 1 and len(list((tmp_path / "backups").iterdir())) == 2
+
+
 def test_no_commit_if_rekordbox_starts_mid_run(db, fake_env):
     db_path, state = fake_env
     with pytest.raises(safety.RekordboxRunningError):
