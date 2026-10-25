@@ -109,7 +109,7 @@ def test_one_card_for_both_oses_and_the_command_is_the_djs_to_type():
     section = " ".join(_section(_text(ENGINE), "The card").split())
     assert "One card for Mac and Windows" in section and "Mac:" not in section
     assert "The command is the DJ's to type: it never runs on its own." in section
-    command = _text(REPO / "plugin" / "commands" / "install.md")
+    command = _text(REPO / "plugin" / "skills" / "install" / "SKILL.md")
     assert "disable-model-invocation: true" in command.split("---")[1]
 
 

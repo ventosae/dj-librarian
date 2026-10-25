@@ -22,7 +22,7 @@ and refuses a zip with the plugin under a top folder (Q-21, answered at the firs
 
 `--no-engine`: the light zip `dj-librarian-plugin-<version>-no-engine.zip` for Door 1 only. It
 keeps `engine/src` (the skills need the core) and leaves out what installs the engine:
-`commands/`, and engine/'s project files, examples and script.
+the install and uninstall skills, and engine/'s project files, examples and script.
 
 The skill scripts find the core in this order: an importable `dj` (the engine venv), then
 `../../../../src` (a clone of the repo), then `../../../engine/src` (this zip).
@@ -52,7 +52,7 @@ PLUGIN = REPO / "plugin"
 ENGINE = "engine"  # plugin/engine/: the engine's source
 ENGINE_EXTRA = ("examples", "scripts/merge_desktop_config.py")  # beside the bundle's files
 STAMP_FILE = "BUILD.txt"  # engine/BUILD.txt: the version and a hash of the engine's files
-INSTALL_ONLY = ("commands",)  # plugin folders the light zip leaves out
+INSTALL_ONLY = ("skills/install/", "skills/uninstall/")  # what the light zip leaves out
 LOCAL = {ENGINE, "vendor", "engine.mcpb"}  # left by a local build or an older layout: never shipped
 SKIP_DIRS = {"__pycache__", ".mcpb-cache"}
 SKIP_FILES = {".DS_Store", "Thumbs.db", "desktop.ini"}
@@ -149,7 +149,7 @@ def entries(*, engine: bool = True) -> dict[str, Path | bytes]:
     names: dict[str, Path | bytes] = {}
     for path in plugin_files():  # first: a stray file refuses before anything else
         rel = path.relative_to(PLUGIN).as_posix()
-        if engine or rel.split("/")[0] not in INSTALL_ONLY:
+        if engine or not rel.startswith(INSTALL_ONLY):
             names[f"{top}{rel}"] = path
     files = engine_files(full=engine)
     for rel, path in files.items():

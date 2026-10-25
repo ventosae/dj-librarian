@@ -1,11 +1,16 @@
 ---
+name: install
 description: Install the dj-librarian engine (MCP server) on this Mac or Windows PC. Run it in Claude Code; the DJ clicks Allow on each step.
 disable-model-invocation: true
 ---
 
 # Install the dj-librarian engine
 
-Eight steps; the DJ clicks Allow on every command. Before each step send one line, `Step N of 8 · <what>`, then run it and check its result. On Windows (PowerShell) every `"<uv>" ...` line below starts with `& ` (the call operator): `& "<uv>" sync ...`. Run steps 4, 5 and 7 with `UV_PROJECT_ENVIRONMENT` unset (Mac: `env -u UV_PROJECT_ENVIRONMENT "<uv>" ...`; Windows: `Remove-Item Env:UV_PROJECT_ENVIRONMENT -ErrorAction SilentlyContinue` first), so the engine gets its own `.venv`. Stop at the first failure: show the error line and say "send this line to whoever gave you the plugin". Never edit Claude Desktop's config by hand and never change anything in it except `mcpServers["dj-librarian"]`. Voice: `${CLAUDE_PLUGIN_ROOT}/shared/voice.md`; reply shape: `${CLAUDE_PLUGIN_ROOT}/shared/adhd.md`.
+The engine install the DJ starts by typing `/dj-librarian:install` in Claude Code (R-102, R-1101, D-29); the card in `dj-start/engine.md` sends them here.
+
+**Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run its pre-send checklist before each reply.
+
+Eight steps; the DJ clicks Allow on every command. Before each step send one line, `Step N of 8 · <what>`, then run it and check its result. On Windows (PowerShell) every `"<uv>" ...` line below starts with `& ` (the call operator): `& "<uv>" sync ...`. Run steps 4, 5 and 7 with `UV_PROJECT_ENVIRONMENT` unset (Mac: `env -u UV_PROJECT_ENVIRONMENT "<uv>" ...`; Windows: `Remove-Item Env:UV_PROJECT_ENVIRONMENT -ErrorAction SilentlyContinue` first), so the engine gets its own `.venv`. Stop at the first failure: show the error line and say "send this line to whoever gave you the plugin". Never edit Claude Desktop's config by hand and never change anything in it except `mcpServers["dj-librarian"]`.
 
 1. **Which computer.** Mac: `uname -s` prints `Darwin`. Windows (PowerShell): `$env:OS` prints `Windows_NT`. Say "Mac path" or "Windows path". Anything else: "This installs on a Mac or a Windows PC only." and stop.
 
@@ -28,3 +33,18 @@ Eight steps; the DJ clicks Allow on every command. Before each step send one lin
 8. **Restart.** Say: "Restart Claude Desktop. Then in Customize → Connectors → dj-librarian, leave every `_apply`, `_write`, `_undo` tool on Ask every time." End with one line: `say "set me up" in a Cowork task to check it`.
 
 To take the engine out again: `/dj-librarian:uninstall`.
+
+## Pre-send checklist
+
+Before every reply, check:
+
+- [ ] The first line is the next action or the answer. No preamble, no pleasantries.
+- [ ] Where we are is restated in one line (for example "Step 2 of 6").
+- [ ] Steps are numbered, with one concrete time estimate.
+- [ ] Lists have 5 items or fewer.
+- [ ] No tangents: only what this step needs.
+- [ ] Finished work is visible: name the file that was written.
+- [ ] Errors are stated matter-of-fact: what failed, what happens next.
+- [ ] It ends with one action that takes under 2 minutes.
+- [ ] Voice: a working DJ talking to a DJ. Blunt, practical, no hype (shared/voice.md).
+- [ ] Nothing was written to rekordbox, Spotify or audio files without a preview and an explicit yes.

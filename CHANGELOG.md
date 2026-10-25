@@ -48,6 +48,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - CLAUDE.md: size rules (module ≤ 600 lines, tests ≤ 1.5× code, PR ≤ +2,000 lines) and the install line; the handout previews and `docs/samples/report.png` are rendered locally, not tracked (W-35).
 
 ### Fixed
+- `/dj-librarian:install` and `:uninstall` are skills (`plugin/skills/install/`, `uninstall/`), not the legacy `commands/` format the Claude desktop app flagged.
 - The plugin zip uploads on claude.ai: the plugin sits at the zip's root, and the dj-build and dj-crate descriptions carry no `<…>` placeholders (Q-21).
 - `.gitignore`: the personal-state folders (`plans/`, `reports/`, …) are ignored at the repo root only, so `docs/prompts/plans/` is tracked.
 - v0.1 verification pass: a plan's pick is checked against the offered candidates (cache matches included); soft-deleted picks are refused; `dj status` counts only rows that are not soft-deleted; the process check reads a localized tasklist; `dj push/build` never create a second Spotify playlist on a 5xx, network or 429 error; reports are create-only; `dj tidy apply/undo` never write outside the tidy.yaml roots and tidy renames never overwrite; mounted volume roots are refused as a library folder; `dj_tidy_audit` is a library-text tool; tests also block DNS and UDP; skill scripts answer with a JSON `core` error when the core is missing; skills call `python3`; three real playlist names removed from CLI help and tests; README, CONTRIBUTING, permissions and several skills brought up to date.

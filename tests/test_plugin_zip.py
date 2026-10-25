@@ -100,7 +100,7 @@ def test_the_zip_holds_the_plugin_and_one_copy_of_the_core(built, bz):
     plugin = {p.relative_to(REPO / "plugin").as_posix() for p in bz.plugin_files()}
     engine = {f"engine/{rel}" for rel in _engine_rel()}
     assert names == plugin | engine | {"engine/BUILD.txt"}
-    assert {"commands/install.md", "commands/uninstall.md", "engine/src/dj/installer.py",
+    assert {"skills/install/SKILL.md", "skills/uninstall/SKILL.md", "engine/src/dj/installer.py",
             "engine/scripts/merge_desktop_config.py", "engine/uv.lock"} <= names  # fmt: skip
     for gone in (".mcp.json", "engine.mcpb"):  # D-29: no bundle inside, no vendor/
         assert gone not in names
@@ -134,7 +134,7 @@ def test_no_engine_gives_the_light_zip_for_door1(built, light):
     names, everything = set(_names(path)), set(_names(full))
     assert names < everything and result["files"] == len(names)
     for name in everything - names:  # only what installs the engine is left out
-        assert name.startswith("commands/") or (name.startswith("engine/") and not name.startswith("engine/src/")), name
+        assert name.startswith(("skills/install/", "skills/uninstall/")) or (name.startswith("engine/") and not name.startswith("engine/src/")), name
     assert {n for n in everything if n.startswith("engine/src/")} <= names  # Door 1 needs the core
 
 

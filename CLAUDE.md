@@ -64,7 +64,7 @@ Read before changing anything: `docs/requirements.md` (numbered R-ids; authorita
 
 ```
 .claude-plugin/marketplace.json   self-hosted marketplace → ./plugin
-plugin/                           the Claude plugin: .claude-plugin/plugin.json, commands/ (install, uninstall), skills/, shared/, hooks/;
+plugin/                           the Claude plugin: .claude-plugin/plugin.json, skills/ (install, uninstall among them), shared/, hooks/;
                                   the zip adds engine/, the one copy of the core (scripts/build_plugin_zip.py, D-29)
 mcpb/                             manifest.json of the standalone engine bundle (scripts/build_mcpb.py → dist/dj-librarian-engine-<v>.mcpb)
 src/dj/                           core: safety, library, tree, rules, match, spotify, push, build, analyze,

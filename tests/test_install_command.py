@@ -1,4 +1,5 @@
-"""plugin/commands/install.md and uninstall.md (W-35, D-29): the commands Claude Code follows to
+"""plugin/skills/install and uninstall (W-35, D-29): the skills Claude Code follows, as the DJ's
+/dj-librarian:install and :uninstall, to
 install the engine on a DJ's Mac or Windows PC, one shell command per step, the DJ clicking Allow."""
 
 from __future__ import annotations
@@ -7,11 +8,11 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-COMMANDS = REPO / "plugin" / "commands"
+SKILLS = REPO / "plugin" / "skills"
 
 
 def _text(name: str) -> str:
-    return (COMMANDS / name).read_text(encoding="utf-8").replace("\r\n", "\n")
+    return (SKILLS / name.removesuffix(".md") / "SKILL.md").read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
 def _front(name: str) -> str:

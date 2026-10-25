@@ -16,7 +16,7 @@ One core, two doors, writes the DJ pulls the trigger on, data the DJ owns.
 │           dj-report · dj-build · dj-crate · dj-barber · dj-spotify │
 │ shared/   voice.md · adhd.md                                       │
 │ hooks/    PreToolUse deny on *_apply / *_write (Claude Code)       │ ← hard gate where hooks run
-│ commands/ /dj-librarian:install · uninstall (Claude Code)          │ ← installs dj-mcp on the DJ's PC
+│ skills/install, uninstall: /dj-librarian:install (Claude Code)     │ ← installs dj-mcp on the DJ's PC
 └───────────────┬──────────────────────────────────────────────────┘
                 │ runs
 ┌───────────────▼──────────── Core (Python; PyPI later) ───────────┐
@@ -62,7 +62,7 @@ dj-librarian/
     skills/<name>/SKILL.md (+ scripts/)
     shared/voice.md  shared/adhd.md
     hooks/hooks.json  hooks/gate.py    PreToolUse deny on write tools without a plan id (Claude Code)
-    commands/install.md  uninstall.md  /dj-librarian:install and :uninstall (D-29)
+    skills/install/  skills/uninstall/  /dj-librarian:install and :uninstall (D-29)
     engine/                           in the zip only: the engine's source, the one copy of the core
   mcpb/manifest.json                  the standalone engine bundle's manifest: server type uv, dj-mcp, user_config (dj-library folder, Spotify keys, power mode)
   src/dj/                             core

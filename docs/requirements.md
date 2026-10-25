@@ -174,7 +174,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-1204 | `README`, `CONTRIBUTING`, `LICENSE` (Apache-2.0, D-12), `examples/.env.example`, `examples/*.example.yaml`. | M | A stranger installs from README. | Built | v0.1 |
 | R-1205 | Issues are the backlog; plan.md "Later" items become issues. | M | Issues created on first push. | Agreed | v0.1 |
 | R-1206 | Personal data removed: STATE.md, log.md, CRATES.md, links.yaml, tidy.yaml, bases.yaml, tree.yaml, tracklists/, wishlist/, Claude outputs/, settings.local.json ignored in place; "Anton" out of code, tool descriptions, skills, tests, README; paths parameterised. | M | `git grep -il anton -- src tests plugin README.md CONTRIBUTING.md examples` finds nothing. | Built | v0.1 |
-| R-1207 | Plugin layout: `plugin/.claude-plugin/plugin.json`, repo-root `.claude-plugin/marketplace.json` (source `./plugin`), `plugin/skills/`, `plugin/commands/` (install, uninstall), `plugin/hooks/hooks.json`; the zip adds `plugin/engine/` (the core, D-29); no `bin/` (Cowork refuses it). | M | `claude plugin validate ./plugin --strict` passes. | Built | v0.1 |
+| R-1207 | Plugin layout: `plugin/.claude-plugin/plugin.json`, repo-root `.claude-plugin/marketplace.json` (source `./plugin`), `plugin/skills/`, `plugin/skills/install/` and `uninstall/`, `plugin/hooks/hooks.json`; the zip adds `plugin/engine/` (the core, D-29); no `bin/` (Cowork refuses it). | M | `claude plugin validate ./plugin --strict` passes. | Built | v0.1 |
 
 ### E13 Platforms
 
