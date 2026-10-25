@@ -20,7 +20,7 @@ The full rules are in [CLAUDE.md](CLAUDE.md) and [docs/requirements.md](docs/req
 
 Until the first release, a tester runs the plugin from a zip. This is Door 1: no clone and no install beyond the zip, about 15 minutes to your first report.
 
-1. Get the zip: once a version is tagged, ask the maintainer for `dj-librarian-plugin-<version>.zip` from the draft GitHub release (only maintainers see a draft), or build it in a clone with `uv run python scripts/build_plugin_zip.py` (it writes `dist/dj-librarian-plugin-<version>.zip`).
+1. Get the zip: download [`dist/dj-librarian-plugin-<version>.zip`](dist/) from this repo on GitHub (open the file, then **Download raw file**). It is the full plugin, the engine inside, built from the code beside it. Or build it in a clone with `uv run python scripts/build_plugin_zip.py`, which writes the same file. Once a version is tagged, the draft GitHub release has it too (only maintainers see a draft).
 2. In the Claude app: **Customize → Plugins → Add → Upload plugin**, and pick the zip.
 3. Open a new Cowork task and say "start". Door 1 runs in Cowork: an ordinary chat cannot connect a folder.
 4. Three moves from you: say Mac or Windows, export your collection from rekordbox (File → Export Collection in xml format), connect a folder in Cowork (a new one called `dj-library`) and drop the XML into it.

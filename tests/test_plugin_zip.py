@@ -245,9 +245,11 @@ def test_every_skill_script_looks_for_the_core_in_the_same_order():
         assert (here / "../../../engine/src").resolve() == (REPO / "plugin" / "engine" / "src").resolve()
 
 
-def test_dist_is_gitignored():
+def test_dist_keeps_the_plugin_zip_only():
+    """dist/ holds the tracked plugin zip (tests/test_dist.py); the light zip and the rest are ignored."""
     lines = (REPO / ".gitignore").read_text(encoding="utf-8").splitlines()
-    assert "dist/" in lines
+    assert "dist/*" in lines and "!dist/dj-librarian-plugin-*.zip" in lines and "dist/" not in lines
+    assert lines.index("dist/dj-librarian-plugin-*-no-engine.zip") > lines.index("!dist/dj-librarian-plugin-*.zip")
 
 
 # -- the zip, unzipped where there is no clone and no installed dj ---------------------------------

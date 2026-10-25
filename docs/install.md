@@ -6,7 +6,7 @@ Install comes first (D-30). Upload the plugin zip (Door 1), then type `/dj-libra
 
 What you need: the Claude desktop app, signed in to a plan that has Cowork. rekordbox 6 or 7.
 
-1. Get `dj-librarian-plugin-<version>.zip` (from a GitHub release, or from whoever is testing with you). Don't unzip it. The light `dj-librarian-plugin-<version>-no-engine.zip` is the same without the install command, for Door 1 only.
+1. Get `dj-librarian-plugin-<version>.zip`: download it from `dist/` in the repo on GitHub (open the file, then **Download raw file**), or take it from a GitHub release. Don't unzip it. The light `dj-librarian-plugin-<version>-no-engine.zip` is the same without the install command, for Door 1 only.
 2. Claude desktop app → **Customize → Plugins → Add → Upload plugin** → pick the zip. Turn the plugin on if it isn't.
 3. Start a Cowork task **on this computer** (not a cloud task: the folder you connect must be on your machine).
 4. Type **/dj-librarian:dj-start**. With the engine installed the first session is four steps and needs no export; without it, six steps, the XML export among them. The A6 card (`docs/handout/dj-librarian-a6.pdf`) has them.

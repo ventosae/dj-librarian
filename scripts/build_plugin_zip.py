@@ -3,8 +3,8 @@
 
     uv run python scripts/build_plugin_zip.py [--out DIR] [--no-engine]
 
-Writes `<out>/dj-librarian-plugin-<version>.zip` (default `dist/`, gitignored) and prints one
-JSON object: the zip, its file count and size, the version, and whether the engine is in it.
+Writes `<out>/dj-librarian-plugin-<version>.zip` (default `dist/`, where git tracks the full zip so it
+can be downloaded from GitHub: tests/test_dist.py; the light zip is ignored) and prints one JSON object: the zip, its file count and size, the version, and whether the engine is in it.
 
 What goes in, at the zip's root: claude.ai's Upload plugin wants `.claude-plugin/plugin.json` there
 and refuses a zip with the plugin under a top folder (Q-21, answered at the first upload):

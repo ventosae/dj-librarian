@@ -490,7 +490,8 @@ def test_npx_output_with_another_file_list_is_refused(bm, tmp_path, monkeypatch)
 
 def test_the_build_products_are_gitignored():
     lines = (REPO / ".gitignore").read_text(encoding="utf-8").splitlines()
-    assert "/plugin/engine.mcpb" in lines and ".mcpb-cache/" in lines and "dist/" in lines
+    assert "/plugin/engine.mcpb" in lines and ".mcpb-cache/" in lines
+    assert "dist/*" in lines and not any(".mcpb" in line for line in lines if line.startswith("!"))  # not tracked
 
 
 def _ci() -> dict:

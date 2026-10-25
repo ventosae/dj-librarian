@@ -2,7 +2,12 @@
 __pycache__/
 *.py[oc]
 build/
-dist/
+# dist/: the plugin zip (with the engine inside) is tracked, so it can be downloaded from GitHub and
+# installed on any laptop (tests/test_dist.py fails when it is stale). The light zip, the .mcpb and
+# the builders' .tmp files stay out.
+dist/*
+!dist/dj-librarian-plugin-*.zip
+dist/dj-librarian-plugin-*-no-engine.zip
 wheels/
 *.egg-info
 .venv/

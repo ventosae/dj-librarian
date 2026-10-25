@@ -335,6 +335,7 @@ def test_readme_tells_a_tester_how_to_install_the_zip():
     steps = re.findall(r"^(\d)\. (.+)$", section, re.MULTILINE)
     assert [n for n, _ in steps] == ["1", "2", "3", "4", "5"]
     assert "scripts/build_plugin_zip.py" in section and "draft GitHub release" in section
+    assert "dist/dj-librarian-plugin-<version>.zip" in section and "Download raw file" in section  # from GitHub
     assert "**Customize → Plugins → Add → Upload plugin**" in section
     assert "Door 1" in section and "reports/<date>-library.html" in section
     assert "export your collection" in section and "connect a folder" in section
