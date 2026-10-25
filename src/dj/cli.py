@@ -300,6 +300,7 @@ def status(
     data: dict[str, Any] = {
         "master_db": str(db_path),  # the live file, named only; SQLite opens the copy
         "rekordbox": rekordbox_version(db_path),
+        "dj_librarian": version("dj-librarian"),  # the engine's own version (pyproject.toml, test_version_sync)
         "pyrekordbox": version("pyrekordbox"),
         "running": _running_or_none(),
     }
@@ -309,7 +310,9 @@ def status(
     data["state_from_repo"] = paths.carried_state()
     try:
         with db_reader.open_snapshot(db_path) as db:
-            data["tracks"] = len(library.all_tracks(db))  # soft-deleted rows left out
+            split = library.track_split(db)  # soft-deleted rows left out; local + streaming (Q-34)
+            data["tracks"], data["counts"] = split["tracks"], {k: split[k] for k in ("local", "streaming")}
+            data["streaming_by"] = split["services"]
             data["links"] = links_data(db, paths)
             if as_json:
                 data["tree"] = tree_data(db)
@@ -317,10 +320,10 @@ def status(
                 return
             typer.echo(f"master.db:     {data['master_db']}")
             typer.echo(f"rekordbox:     {data['rekordbox'] or 'unknown'}")
-            typer.echo(f"pyrekordbox:   {data['pyrekordbox']}")
+            typer.echo(f"dj-librarian:  {data['dj_librarian']} (pyrekordbox {data['pyrekordbox']})")
             running = {True: "YES", False: "no", None: "unknown (the process check could not answer)"}[data["running"]]
             typer.echo(f"running:       {running}")
-            typer.echo(f"tracks:        {data['tracks']}")
+            typer.echo(f"tracks:        {data['tracks']} · {split['local']} local · {split['streaming']} streaming")
             typer.echo("")
             typer.echo("playlist tree:")
             print_tree(db, smart_xml=smart_xml)

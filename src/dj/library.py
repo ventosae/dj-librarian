@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 from dj.match import Local
+from dj.readers.common import streaming_service
 from dj.rules import BPM_SCALE
 from dj.tree import KIND_BY_ATTRIBUTE, ROOT_ID, alive, children_of, norm
 
@@ -30,6 +32,21 @@ def to_local(content: Any) -> Local:
 
 def all_tracks(db: Any) -> list[Local]:
     return [to_local(c) for c in db.get_content().all() if alive(c)]
+
+
+def row_service(content: Any) -> str:
+    """The streaming service of a DjmdContent row (its FolderPath and ServiceID), "" for a local file."""
+    return streaming_service(getattr(content, "FolderPath", None), getattr(content, "ServiceID", None))
+
+
+def track_split(db: Any) -> dict[str, Any]:
+    """The rows rekordbox's collection shows (not soft-deleted), split as `Library.track_split`
+    does (Q-34): tracks = local + streaming, services = streamed rows per service."""
+    services = Counter(row_service(c) for c in db.get_content().all() if alive(c))
+    local = services.pop("", 0)
+    streamed = sum(services.values())
+    return {"tracks": local + streamed, "local": local, "streaming": streamed,
+            "services": dict(sorted(services.items(), key=lambda kv: (-kv[1], kv[0])))}  # fmt: skip
 
 
 def find_playlist(db: Any, path: str) -> Any:

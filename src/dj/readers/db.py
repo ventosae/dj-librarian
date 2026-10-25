@@ -12,6 +12,9 @@ What master.db does not give this reader is `DB_NOTES`:
   `track_ids`, so `Library.orphans()` and `counts()["entries"]` on a db Library leave smart
   membership out: a track that only a smart playlist reaches counts as an orphan.
 - Play history (DjmdHistory) is not read yet; the model has no history field (R-204 open part).
+
+Streamed rows (Spotify, Beatport Streaming, ...: `library.row_service`, Q-34) are counted in
+`Library.streaming` and left out of the tracks and the playlists, as the XML reader does.
 """
 
 from __future__ import annotations
@@ -27,7 +30,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from dj import safety
-from dj.library import to_track_info
+from dj.library import row_service, to_track_info
 from dj.model import Library, LibraryError, PlaylistNode, Track
 from dj.readers.common import (
     BPM_SCALE,
@@ -36,6 +39,7 @@ from dj.readers.common import (
     kind_from,
     parse_date,
     posix_location,
+    split_streaming,
     stars_from_rating,
     text,
     to_int,
@@ -230,10 +234,12 @@ def read_db(master_db: str | Path | None = None, *, read_at: str | None = None) 
             with safety.open_db(write=False, db_path=copy) as db:
                 engine = _engine_of(db)
                 tracks: dict[str, Track] = {}
+                services: dict[str, str] = {}
                 for content in db.get_content().all():
                     if alive(content):
                         track = to_track(content)
                         tracks[track.id] = track
+                        services[track.id] = row_service(content)
                 roots = _nodes(db)
         except LibraryError:
             raise
@@ -247,6 +253,7 @@ def read_db(master_db: str | Path | None = None, *, read_at: str | None = None) 
                     log.warning("could not close the snapshot connection (%s)", _short_reason(exc))
         version = rekordbox_version(Path(tmp))
 
+    tracks, streamed, roots = split_streaming(tracks, services, roots)  # Q-34: streamed rows are counted only
     return Library(
         source="db",
         source_path=live.as_posix(),
@@ -254,6 +261,7 @@ def read_db(master_db: str | Path | None = None, *, read_at: str | None = None) 
         read_at=read_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         tracks=tracks,
         roots=roots,
+        streaming=streamed,
     )
 
 

@@ -23,7 +23,9 @@ from dj.readers.common import (
     kind_from,
     parse_date,
     posix_location,
+    split_streaming,
     stars_from_rating,
+    streaming_service,
     text,
     to_float,
     to_int,
@@ -156,11 +158,13 @@ def read_xml(path: str | Path, *, read_at: str | None = None) -> Library:
         raise LibraryError(f"{source.name}: no COLLECTION element; export the whole collection.")
 
     tracks: dict[str, Track] = {}
+    services: dict[str, str] = {}
     for el in collection.findall("TRACK"):
         track = _track(el)
         if track.id in tracks:
             raise LibraryError(f"{source.name}: TrackID {track.id!r} appears twice in COLLECTION.")
         tracks[track.id] = track
+        services[track.id] = streaming_service(el.attrib.get("Location"))
 
     roots: tuple[PlaylistNode, ...] = ()
     playlists = root.find("PLAYLISTS")
@@ -173,6 +177,7 @@ def read_xml(path: str | Path, *, read_at: str | None = None) -> Library:
     version = None
     if product is not None and text(product.attrib.get("Name")).lower().startswith("rekordbox"):
         version = text(product.attrib.get("Version")) or None
+    tracks, streamed, roots = split_streaming(tracks, services, roots)  # Q-34: streamed rows are counted only
     return Library(
         source="xml",
         source_path=source.as_posix(),
@@ -180,4 +185,5 @@ def read_xml(path: str | Path, *, read_at: str | None = None) -> Library:
         read_at=read_at or _now(),
         tracks=tracks,
         roots=roots,
+        streaming=streamed,
     )

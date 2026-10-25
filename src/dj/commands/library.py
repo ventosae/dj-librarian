@@ -74,6 +74,7 @@ def summary(lib: Library, snapshot_path: str | None = None) -> dict[str, Any]:
     return {
         "source": lib.source,
         "counts": lib.counts(),
+        "streaming": len(lib.streaming),  # rows rekordbox streams, left out of counts (Q-34)
         "source_path": lib.source_path,
         "snapshot_path": snapshot_path,
         "rekordbox_version": lib.rekordbox_version,
@@ -92,7 +93,8 @@ def _lines(data: dict[str, Any]) -> list[str]:
     lines += [
         f"rekordbox:   {data['rekordbox_version'] or 'unknown'}",
         f"counts:      {c['tracks']} tracks, {c['folders']} folders, {c['playlists']} playlists, "
-        f"{c['smart']} smart, {c['orphans']} orphans, {c['entries']} entries",
+        f"{c['smart']} smart, {c['orphans']} orphans, {c['entries']} entries"
+        + (f"; {data['streaming']} streamed not counted" if data.get("streaming") else ""),
         "",
         "top of the tree:",
     ]

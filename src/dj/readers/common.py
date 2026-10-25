@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import re
+from dataclasses import replace
 from datetime import date
 from pathlib import PurePosixPath
 from typing import Any
@@ -59,6 +60,15 @@ _DRIVE = re.compile(r"^/*([A-Za-z]:)(/|$)")
 
 # Deeper playlist trees are refused as malformed (rekordbox trees are a handful of levels).
 MAX_TREE_DEPTH = 64
+
+# Streamed rows (Q-34). rekordbox keeps the tracks it streams (Spotify, Beatport Streaming, TIDAL,
+# SoundCloud, ...) in the same djmdContent table and XML COLLECTION as local files. Such a row's
+# FolderPath (XML: its Location after `file://localhost`) is the service's URI, `<service>:...`, not
+# a file path; master.db also has ServiceID (pyrekordbox documents no values: 0 or empty is taken
+# as a local file). A scheme of two or more characters never reads as a drive letter (`D:/`).
+_SERVICE_URI = re.compile(r"([A-Za-z][A-Za-z0-9+.\-]+):")
+_FILE_PATH = re.compile(r"^(?:[/\\]|[A-Za-z]:[/\\]|[A-Za-z]:$)")
+_LOCALHOST = "file://localhost"
 
 
 def to_int(value: Any) -> int:
@@ -139,6 +149,41 @@ def location_url(path: str) -> str:
     posix = posix_location(path)
     body = posix if posix.startswith("//") else posix.lstrip("/")
     return URL_PREFIX + quote(body, safe="/:")
+
+
+def streaming_service(location: str | None, service_id: Any = 0) -> str:
+    """The streaming service a row comes from, "" for a local file (Q-34).
+
+    - `spotify:track:4uLU6h`, `file://localhostsoundcloud:tracks:12` -> "spotify", "soundcloud"
+    - a file path (`D:/Music/a.mp3`, `/Users/x/a.mp3`, `//nas/a.mp3`, `file://localhost/...`) -> ""
+    - neither (an empty FolderPath): "service <ServiceID>" when ServiceID is above 0, else ""
+    A row with a real file path is a file, whatever its ServiceID says."""
+    raw = text(location)
+    is_url = raw[: len(_LOCALHOST)].lower() == _LOCALHOST
+    rest = raw[len(_LOCALHOST):].lstrip("/") if is_url else raw
+    uri = _SERVICE_URI.match(rest)
+    if uri:
+        scheme = uri.group(1).lower()
+        return "" if scheme == "file" else scheme
+    if is_url or _FILE_PATH.match(rest):
+        return ""
+    sid = to_int(service_id)
+    return f"service {sid}" if sid > 0 else ""
+
+
+def split_streaming(tracks: dict, services: dict[str, str], roots: tuple) -> tuple[dict, dict[str, str], tuple]:
+    """(local tracks, streamed id -> service, `roots` with streamed ids left out of every playlist).
+    `services` names the streamed rows by id. Analysis, crates and builds see local files only."""
+    streamed = {tid: name for tid, name in services.items() if name and tid in tracks}
+    if not streamed:
+        return tracks, {}, roots
+
+    def prune(nodes: tuple) -> tuple:
+        return tuple(replace(n, children=prune(n.children), track_ids=tuple(i for i in n.track_ids if i not in streamed))
+                     for n in nodes)  # fmt: skip
+
+    local = {tid: t for tid, t in tracks.items() if tid not in streamed}
+    return local, streamed, prune(roots)
 
 
 def parse_date(value: Any) -> date | None:

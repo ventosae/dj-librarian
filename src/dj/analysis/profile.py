@@ -50,6 +50,9 @@ Facts (pure, JSON-serialisable, string keys, deterministic):
      <last year>"; note "busiest month <YYYY-MM> (<n> tracks)".
   An empty library still gets all five, with "none" / "unknown" values.
 - `reader`: `xml` or `db`, the reader that built the Library.
+- `streaming`: `{tracks, services}`, the rows rekordbox streams (Spotify, Beatport Streaming, ...).
+  The readers keep them out of the Library's tracks (Q-34), so every other fact counts local
+  files only; when there are any, the Collection note ends "; <n> streamed not counted".
 """
 
 from __future__ import annotations
@@ -253,10 +256,11 @@ def _n(count: int, word: str) -> str:
 def _headline(f: dict[str, Any]) -> list[dict[str, str]]:
     """The 5 stats that matter, by the rules in the module docstring."""
     size, total = f["size"], f["size"]["tracks"]
+    streamed = f.get("streaming", {}).get("tracks", 0)
     out = [{
         "label": "Collection",
         "value": _n(total, "track"),
-        "note": f"{size['hours']:.1f} hours, {size['gb']:.2f} GB",
+        "note": f"{size['hours']:.1f} hours, {size['gb']:.2f} GB" + (f"; {streamed} streamed not counted" if streamed else ""),
     }]  # fmt: skip
 
     b = f["bitrates"]
@@ -334,6 +338,7 @@ def facts(lib: Library, *, today: date | None = None) -> dict[str, Any]:
         "not_in_source": list(missing),
         "duplicates": _duplicates(tracks),
         "reader": lib.source,
+        "streaming": {"tracks": len(lib.streaming), "services": lib.track_split()["services"]},
     }
     out["headline"] = _headline(out)
     return out

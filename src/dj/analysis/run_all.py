@@ -137,7 +137,8 @@ def analyze(
     c = lib.counts()
     return {
         "counts": {
-            "tracks": c["tracks"],
+            "tracks": c["tracks"],  # local files; streamed rows are counted apart (Q-34)
+            "streaming": len(lib.streaming),
             "playlists": c["playlists"] + c["smart"],
             "folders": c["folders"],
             "proposals": len(found),

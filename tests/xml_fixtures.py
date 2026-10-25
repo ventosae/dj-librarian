@@ -170,6 +170,25 @@ def without_smart(spec: dict | None = None) -> dict:
     return out
 
 
+# Q-34: two rows rekordbox streams. Their FolderPath is the service's URI (the XML Location is
+# `file://localhost` + that URI) and ServiceID is set; every local row above has ServiceID 0.
+STREAMED = {"25": ("spotify:track:0Synthetic0Spotify0Row25", 6), "26": ("beatport:tracks:26", 3)}
+STREAMED_SERVICES = {"25": "spotify", "26": "beatport"}
+
+
+def with_streaming(spec: dict | None = None) -> dict:
+    """The spec plus the STREAMED rows, in 1.1_warm_up and in a playlist of their own
+    ("spotify finds", empty once the readers leave streamed rows out)."""
+    out = spec_copy(spec)
+    for tid, (uri, service_id) in STREAMED.items():
+        row = dict(_track(_ROWS[int(tid) - 21]), id=tid, title=f"Streamed {tid}", location=uri)
+        out["tracks"].append(row | {"service_id": service_id, "xml_location": "file://localhost" + uri})
+    house = out["tree"][0]["children"]
+    house[0]["tracks"].append("25")
+    out["tree"].insert(3, _pl("spotify finds", [25, 26]))
+    return out
+
+
 def as_mac(spec: dict | None = None) -> dict:
     """The same library on a Mac: D:/Music -> /Users/dj/Music, //nas -> /Volumes/nas."""
     out = spec_copy(spec)
@@ -192,7 +211,8 @@ def _track_element(parent: ET.Element, t: dict) -> None:
         "DateAdded": t["date_added"], "BitRate": str(t["bitrate"]),
         "SampleRate": str(t["sample_rate"]), "Comments": t["comment"],
         "PlayCount": str(t["play_count"]), "Rating": str(t["rating"] * RATING_STEP),
-        "Location": location_url(t["location"]), "Remixer": t["remixer"], "Tonality": t["key"],
+        "Location": t.get("xml_location") or location_url(t["location"]), "Remixer": t["remixer"],
+        "Tonality": t["key"],
         "Label": t["label"], "Mix": "",
     }  # fmt: skip
     if t["colour"]:
@@ -306,7 +326,7 @@ def content_row(t: dict, deleted: int = 0) -> SimpleNamespace:
         LabelName=t["label"], RemixerName=t["remixer"], ReleaseYear=t["year"], Rating=t["rating"],
         Commnt=t["comment"], Subtitle="", Cues=[_cue() for _ in range(t["cue_count"])],
         StockDate=t["date_added"], DJPlayCount=str(t["play_count"]), ColorName=t["colour"] or None,
-        MyTagNames=list(t["my_tags"]), rb_local_deleted=deleted,
+        MyTagNames=list(t["my_tags"]), ServiceID=t.get("service_id", 0), rb_local_deleted=deleted,
     )  # fmt: skip
 
 

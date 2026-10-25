@@ -89,7 +89,8 @@ def test_analyze_xml_writes_every_file_and_only_inside_the_library(lib_dir, tmp_
 
     assert len(reads) == 1  # the library is read once
     assert list(result)[0] == "counts"
-    assert result["counts"] == {"tracks": 24, "playlists": 8, "folders": 3, "proposals": 3, "files": 16, "failed": 0}
+    assert result["counts"] == {"tracks": 24, "streaming": 0, "playlists": 8, "folders": 3, "proposals": 3, "files": 16,
+                                "failed": 0}
     assert (result["source"], result["read"], result["report"]) == ("xml", EXPORT, REPORT)
     assert result["written"] == WRITTEN and result["kept"] == [] and result["failed"] == []
     assert [line.split(" ", 3)[2] for line in result["log"]] == ["profile", "structure", "taste", "identity", "report"]

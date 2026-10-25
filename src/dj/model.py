@@ -6,9 +6,10 @@ scripts import this in Cowork's sandbox. Readers live in `dj.readers.*`.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import Iterable, Iterator
+from typing import Any, Iterable, Iterator
 
 TRACK_KINDS = ("mp3", "m4a", "flac", "wav", "aiff", "unknown")
 NODE_KINDS = ("folder", "playlist", "smart")
@@ -121,8 +122,11 @@ class Library:
     source_path: str = ""
     rekordbox_version: str | None = None
     read_at: str = ""  # ISO timestamp
-    tracks: dict[str, Track] = field(default_factory=dict)
+    tracks: dict[str, Track] = field(default_factory=dict)  # local files only (Q-34)
     roots: tuple[PlaylistNode, ...] = ()
+    # Rows rekordbox streams (Spotify, Beatport Streaming, ...): id -> service. The readers keep them
+    # out of `tracks` and out of every playlist's `track_ids`; they are counted, never analysed.
+    streaming: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.source not in SOURCES:
@@ -197,4 +201,15 @@ class Library:
             "smart": sum(n.kind == "smart" for n in nodes),
             "orphans": len(self.orphans()),
             "entries": sum(len(n.track_ids) for n in nodes if n.kind != "folder"),
+        }
+
+    def track_split(self) -> dict[str, Any]:
+        """What rekordbox's collection shows, split (Q-34): tracks = local + streaming; services =
+        streamed rows per service, biggest first (ties by name)."""
+        services = Counter(self.streaming.values())
+        return {
+            "tracks": len(self.tracks) + len(self.streaming),
+            "local": len(self.tracks),
+            "streaming": len(self.streaming),
+            "services": dict(sorted(services.items(), key=lambda kv: (-kv[1], kv[0]))),
         }
