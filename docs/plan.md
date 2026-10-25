@@ -42,16 +42,17 @@ Goal: one experienced DJ (Mac or Windows, Cowork) exports an XML, gets the HTML 
 | W-34 | PR: the engine as an MCPB desktop extension, also inside the plugin zip (`docs/prompts/W-34.md`, design note `docs/prompts/plans/W-34.md`) | D-28, R-102, R-1101, R-1207 | Built 25 Oct (Q-31 open) |
 | W-35 | PR: `/dj-librarian:install`: Claude Code installs the MCP server, the DJ clicks Allow; one copy of the core in the zip (`plugin/engine/`), size rules in CLAUDE.md (`docs/prompts/W-35.md`) | D-29, R-102, R-1101, R-1207, R-409 | Built 25 Oct (Q-32 open) |
 | W-36 | PR: install first: the install makes the dj-library folder, dj-start uses the engine when it is there, dj-build reads master.db for a db library (`docs/prompts/W-36.md`) | D-30, R-102, R-104, R-501, R-903 | Built 25 Oct |
+| W-37 | PR: automatic verified rekordbox DB backup (`dj backup`, `dj_backup`, the backup skill, install step 7), honest track counts (Q-34), versioning (`scripts/bump_version.py`), shipped as 0.1.1 (`docs/prompts/W-37.md`) | D-31, R-206, R-204, R-102 | Built 25 Oct (live check open: the real `dj status` and `dj backup` lines on Windows) |
 
 ## Next actions
 
-v0.1 (W-11…W-26), W-30, W-31, W-32, W-34, W-35 and W-36 are built on `main`. What only the owner can do next:
+v0.1 (W-11…W-26), W-30, W-31, W-32, W-34, W-35 and W-36 are built on `main`; W-37 (0.1.1) is on its branch for the owner's PR. What only the owner can do next:
 
 1. Done 25 Oct: the repo is public at https://github.com/ventosae/dj-librarian and `main` is pushed (Q-26 decided). Watch the first CI run (Q-07 validate headless, Q-11 macOS).
 2. Anton: decide D-24, D-25.
 3. Anton, then a Mac tester: Q-32, `/dj-librarian:install` in the Code tab on Windows and on a Mac; `dj_status` in a Cowork task is the proof (Q-02, A-C1). Q-31, the `.mcpb` in Claude Desktop, is the second route.
 4. W-28: the Dijok session from the run sheet `docs/dijok-session.md` (Q-16, Q-24); log lessons.
-5. W-29: move the `[Unreleased]` entries into `[0.1.0]` and date it, then tag v0.1.0 after the owner's yes. The tag runs `release.yml` (W-27, built in W-32): the CI checks, then a draft GitHub release with the zip, which the owner reads and publishes by hand; PyPI later.
+5. W-29: CHANGELOG's `[0.1.0]` is dated 2026-10-25 (moved in W-37, where `scripts/bump_version.py` dates each new version); tag after the owner's yes, by the rule in CONTRIBUTING "Versioning" (a tag only for a zip handed to a DJ). The tag runs `release.yml` (W-27, built in W-32): the CI checks, then a draft GitHub release with the zip, which the owner reads and publishes by hand; PyPI later.
 
 ## Open questions
 
@@ -90,6 +91,7 @@ v0.1 (W-11…W-26), W-30, W-31, W-32, W-34, W-35 and W-36 are built on `main`. W
 | Q-31 | uv-type MCPB verified: Claude Desktop Windows / Mac / inside a Cowork session. **Evidence 24 Oct (W-34):** Claude Code 2.1.299 refuses a `uv` bundle inside a plugin (`Invalid manifest: server: Invalid enum value. Expected 'python' \| 'node' \| 'binary', received 'uv'`); the plugin's skills still load, so the one-upload route does not start the engine there yet. The bundle itself runs when started as its manifest says (`build_mcpb.py --smoke`: 30 tools). Also open: the write-gate hook starts `uv`, so on a machine without uv it fails closed in Claude Code. | Anton |
 | Q-32 | `/dj-librarian:install` run on a Mac: uv from the astral installer, `~/dj-librarian`, `uv sync`, `dj status` (master.db found, Q-02), the Claude Desktop config entry with `DJ_LIBRARY`, the restart, `dj_status` in a Cowork task. | Anton |
 | Q-33 | The engine path in Cowork: Claude reads and writes the dj-library folder's files (habits.md, identity.md, the report's file card) only when that folder is connected to the task, so dj-start asks once to connect it when none is. And `dj_library_analyze(source="db")` renders a first report before the liner notes exist, so the session's report is the second render (`-2`): an analyze option to skip the report needs `mcp_server.py` to grow (W-36 kept it as is). Check both in the first engine session. | W-28 |
+| Q-34 | `dj status` said "493 tracks" for a library with far fewer local files. `library.all_tracks` already left out soft-deleted rows, so the rest were rows rekordbox streams (Spotify, Beatport Streaming, ...). **Answered 25 Oct (W-37):** both readers count a streamed row apart (`Library.streaming`): its FolderPath (XML: Location after `file://localhost`) is a service URI, `<service>:...`; a row without a file path counts by ServiceID above 0; a real file path is always a file. Analysis, crates and builds see local files only; `dj status` prints `tracks: N · L local · S streaming` (`streaming_by` per service in its JSON). pyrekordbox 0.4.4 documents both columns but not their values, so the rule is unverified on a real 7.2 library until the live `dj status` line. | W-37 (answered; live check open) |
 
 ## Later (one line each → issues after first push)
 
@@ -103,6 +105,8 @@ v0.1 (W-11…W-26), W-30, W-31, W-32, W-34, W-35 and W-36 are built on `main`. W
 - L-08 master.db play history (Q-13, D-23).
 - L-09 Smart-playlist members computed from their rules (Q-14, D-23).
 - L-10 Report design pass (dataviz palette, dark mode). **Closed by W-31** (the sleeve and the redesigned report).
+- L-11 Restore command: put a backup from `backups/` back into rekordbox's folder (rekordbox closed, preview + yes); v0.1 has `RESTORE.md` by hand (D-31).
+- L-12 Prune backups (preview + yes): v0.1 keeps every backup, dedupe bounds the growth (D-31).
 
 ## Deviations from the v0.1 contract
 
@@ -141,3 +145,15 @@ The contract is `docs/prompts/plans/v0.1-interfaces.md`. Each item lists here wh
   - `product_version()` finds the light zip's plugin.json one folder up.
   - `installer.main` answers an `OSError` with its one JSON line.
   - After the first install the Claude desktop app flagged `commands/` as the legacy format, so install and uninstall moved to `plugin/skills/install/` and `uninstall/` (the same `/dj-librarian:install` name, `disable-model-invocation: true`, the shared pre-send checklist).
+- **W-37.** Brief `docs/prompts/W-37.md` (saved without its model line). Commits: the test fix, then Q-34 before the backup (the backup's manifest uses the count split), docs, versioning, the bump; the PR is squash-merged.
+  - Backup dedupe compares `master.db` and `master.db-wal` (the brief: master.db): while rekordbox runs, recent changes live in the WAL.
+  - The copy goes through a scratch folder (`readers.db.snapshot`, then byte for byte into the backup), so a snapshot retry never removes a file under `backups/`; verification opens a scratch copy of the backup (`readers.db.open_snapshot`), so the hashed bytes are never opened by SQLite.
+  - `backups/.gitignore` (`*`) keeps the copies out of git. Besides `backups/`, a backup writes one `log.md` line (R-904), none when unchanged.
+  - The result line names the folder relative to the dj-library (`Backup: backups/rekordbox-<date> · <size> · verified`); the JSON's `folder` is absolute.
+  - An unverified copy gets `NOT-VERIFIED.md` instead of `RESTORE.md`. `RESTORE.md` has five steps: close rekordbox, open its folder, move today's four files into a folder of their own (so a newer `-wal` never meets an older `master.db`), copy the backup's files in, reopen and check the track count.
+  - Refusals (exit 2, `REFUSED`): a synced folder, a folder without this tool's `library.yaml`, a dj-library inside rekordbox's folder. No master.db is exit 1; an unverified copy is exit 0 with `verified: false`.
+  - The install's "UV_PROJECT_ENVIRONMENT unset" now covers steps 4 to 8: step 6 (`library_init.py`) runs the engine's Python too and was missing from the list.
+  - The backup skill stays in the light zip: it says the engine is needed. The dj-library README of a new folder names `backups/`.
+  - Q-34 rule (`readers.common.streaming_service`): a URI scheme of two or more characters (never a drive letter) is a service; a file path wins over ServiceID; ServiceID above 0 names only a row without a path (`service <n>`). Streamed rows leave the playlists too, so a proposal built from a playlist that holds streamed rows builds without them: the XML carries files only (before, they went in with a `file://` Location rekordbox could not find). `dj library inspect`, `dj_library_analyze` and profile's `facts.json` gain `streaming`; profile's Collection note ends "; N streamed not counted" when there are any.
+  - `dj status` prints `dj-librarian: <version> (pyrekordbox <version>)` in place of the pyrekordbox line; its JSON adds `dj_librarian`, `counts` {local, streaming} (dj_status puts them with its counts) and `streaming_by`.
+  - `library.all_tracks` (the inbox match's candidates) still lists streamed rows: matching a Spotify inbox against them is unchanged.

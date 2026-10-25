@@ -5,6 +5,20 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ## [Unreleased]
 
 ### Added
+- `dj backup [--library] [--list]`, the MCP tool `dj_backup` and the backup skill (W-37, D-31, R-206): a verified copy of rekordbox's database (`master.db`, `-wal`, `-shm`, `masterPlaylists6.xml`) in `<dj-library>/backups/rekordbox-<date>/` with `manifest.json` and `RESTORE.md`, the steps back for that OS. Nothing is copied when the database is unchanged since the newest verified copy; every backup is kept; an unverified copy is kept and flagged; refused in a synced folder; rekordbox's folder is only read. It runs at install step 7, first in an engine session, and right before every import card on the engine path. `dj_backup` is the one write tool without a preview id (CLAUDE.md).
+
+### Changed
+- Honest track counts (Q-34): rows rekordbox streams (Spotify, Beatport Streaming, ...) are counted apart and left out of the tracks and playlists that profile, structure, taste, crates and builds see, from master.db and from an export alike. `dj status` prints `tracks: N · L local · S streaming` and the dj-librarian version; the profile's Collection stat says how many streamed rows were not counted.
+- `/dj-librarian:install` is nine steps: the backup is step 7, the config merge and the restart are 8 and 9.
+
+### Fixed
+- The install doc's intro check ignores case (W-36 rewrote the intro).
+
+## [0.1.0] - 2026-10-25
+
+Target: "Dijok edition". See `docs/requirements.md` §3.
+
+### Added
 - Open-source scaffolding: LICENSE (Apache-2.0), CONTRIBUTING, examples, CI, plugin manifest and self-hosted marketplace (W-10).
 - `docs/`: requirements, plan, decisions, architecture, breadboard, lessons.
 - One library model (`dj.model`) fed by two readers: the rekordbox XML export (standard library only) and a read-only snapshot of master.db. `dj library inspect` and the MCP tool `dj_library_inspect` (W-11).
@@ -56,7 +70,3 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - W-30: every read-only pass reads a master.db snapshot, never the live file (Q-18); writes on a disk that refuses deletes go in place without temp files (Q-27); one clock for every `log.md` line (Q-28); dj-build refuses proposals made from a newer source than the export it reads (Q-17); CI's personal-data check covers `.claude-plugin/`, `templates/` and `docs/samples/` (Q-26).
 - W-31 polish: no "Words by Claude" captions in the hero; four-line liner notes; at most 4 colours per chart, extra lanes in Other (D-26); sparse sleeve rings drawn wider and lighter, decade labels on the sleeve.
 - CLAUDE.md hard rule 1 names its two exceptions (D-20); D-19 to D-23 and D-26 recorded.
-
-## [0.1.0] — unreleased
-
-Target: "Dijok edition". See `docs/requirements.md` §3.
