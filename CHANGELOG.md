@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-25
+
 ### Added
 - `dj backup [--library] [--list]`, the MCP tool `dj_backup` and the backup skill (W-37, D-31, R-206): a verified copy of rekordbox's database (`master.db`, `-wal`, `-shm`, `masterPlaylists6.xml`) in `<dj-library>/backups/rekordbox-<date>/` with `manifest.json` and `RESTORE.md`, the steps back for that OS. Nothing is copied when the database is unchanged since the newest verified copy; every backup is kept; an unverified copy is kept and flagged; refused in a synced folder; rekordbox's folder is only read. It runs at install step 7, first in an engine session, and right before every import card on the engine path. `dj_backup` is the one write tool without a preview id (CLAUDE.md).
 - Versioning (W-37): `version` in `pyproject.toml` is the one source; `scripts/bump_version.py patch|minor` writes it into `uv.lock`, `plugin.json`, the marketplace entry (which now carries a version) and `mcpb/manifest.json`, and dates CHANGELOG's `[Unreleased]`. `tests/test_version_sync.py` fails CI on drift, `dj status` included. CONTRIBUTING has the rules (patch, minor, when to tag).

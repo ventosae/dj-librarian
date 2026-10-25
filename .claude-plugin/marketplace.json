@@ -8,7 +8,7 @@
     {
       "name": "dj-librarian",
       "source": "./plugin",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "A DJ librarian for rekordbox you talk to through Claude. Create and add only, dry-run first."
     }
   ]
