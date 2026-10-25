@@ -18,6 +18,7 @@ from dj import build as build_mod
 from dj import playlist_copy as copy_mod
 from dj import push as push_mod
 from dj import tree as tree_mod
+from dj.commands.backup import backup as backup_command
 from dj.commands.library import library_app
 from dj.commands.wishlist import wishlist_app
 from dj.gate import GateError
@@ -38,6 +39,7 @@ app = typer.Typer(
 )
 app.add_typer(library_app, name="library")
 app.add_typer(wishlist_app, name="wishlist")
+app.command(name="backup")(backup_command)
 
 EXIT_ERROR = 1
 EXIT_REKORDBOX_RUNNING = 2

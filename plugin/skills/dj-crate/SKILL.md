@@ -106,8 +106,9 @@ Ask the direct question **Write the crate XML?** with three answers: **Yes / Cha
 Only after the yes: call the write with the preview id from the latest preview. Then show:
 
 1. "Wrote `proposals/crate-<slug>.xml`" and the crate record `crates/<slug>.md` (name the files the result gives; they can end in `-2`).
-2. The import card: the 3 `import_steps` from the result, numbered, for the DJ's OS. "About 3 minutes."
-3. Next, one line: "Open rekordbox, play the first three picks. Then tell me what to change: size, BPM, genres, keys or anchors."
+2. With the engine (the MCP column above): call `dj_backup` right before the card and show its `line`. The DJ's import is the first thing that changes rekordbox, so a verified copy comes first (D-31, R-206); nothing changed since the last copy, nothing is copied. Without the engine, no line.
+3. The import card: the 3 `import_steps` from the result, numbered, for the DJ's OS. "About 3 minutes."
+4. Next, one line: "Open rekordbox, play the first three picks. Then tell me what to change: size, BPM, genres, keys or anchors."
 
 A written crate keeps its name: once imported, rekordbox has `Crates/<name>`. To change it after
 the write, give the spec a new `name` (`Saturday Rooftop 2`) or, when the DJ did not import it,

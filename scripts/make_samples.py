@@ -361,8 +361,10 @@ def engine_session(skill: str, steps: dict[int, str], *, delivered: str, next_ch
         raise SystemExit("plugin/skills/dj-start/SKILL.md: the engine path lost a template; "
                          "update engine_session in scripts/make_samples.py")  # fmt: skip
     report_line = delivered.replace("Step 5 of 6", "Step 3 of 4")
+    day = re.search(r"\d{4}-\d{2}-\d{2}", delivered)
+    backup = f"Backup: backups/rekordbox-{day.group(0) if day else TODAY}-0930 · 84.2 MB · verified"  # dj_backup's line (W-37)
     replies = [
-        (hello, [], f"The DJ types: {HANDLE}"),
+        (hello.replace("<backup line>", backup), [], f"The DJ types: {HANDLE}"),
         (working, [("Task list, each item ticked off as it finishes", [f"[x] {t}" for t in tasks])], ""),
         (f"{report_line}\n{nxt}", [("File card", [report_line.rsplit(" ", 1)[-1]]), ("Chips", next_chips)], ""),
     ]

@@ -68,3 +68,12 @@ def test_smartlist_enums_and_signature():
     assert {Property.GENRE.value, Property.COMMENTS.value, Property.BPM.value,
             Property.RATING.value, Property.STOCK_DATE.value} == {"genre", "comments", "bpm", "rating", "stockDate"}
     assert list(params(SmartList.add_condition))[1:] == ["prop", "operator", "value_left", "value_right", "unit"]
+
+
+def test_what_the_count_split_and_the_backup_read():
+    # Q-34: a streamed row is told from a local file by FolderPath and ServiceID (library.row_service)
+    assert hasattr(tables.DjmdContent, "ServiceID") and hasattr(tables.DjmdContent, "FolderPath")
+    # W-37: dj.backup runs PRAGMA quick_check through the session __init__ opens (db.session.execute)
+    init = inspect.getsource(Rekordbox6Database.__init__)
+    assert "self.session: Optional[Session] = None" in init and "self.open()" in init
+    assert "self.session = Session(bind=self.engine)" in inspect.getsource(Rekordbox6Database.open)

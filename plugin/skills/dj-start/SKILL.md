@@ -58,9 +58,11 @@ tool is among your tools (`mcp__dj-librarian__dj_status`, or the plugin's
 rule). Engine present: no export and no folder step, four steps (`Step N of 4`), the same report.
 Engine absent: the six steps below, as before.
 
-**E1 Hello.** Call `dj_status`: it reads master.db live, and `links_file` sits in the dj-library
-folder the install made (`DJ_LIBRARY`). This task reads and writes that folder's files: when no
-connected folder holds `library.yaml`, ask once and wait (Q-33):
+**E1 Hello.** Call `dj_backup` first: a verified copy of the rekordbox database in the dj-library
+folder's `backups/` before anything else (D-31, R-206; nothing is copied when nothing changed). Its
+`line` goes into the hello as it is, the one line on the backup. Then `dj_status`: it reads master.db
+live, and `links_file` sits in the dj-library folder the install made (`DJ_LIBRARY`). This task reads
+and writes that folder's files: when no connected folder holds `library.yaml`, ask once and wait (Q-33):
 
 ```text
 Step 1 of 4 · under a minute. Connect your dj-library folder (<folder name>) to this task, then say done.
@@ -68,10 +70,12 @@ Step 1 of 4 · under a minute. Connect your dj-library folder (<folder name>) to
 
 `library.yaml` holds the device (the install wrote it). `dj_name` missing: ask the handle in one
 line, then `python3 scripts/start.py handle --library <folder> --dj-name "<name>"` ("skip" passes
-`--dj-name You`).
+`--dj-name You`). With `dj_name` set, the same hello without the question.
 
 ```text
-Step 1 of 4 · under a minute. The engine is in: I read your collection straight from rekordbox, no export. What do they call you in the booth? It goes on the report; skip it and it says You.
+Step 1 of 4 · under a minute. The engine is in: I read your collection straight from rekordbox, no export.
+<backup line>
+What do they call you in the booth? It goes on the report; skip it and it says You.
 ```
 
 **E2 Working.** The same task list as step 4, run differently: profile, structure, taste and

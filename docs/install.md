@@ -28,7 +28,7 @@ The engine runs on your computer. Pick the first route that works for you.
 The plugin zip carries the engine's source. Claude Code installs it; you type one line and click **Allow** on each step.
 
 1. Claude desktop app → **Code** tab → type **`/dj-librarian:install`**.
-2. Click **Allow** on each step (8 of them): it finds or installs uv, copies the engine to `dj-librarian` in your home folder, installs what it needs, checks it with `dj status`, asks once which folder should be your dj-library (it makes it; `Music/dj-library` in your home folder is the offer), and adds the engine to Claude Desktop's config (a backup of the config first; no other entry changes).
+2. Click **Allow** on each step (9 of them): it finds or installs uv, copies the engine to `dj-librarian` in your home folder, installs what it needs, checks it with `dj status`, asks once which folder should be your dj-library (it makes it; `Music/dj-library` in your home folder is the offer), backs up your rekordbox database into that folder's `backups/` (a verified copy with `RESTORE.md`; analysis files and artwork stay with rekordbox's own File > Library > Backup Library), and adds the engine to Claude Desktop's config (a backup of the config first; no other entry changes).
 3. Restart Claude Desktop. In **Customize → Connectors → dj-librarian**, leave every write tool on **Ask every time** (the list is below).
 4. In a Cowork task, say **/dj-librarian:dj-start**: the first session reads your collection straight from rekordbox (`dj_status`, then the analysis from master.db) and ends with the same report. Later, **set me up** checks the engine.
 

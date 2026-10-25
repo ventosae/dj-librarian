@@ -59,7 +59,8 @@ The three release files come from the clone:
 
 | Command | What it does |
 |---|---|
-| `uv run dj status` | Read-only. Track count, the playlist tree, and per Spotify link the counts by status. |
+| `uv run dj status` | Read-only. Track count (local files and streamed rows apart), the playlist tree, and per Spotify link the counts by status. |
+| `uv run dj backup [--library L] [--list]` | A verified copy of rekordbox's database in `<dj-library>/backups/rekordbox-<date>/` with `RESTORE.md`; nothing copied when unchanged. Reads rekordbox's folder, never writes it; never deletes a backup. |
 | `uv run dj tree [--file F]` | Dry-run of `tree.yaml` (or `F`): `CREATE`, `SKIP`, `HOLD`, `CONFLICT` per node. |
 | `uv run dj tree --apply --power-mode --preview-id <id>` | Creates the missing folders and playlists. Windows, rekordbox closed, backup first, one commit. |
 | `uv run dj pull <link>` / `--all` | Reads a Spotify playlist into `.cache/inbox/` in your dj-library folder (`inbox/` in the repo while the library's `links.yaml` holds no link). Read-only on Spotify. |
@@ -102,7 +103,7 @@ Your configuration lives in your dj-library folder: the engine reads `links.yaml
 
 The plugin adds twelve skills (see `plugin/skills/`) and two more the DJ types as slash commands, `/dj-librarian:install` and `/dj-librarian:uninstall` (`plugin/skills/install/`, `uninstall/`). A DJ starts with **dj-start** ("start"): it sets up the dj-library folder from a rekordbox XML export and writes the first report. Read tools and write tools are separate, so you can leave every write tool on "ask every time"; which tool is which: [docs/permissions.md](docs/permissions.md). In Claude Code the plugin also brings a PreToolUse hook (`plugin/hooks/`) that denies a write tool called without a `preview_id`. The hook starts `uv`, so on a machine without uv it blocks every write tool (it fails closed; a known gap).
 
-The zip carries the engine's source in `plugin/engine/`, the one copy of the core (D-29). `/dj-librarian:install` copies it to `~/dj-librarian`, runs `uv sync` and `dj status`, asks once for the dj-library folder and adds `dj-mcp` to Claude Desktop's config with absolute paths and `DJ_LIBRARY` set (`src/dj/installer.py`, a backup of the config first, nothing else in it touched). The engine also reads `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` and `DJ_POWER_MODE` from its environment before any `.env`. The standalone [MCP bundle](https://github.com/modelcontextprotocol/mcpb) (`scripts/build_mcpb.py`) is the second route; as an extension it keeps its state in `<dj-library>/.cache/engine/`. Claude Code 2.1.299 refuses a `uv` bundle inside a plugin, so the plugin no longer carries it (Q-31).
+The zip carries the engine's source in `plugin/engine/`, the one copy of the core (D-29). `/dj-librarian:install` copies it to `~/dj-librarian`, runs `uv sync` and `dj status`, asks once for the dj-library folder, backs up rekordbox's database into it (`dj backup`, D-31) and adds `dj-mcp` to Claude Desktop's config with absolute paths and `DJ_LIBRARY` set (`src/dj/installer.py`, a backup of the config first, nothing else in it touched). The engine also reads `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` and `DJ_POWER_MODE` from its environment before any `.env`. The standalone [MCP bundle](https://github.com/modelcontextprotocol/mcpb) (`scripts/build_mcpb.py`) is the second route; as an extension it keeps its state in `<dj-library>/.cache/engine/`. Claude Code 2.1.299 refuses a `uv` bundle inside a plugin, so the plugin no longer carries it (Q-31).
 
 - **Claude Code, from a clone:** add the marketplace from the clone. Run this inside the clone folder:
 

@@ -33,11 +33,13 @@ def test_both_commands_are_the_djs_to_type():
         assert "disable-model-invocation: true" in front, name  # never runs on its own
 
 
-def test_install_is_eight_steps_in_the_briefs_order():
+def test_install_is_nine_steps_in_the_briefs_order():
     assert list(_steps("install.md")) == ["Which computer", "uv", "The engine folder", "Dependencies", "The proof",
-                                          "The dj-library folder", "Claude Desktop's config", "Restart"]  # fmt: skip
+                                          "The dj-library folder", "The backup", "Claude Desktop's config",
+                                          "Restart"]  # fmt: skip
     text = " ".join(_text("install.md").split())
-    assert "Step N of 8 · <what>" in text and "send this line to whoever gave you the plugin" in text
+    assert "Step N of 9 · <what>" in text and "send this line to whoever gave you the plugin" in text
+    assert "Run steps 4 to 8 with `UV_PROJECT_ENVIRONMENT` unset" in text  # every step that runs the engine
     assert "never change anything in it except `mcpServers[\"dj-librarian\"]`" in text
     assert '`& "<uv>" sync ...`' in text and "`UV_PROJECT_ENVIRONMENT` unset" in text  # PowerShell, own venv
 
@@ -90,6 +92,15 @@ def test_install_asks_for_the_library_once_and_writes_it_as_dj_library():
            '--library "<dj-library folder>"' in merge  # fmt: skip
     assert "`DJ_LIBRARY`" in merge and "claude_desktop_config.json.bak-<date>" in merge
     assert "keeps every other key" in merge
+
+
+def test_install_backs_up_rekordbox_right_after_the_folder_step():
+    """W-37 (D-31, R-206): a verified copy of the rekordbox database before anything can change it."""
+    step = _steps("install.md")["The backup"]
+    assert '`"<uv>" run --directory "<engine folder>" --no-sync dj backup --library "<dj-library folder>"`' in step
+    assert "`Backup: <path> · <size> · verified`" in step and "never writes rekordbox's folder" in step
+    assert "File > Library > Backup Library" in step and "`RESTORE.md`" in step
+    assert "`NOT verified` line: say it, and go on" in step and "An error line: show it and stop." in step
 
 
 def test_install_ends_with_the_restart_and_the_set_me_up_line():

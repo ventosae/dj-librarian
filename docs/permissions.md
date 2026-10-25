@@ -54,6 +54,15 @@ rekordbox, Spotify or audio files.
 | `dj_barber_record` | Appends the DJ's answer as a dated line to `taste/*.md` (never rewrites). |
 | `dj_wishlist_shop` | `wishlist/<crate>.shopping.md`: search links for the missing tracks (never fetched). |
 
+## The backup tool: Allow or Ask
+
+`dj_backup` is the one write tool without a preview id (D-31): it writes only under
+`<dj-library>/backups/`, never touches rekordbox, and the hook does not match it.
+
+| Tool | What it writes |
+|---|---|
+| `dj_backup` | `backups/rekordbox-<date>/`: a verified copy of rekordbox's database (`master.db`, `-wal`, `-shm`, `masterPlaylists6.xml`) with `manifest.json` and `RESTORE.md`. Reads rekordbox's folder, never writes it. Nothing is copied when nothing changed; no backup is ever deleted. |
+
 ## Write tools: Ask every time
 
 | Tool | Writes to | Its preview |

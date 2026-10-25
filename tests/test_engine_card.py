@@ -191,12 +191,14 @@ def test_permissions_doc_puts_every_tool_in_exactly_one_group():
     read = _table_tools(_section(text, "Read tools: Allow (or Ask, your call)"))
     library_text = _table_tools(_section(text, "Library-text tools: Allow or Ask"))
     write = _table_tools(_section(text, "Write tools: Ask every time"))
-    listed = read + library_text + write
+    backup = _table_tools(_section(text, "The backup tool: Allow or Ask"))  # D-31: no preview id
+    listed = read + library_text + backup + write
     assert len(listed) == len(set(listed)), "a tool is listed twice"
     tools = _tools()
     assert set(read) == {n for n, t in tools.items() if t.annotations.read_only_hint}
-    assert set(write) == _write_tools()
-    assert set(library_text) == {n for n, t in tools.items() if not t.annotations.read_only_hint} - WRITE_TOOLS
+    assert set(write) == _write_tools() and backup == ["dj_backup"]
+    assert set(library_text) == {n for n, t in tools.items() if not t.annotations.read_only_hint} - WRITE_TOOLS - {
+        "dj_backup"}
     assert set(listed) == set(tools)  # only tools the engine has today
 
 

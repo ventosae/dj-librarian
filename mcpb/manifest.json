@@ -71,6 +71,7 @@
     {"name": "dj_tree_preview", "description": "Dry-run of a tree file (e.g. bases.yaml): one action per node and a preview_id. Writes nothing."},
     {"name": "dj_library_inspect", "description": "Library summary: counts, a sample of the playlist tree, which fields the source lacks."},
     {"name": "dj_library_analyze", "description": "Analyse the library in one go: profile, identity, structure proposals, taste, and the HTML report."},
+    {"name": "dj_backup", "description": "A verified copy of your rekordbox database in your dj-library folder, with restore steps. Never writes rekordbox."},
     {"name": "dj_pull", "description": "Download a Spotify inbox playlist into the inbox. Read-only on Spotify and rekordbox."},
     {"name": "dj_match", "description": "Match the last pull of a link against the library: in crate, propose, ambiguous, missing, declined."},
     {"name": "dj_plan", "description": "Write a plan and a wishlist for a crate (text files in the dj-library folder; rekordbox untouched)."},

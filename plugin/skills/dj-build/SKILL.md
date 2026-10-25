@@ -68,7 +68,8 @@ Ask the direct question **Write the XML?** with three answers: **Yes / Change / 
 Only after the yes: call the write with the preview id from the latest preview. Then show:
 
 1. "Wrote `proposals/<slug>.xml`." (name the file the result gives; it can be `<slug>-2.xml`).
-2. The import card: the 3 `import_steps` from the result, numbered, for the DJ's OS (Mac: rekordbox menu > Preferences; Windows: File > Preferences). "About 3 minutes."
+2. With the engine (the MCP column above): call `dj_backup` right before the card and show its `line`. The DJ's import is the first thing that changes rekordbox, so a verified copy comes first (D-31, R-206); nothing changed since the last copy, nothing is copied. Without the engine, no line.
+3. The import card: the 3 `import_steps` from the result, numbered, for the DJ's OS (Mac: rekordbox menu > Preferences; Windows: File > Preferences). "About 3 minutes."
 
 The tool appends the `log.md` line itself (R-505, R-904): `YYYY-MM-DD HH:MM build <slug> -> N create, N skip, N manual, N tracks; proposals/<slug>.xml`. Do not write it yourself.
 

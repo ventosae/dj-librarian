@@ -204,6 +204,8 @@ rekordbox until you import a file yourself.
   `.xml` you import into rekordbox yourself.
 - `crates/`: the brief for each crate and the tracks picked for it, one reason per track.
 - `wishlist/`: tracks you don't own yet, with where to buy them.
+- `backups/`: verified copies of your rekordbox database, one folder each time it changed, each
+  with `RESTORE.md` (how to put it back). The tool never deletes one, and they stay out of git.
 
 ## Git
 

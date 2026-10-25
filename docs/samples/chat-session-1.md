@@ -80,7 +80,9 @@ Chips:
 ## Reply 1 of 3
 
 ```text
-Step 1 of 4 · under a minute. The engine is in: I read your collection straight from rekordbox, no export. What do they call you in the booth? It goes on the report; skip it and it says You.
+Step 1 of 4 · under a minute. The engine is in: I read your collection straight from rekordbox, no export.
+Backup: backups/rekordbox-2026-10-20-0930 · 84.2 MB · verified
+What do they call you in the booth? It goes on the report; skip it and it says You.
 ```
 
 *The DJ types: DJ Sample*

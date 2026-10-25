@@ -671,6 +671,15 @@ def dj_library_analyze(source: str = "xml") -> str:
     return run_dj(["library", "analyze", "--source", source])
 
 
+@server.tool(annotations=WRITE)
+def dj_backup(list_backups: bool = False) -> str:
+    """A verified copy of rekordbox's database (master.db, -wal, -shm, masterPlaylists6.xml) into
+    <dj-library>/backups/rekordbox-<date>/ with RESTORE.md; unchanged since the last verified copy:
+    nothing copied. Show the DJ `line`. Reads rekordbox's folder, never writes it; deletes nothing; no
+    preview id (D-31). list_backups=true lists them instead."""
+    return run_dj(["backup", "--list"] if list_backups is True else ["backup"])
+
+
 @server.tool(annotations=SPOTIFY_READ)
 def dj_pull(link: str = "", all_links: bool = False) -> str:
     """Download a Spotify inbox playlist to the inbox (<library>/.cache/inbox/<crate>.json, or

@@ -35,6 +35,7 @@ Read before changing anything: `docs/requirements.md` (numbered R-ids; authorita
 - `mcp_server.py` is a fixed list of `dj` commands. No tool runs an arbitrary command, reads an arbitrary file, or takes a path outside the user's library folder or the repo.
 - Arguments are passed as a list; never a command string, never `shell=True`.
 - Read tools and write tools are separate tools. Every write tool has a preview tool and refuses without a plan/preview id.
+  `dj_backup` is the one write tool without a preview id: it writes only under `<dj-library>/backups/`, never touches rekordbox, and the hook does not match it.
 - Tool results: counts first, items paginated. Stay under the tool-result limit.
 
 ## Tests
