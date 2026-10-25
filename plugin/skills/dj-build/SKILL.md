@@ -14,6 +14,10 @@ changes when the DJ drags the playlists in, never before. master.db is never ope
 
 ## How to run things
 
+`library.yaml` says `source: db` (the engine path, D-30): use the engine column. The build then
+reads a master.db snapshot, so every `from` playlist resolves there, including ones made after the
+last export (`dj library build --source db`, Q-17). The script reads the export only.
+
 | Step | Engine (MCP tool) | Cowork sandbox (script) |
 |---|---|---|
 | Preview | `dj_structure_preview(proposal)` | `python3 scripts/build.py preview "<proposal>" --library <folder>` |

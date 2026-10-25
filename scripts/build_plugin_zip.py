@@ -50,7 +50,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 PLUGIN = REPO / "plugin"
 ENGINE = "engine"  # plugin/engine/: the engine's source
-ENGINE_EXTRA = ("examples", "scripts/merge_desktop_config.py")  # beside the bundle's files
+ENGINE_EXTRA = ("examples", "scripts/merge_desktop_config.py", "scripts/library_init.py")  # beside the bundle's files
 STAMP_FILE = "BUILD.txt"  # engine/BUILD.txt: the version and a hash of the engine's files
 INSTALL_ONLY = ("skills/install/", "skills/uninstall/")  # what the light zip leaves out
 LOCAL = {ENGINE, "vendor", "engine.mcpb"}  # left by a local build or an older layout: never shipped

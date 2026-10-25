@@ -309,7 +309,7 @@ def test_r1003_spot_check_on_the_chat_replies():
     personal data: the sample handle only, no path outside the library folder, no address."""
     from reply_checks import session_replies, step_reply_problems
 
-    chat = _text(SAMPLES / "chat-session-1.md")
+    chat, engine = _text(SAMPLES / "chat-session-1.md").split("\n# Session 1b: with the engine\n")
     replies = session_replies(chat)
     assert len(replies) == 6
     for text, widgets in replies:
@@ -326,6 +326,13 @@ def test_r1003_spot_check_on_the_chat_replies():
     assert widgets[1:] == [f"Build me the {n} structure" for n in ("House Bases", "Deep Facets", "Warehouse Gigs")] + ["not yet"]
     assert widgets[0] in report  # the file card is the file the line names
     assert not re.search(r"\b[A-Za-z]:[\\/]|/Users/|/home/|/tmp/|@|<[a-z]", chat)
+    # session 1b (W-36, D-30): with the engine, three replies for four steps, the same report and chips
+    with_engine = session_replies(engine)
+    assert [re.match(r"Step (\d) of 4", t).group(1) for t, _w in with_engine] == ["1", "2", "3"]
+    for text, widgets in with_engine:
+        assert step_reply_problems(text) == [] and text_problems(text) == [] and len(widgets) <= 5
+    assert "\nStep 4 of 4 · under 2 minutes." in with_engine[2][0] and with_engine[2][1][1:] == widgets[1:]
+    assert "export" not in engine.lower().split("> the same session")[0] and "Connect a folder" not in engine
 
 
 def test_r1003_spot_check_on_the_report(tmp_path):

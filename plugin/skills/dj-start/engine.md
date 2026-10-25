@@ -26,7 +26,7 @@ One card for Mac and Windows. The command is the DJ's to type: it never runs on 
 ```text
 Step 1 of 2 · about 5 minutes. The engine installs from Claude Code; you click Allow:
 1. In the Claude desktop app, open the Code tab and type /dj-librarian:install.
-2. Click Allow on each step. When it asks for your dj-library folder, drag that folder in (library.yaml is in it).
+2. Click Allow on each step. When it asks which folder should be your dj-library, say ok for the one it offers or drag another in.
 3. Restart Claude, then in Customize > Connectors > dj-librarian set every tool whose name ends in _apply, _write or _undo to Ask every time (9 tools).
 Say set me up in a new Cowork task when Claude is back (under a minute).
 ```

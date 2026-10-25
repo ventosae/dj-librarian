@@ -13,10 +13,10 @@ P0 Plugin ──► P1 Hello ──► P2 Export ──► P3 Folder ──► P
 
 | # | Place | DJ sees (affordances) | DJ does | Behind the curtain | Widget |
 |---|---|---|---|---|---|
-| P0 | Plugin installed | Nothing yet. (Optional: Project instructions pasted from the template.) | Types anything ("hi", "sort my library") | Skill `dj-start` triggers; voice + ADHD rules load with it | — |
+| P0 | Install | Plugin zip uploaded; `/dj-librarian:install` in Claude Code installs the engine and makes the dj-library folder (D-30). Without it the XML path below. | Types the command, clicks Allow | Engine in Claude Desktop's config, `library.yaml` scaffolded | The install skill's eight steps |
 | P1 | Hello | One line in the voice + a question: **Mac or Windows?** Two chips. | Taps one | Device recorded for the session | Question widget (chips) |
-| P2 | Export | One card: 3 numbered steps for their OS to export the collection XML (File → Export Collection in xml format → save). "About 2 minutes." | Does the 3 steps | — | Checklist card (numbered, ≤ 5 lines) |
-| P3 | Folder | One line: connect a folder in Cowork; drop the XML in it. | Connects folder, drops file | Folder detected; `dj-library/` scaffold written; XML copied to `exports/` (the original stays where the DJ put it); `library.yaml` written | Connected-folder prompt |
+| P2 | Export (XML path only) | One card: 3 numbered steps for their OS to export the collection XML (File → Export Collection in xml format → save). "About 2 minutes." | Does the 3 steps | — | Checklist card (numbered, ≤ 5 lines) |
+| P3 | Folder (XML path only) | One line: connect a folder in Cowork; drop the XML in it. | Connects folder, drops file | Folder detected; `dj-library/` scaffold written; XML copied to `exports/` (the original stays where the DJ put it); `library.yaml` written | Connected-folder prompt |
 | P4 | Working | Task list: 5 steps ticking (read collection → profile → structure → taste → report). One line: "About 5 minutes. Go make a coffee." No questions asked. | Waits | `dj-profile`, `dj-structure`, `dj-taste` run on the XML; MD files written; `dj-report` renders HTML | Task list widget (progress) |
 | P5 | Report | The HTML opens in the side panel. 4 sections: who you are; how it's built (graph); 3 ways to rebuild it, each with a trigger prompt; one next action. | Reads, scrolls | File card delivered; copy saved to `reports/` | File / artifact card |
 | P6 | Next | One line, one action under 2 minutes: "Pick one: say *Build me the ___ structure*." Last line: "To add it: in the Code tab type */dj-librarian:install* and click Allow, then say *set me up*." | Taps / types | — | Question widget (3 proposal chips + "not yet") |

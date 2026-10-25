@@ -78,7 +78,13 @@ def test_install_syncs_proves_and_stops_before_the_config_on_failure():
 
 def test_install_asks_for_the_library_once_and_writes_it_as_dj_library():
     ask = _steps("install.md")["The dj-library folder"]
-    assert "Ask once" in ask and "`library.yaml`" in ask and "stop" in ask
+    assert ('Ask once: "Which folder should be your dj-library? Drag one in or paste a path. If it doesn\'t exist '
+            'I make it."') in ask  # fmt: skip
+    assert "`~/Music/dj-library`" in ask and "`%USERPROFILE%\\Music\\dj-library`" in ask
+    assert '"<engine folder>/scripts/library_init.py" --folder "<folder>" --device <mac|windows>' in ask
+    for rule in ("makes a missing folder", "sets up an empty one", "keeps one that already holds `library.yaml`",
+                 "refuses a folder with other files", "OneDrive, Dropbox, iCloud or Google Drive"):  # fmt: skip
+        assert rule in ask, rule
     merge = _steps("install.md")["Claude Desktop's config"]
     assert '"<engine folder>/scripts/merge_desktop_config.py" merge --uv "<uv>" --folder "<engine folder>" ' \
            '--library "<dj-library folder>"' in merge  # fmt: skip
@@ -90,7 +96,7 @@ def test_install_ends_with_the_restart_and_the_set_me_up_line():
     step = _steps("install.md")["Restart"]
     assert "Restart Claude Desktop." in step and "Customize → Connectors → dj-librarian" in step
     assert "`_apply`, `_write`, `_undo`" in step and "Ask every time" in step
-    assert 'End with one line: `say "set me up" in a Cowork task to check it`.' in step
+    assert "End with one line: `In a Cowork task, say /dj-librarian:dj-start`." in step
 
 
 def test_uninstall_removes_only_our_entry_and_keeps_the_folder():

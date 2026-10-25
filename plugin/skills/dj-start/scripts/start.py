@@ -2,8 +2,10 @@
 
     start.py find-xml --library DIR
     start.py init --library DIR --device mac|windows [--dj-name NAME] [--xml FILE] [--today YYYY-MM-DD]
+    start.py handle --library DIR --dj-name NAME [--today YYYY-MM-DD]
 
-Argument parsing around dj.onboarding (find_xml, init); the rules live there. A relative --xml
+Argument parsing around dj.onboarding (find_xml, init) and dj.library_setup (set_handle: the
+engine path, where the install made the folder and no export runs init, W-36); the rules live there. A relative --xml
 is looked up in the library folder first, then in the current folder.
 
 Prints one JSON object on stdout. Exit 0 = done; 1 = error, 2 = refused: then the JSON holds one
@@ -33,9 +35,9 @@ except ImportError:  # a clone of the repo keeps it in ../../../../src, the plug
             break
 
 try:
-    from dj import onboarding
+    from dj import library_setup, onboarding
 except ImportError as exc:  # neither installed nor inside a clone of the repo (Q-06)
-    onboarding = None
+    onboarding = library_setup = None
     CORE_MISSING = " ".join(f"The dj-librarian core does not load where this runs ({exc}).".split())
 
 try:  # the plugin's own folder: never a library folder, nor one that holds it
@@ -73,6 +75,13 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
     return onboarding.init(
         root, device=args.device, xml=xml, today=args.today, dj_name=args.dj_name
     )  # the log line: --today's date, the wall-clock time (Q-28, dj.libfolder.log_clock)
+
+
+def cmd_handle(args: argparse.Namespace) -> dict[str, Any]:
+    root = _library(args.library)
+    if not (root / "library.yaml").is_file():
+        raise onboarding.OnboardingError("No library.yaml there: the install makes the folder first.", "folder")
+    return {"dj_name": library_setup.set_handle(root, args.dj_name, today=args.today)}
 
 
 def _xml_arg(root: Path, text: str) -> Path:
@@ -118,6 +127,12 @@ def _parser() -> _Parser:
     init.add_argument("--xml", help="the export; default: the newest XML in the folder")
     init.add_argument("--today", type=_day, help="YYYY-MM-DD; default: today")
     init.set_defaults(run=cmd_init)
+
+    handle = sub.add_parser("handle", help="the DJ's handle into library.yaml (the engine path)")
+    handle.add_argument("--library", required=True, help="the library folder")
+    handle.add_argument("--dj-name", required=True, help="what they call the DJ in the booth; skip = You")
+    handle.add_argument("--today", type=_day, help="YYYY-MM-DD; default: today")
+    handle.set_defaults(run=cmd_handle)
     return parser
 
 

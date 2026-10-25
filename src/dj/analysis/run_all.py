@@ -28,7 +28,7 @@ from dj import treeschema
 from dj.analysis import identity, profile, structure, taste
 from dj.analysis import proposals as proposals_mod
 from dj.analysis.common import library_folder, resolve_xml
-from dj.libfolder import LibraryFolder, append_log, latest_export
+from dj.libfolder import LibraryFolder, append_log, latest_export, update_meta
 from dj.model import Library, LibraryError
 from dj.readers.xml import read_xml
 
@@ -131,6 +131,8 @@ def analyze(
 
     for name, work in zip(STEPS, (do_profile, do_structure, do_taste, do_identity, do_report)):
         step(name, work)
+    # W-36: library.yaml says what this analysis read, so dj-build reads the same (`source`)
+    step("library.yaml", lambda: update_meta(folder.root, today=today, source=source))
 
     c = lib.counts()
     return {

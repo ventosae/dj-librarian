@@ -117,8 +117,8 @@ def test_the_card_names_the_folder_never_a_cowork_path():
     """In Cowork, Claude sees the folder where Cowork mounts it, not where it sits on the DJ's computer."""
     section = " ".join(_section(_text(ENGINE), "The card").split())
     assert "Never send them a path you see in Cowork" in section
-    (folder,) = [s for s in re.findall(r"^\d\. (.+)$", card(), re.MULTILINE) if "dj-library folder" in s]
-    assert "drag that folder in (library.yaml is in it)" in folder
+    (folder,) = [s for s in re.findall(r"^\d\. (.+)$", card(), re.MULTILINE) if "dj-library" in s]
+    assert "say ok for the one it offers or drag another in" in folder  # W-36: the install makes it
 
 
 def test_the_card_is_three_numbered_steps_in_about_5_minutes():

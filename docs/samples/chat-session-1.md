@@ -72,3 +72,48 @@ Chips:
 - Build me the Deep Facets structure
 - Build me the Warehouse Gigs structure
 - not yet
+
+# Session 1b: with the engine
+
+> The same session when the engine is installed (D-30): no export and no folder step, the collection read from master.db, the same report. The folder is already connected to the task.
+
+## Reply 1 of 3
+
+```text
+Step 1 of 4 · under a minute. The engine is in: I read your collection straight from rekordbox, no export. What do they call you in the booth? It goes on the report; skip it and it says You.
+```
+
+*The DJ types: DJ Sample*
+
+## Reply 2 of 3
+
+```text
+Step 2 of 4 · about 5 minutes. Go make a coffee.
+```
+
+Task list, each item ticked off as it finishes:
+
+- [x] Profile
+- [x] Structure
+- [x] Taste
+- [x] Identity
+- [x] Report
+
+## Reply 3 of 3
+
+```text
+Step 3 of 4 · about 5 minutes to read. Your report: reports/2026-10-20-library.html
+Step 4 of 4 · under 2 minutes. Pick one below: I show you the new tree before anything gets written.
+Read live from your rekordbox, My Tags included; play history is not read yet.
+```
+
+File card:
+
+- reports/2026-10-20-library.html
+
+Chips:
+
+- Build me the House Bases structure
+- Build me the Deep Facets structure
+- Build me the Warehouse Gigs structure
+- not yet

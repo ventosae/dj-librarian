@@ -40,6 +40,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - `/dj-librarian:install` and `/dj-librarian:uninstall` (W-35, D-29): Claude Code installs the engine from the plugin zip into `~/dj-librarian` (uv, `uv sync`, `dj status`) and adds it to Claude Desktop's config with `DJ_LIBRARY`, a backup first and nothing else touched (`src/dj/installer.py`, `scripts/merge_desktop_config.py`); the DJ clicks Allow. `docs/install.md`, the engine card, dj-start's offer and the A6 card point at it.
 
 ### Changed
+- Install comes first (W-36, D-30): `/dj-librarian:install` asks which folder should be the dj-library and makes it (`scripts/library_init.py`, `dj.library_setup`); dj-start reads master.db through the engine when it is installed (four steps, no export, `library.yaml` records `source: db`) and keeps the six XML steps without it; `dj library build --source db` (default: `library.yaml`'s) builds from a master.db snapshot (Q-17).
 - Personal configuration and state moved out of version control; code, skills and tests generalised for any user.
 - Tests read the shipped `examples/` configs instead of a personal `tidy.yaml` / `tree.yaml`; two tests made portable to POSIX hosts (path separators, case-sensitive file names).
 - Skills moved from `.claude/skills/` to `plugin/skills/`. Ruff added with a baseline rule set.

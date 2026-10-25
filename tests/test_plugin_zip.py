@@ -86,7 +86,8 @@ def _engine_rel() -> set[str]:
     """What plugin/engine/ must hold: the tracked src/dj/**, the project files, examples/ and the
     config script (D-29)."""
     done = subprocess.run(["git", "-C", str(REPO), "ls-files", "-z", "--", "src/dj", "examples",
-                           "scripts/merge_desktop_config.py"], capture_output=True, timeout=60)  # fmt: skip
+                           "scripts/merge_desktop_config.py", "scripts/library_init.py"], capture_output=True,
+                          timeout=60)  # fmt: skip
     tracked = {n for n in done.stdout.decode("utf-8").split("\0") if n and (REPO / n).is_file()}
     tracked = {n for n in tracked if "__pycache__" not in n and not n.endswith(".pyc")}
     return tracked | {"pyproject.toml", "uv.lock", ".python-version", "README.md", "LICENSE"}

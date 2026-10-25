@@ -56,7 +56,10 @@ META_KEYS = (
     "exports",
 )
 # Keys a library.yaml may hold but need not: files written before them stay valid (R-1406).
-OPTIONAL_META_KEYS = ("dj_name",)
+# `source`: what the last full analysis read, "xml" (the export) or "db" (master.db through the
+# engine, W-36); dj-build reads the same one.
+OPTIONAL_META_KEYS = ("dj_name", "source")
+SOURCES = ("xml", "db")
 DJ_NAME_MAX = 40  # characters of the DJ's handle (what they call you in the booth)
 ENV_VAR = hostenv.LIBRARY  # "DJ_LIBRARY"
 _DATED_EXPORT = re.compile(r"^(\d{4}-\d{2}-\d{2})-collection(?:-(\d+))?\.xml$")
@@ -413,6 +416,8 @@ def validate_meta(data: Any) -> list[str]:
                 errors.append("dj_name: expected a name or null, got an empty text")
         except LibraryFolderError as exc:
             errors.append(str(exc))
+    if "source" in data and data["source"] not in SOURCES:
+        errors.append(f"source: expected one of {', '.join(SOURCES)}, got {data['source']!r}")
 
     if "schema_version" in data:
         version = data["schema_version"]

@@ -528,9 +528,10 @@ def build(
         help="Rows in the preview's --json; the rest are counted in rows_more. 0 = every row (the MCP tool pages them).",
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    source: str = typer.Option(None, "--source", help="xml: the latest export; db: a master.db snapshot. Default: library.yaml's."),
 ) -> None:
     """Preview a proposal (CREATE / SKIP / CONFLICT / MANUAL per node), or with --apply and the
-    preview id write proposals/<slug>.xml for the DJ to import. Never opens master.db."""
+    preview id write proposals/<slug>.xml for the DJ to import. Reads master.db only for --source db."""
     if apply and not (preview_id or "").strip():
         _refuse("--apply needs --preview-id: run the preview, show it, write only after a yes.")
     try:
@@ -542,16 +543,16 @@ def build(
         if not root.is_dir():
             _fail(f"{root} is not a folder. Scaffold the dj-library folder first (dj-start).")
         if apply:
-            result = build_structure.apply(root, proposal, (preview_id or "").strip(), today=day)
+            result = build_structure.apply(root, proposal, (preview_id or "").strip(), today=day, source=source)
             data = result.to_dict()
             text = _apply_lines(data)
         else:
-            found = build_structure.preview(root, proposal, today=day)
+            found = build_structure.preview(root, proposal, today=day, source=source)
             data = found.to_dict(root, limit=rows_limit or len(found.rows))
             text = _preview_lines(data, list(found.rows), found.slug)
     except GateError as exc:
         _refuse(str(exc))
-    except (build_structure.BuildError, TreeSchemaError, LibraryError, OSError) as exc:
+    except (build_structure.BuildError, TreeSchemaError, LibraryError, OSError, ValueError) as exc:
         _fail(str(exc))
     typer.echo(json.dumps(data, indent=2, ensure_ascii=False) if as_json else "\n".join(text))
 

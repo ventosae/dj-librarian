@@ -338,12 +338,44 @@ def chat_session(skill: str, *, start: dict, report: dict) -> str:
             lines += ["", f"{title}:", "", *(f"- {item}" for item in items)]
         if move:
             lines += ["", f"*{move}*"]
+    lines += engine_session(skill, steps, delivered=delivered, next_chips=next_chips, tasks=tasks)
     chat = "\n".join(lines) + "\n"
     left = re.findall(r"<[a-z][a-z0-9 _]*>", chat)
     if left or not tasks or not hello_chips or len(next_chips) < 2:
         raise SystemExit(f"{SAMPLE_CHAT}: dj-start/SKILL.md templates changed (unfilled: {', '.join(left) or '-'}); "
                          "update chat_session in scripts/make_samples.py")  # fmt: skip
     return chat
+
+
+def engine_session(skill: str, steps: dict[int, str], *, delivered: str, next_chips: list[str],
+                   tasks: list[str]) -> list[str]:
+    """Session 1b (W-36, D-30): the four replies dj-start sends when the engine is installed, from
+    the ```text blocks of its "With the engine" section; the report line is step 5's, renumbered."""
+    found = re.search(r"^## With the engine[^\n]*\n(.*?)(?=^## |\Z)", skill.replace("\r\n", "\n"),
+                      re.MULTILINE | re.DOTALL)  # fmt: skip
+    blocks = [block for _before, block in _blocks(found.group(1) if found else "")]
+    hello = next((b for b in blocks if "What do they call you in the booth?" in b), None)
+    working = next((b for b in blocks if b.startswith("Step 2 of 4")), None)
+    nxt = next((b for b in blocks if b.startswith("Step 4 of 4")), None)
+    if not (hello and working and nxt):
+        raise SystemExit("plugin/skills/dj-start/SKILL.md: the engine path lost a template; "
+                         "update engine_session in scripts/make_samples.py")  # fmt: skip
+    report_line = delivered.replace("Step 5 of 6", "Step 3 of 4")
+    replies = [
+        (hello, [], f"The DJ types: {HANDLE}"),
+        (working, [("Task list, each item ticked off as it finishes", [f"[x] {t}" for t in tasks])], ""),
+        (f"{report_line}\n{nxt}", [("File card", [report_line.rsplit(" ", 1)[-1]]), ("Chips", next_chips)], ""),
+    ]
+    lines = ["", "# Session 1b: with the engine", "",
+             "> The same session when the engine is installed (D-30): no export and no folder step, the "
+             "collection read from master.db, the same report. The folder is already connected to the task."]  # fmt: skip
+    for n, (text, widgets, move) in enumerate(replies, 1):
+        lines += ["", f"## Reply {n} of {len(replies)}", "", "```text", text, "```"]
+        for title, items in widgets:
+            lines += ["", f"{title}:", "", *(f"- {item}" for item in items)]
+        if move:
+            lines += ["", f"*{move}*"]
+    return lines
 
 
 def build_library(work: Path, today: str) -> tuple[Path, str]:

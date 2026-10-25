@@ -59,10 +59,10 @@ import yaml
 
 from dj import libfolder, treeschema
 from dj.analysis.proposals import parse_source
+from dj.build_library import DB_READ, read_for_build
 from dj.gate import Gate, GateError, require_id
 from dj.libfolder import LibraryFolder, LibraryFolderError
 from dj.model import Library, LibraryError
-from dj.readers.xml import read_xml
 from dj.taste_files import read_vetoes
 from dj.treeschema import (
     CONFLICT,
@@ -316,10 +316,10 @@ def _current_tree(folder: LibraryFolder) -> TreeDoc:
         raise BuildError(f"{CURRENT_TREE}: cannot read it ({exc.strerror or exc}).") from exc
 
 
-def _library(folder: LibraryFolder) -> tuple[Library, str]:
+def _library(folder: LibraryFolder, source: str | None = None) -> tuple[Library, str]:
+    """The library the build reads: the latest export, or a master.db snapshot (dj.build_library)."""
     try:
-        export = libfolder.latest_export(folder.root)
-        return read_xml(export), folder.relative(export)
+        return read_for_build(folder, source)
     except (LibraryFolderError, LibraryError) as exc:
         raise BuildError(str(exc)) from exc
 
@@ -331,7 +331,7 @@ def _source_block(folder: LibraryFolder, made_from: str, export: str) -> str | N
     Times are the files' modification times. `libfolder.import_export` keeps the time rekordbox
     wrote the export, so an old export imported late still reads as old. The limit: a file put
     into exports/ by other means carries whatever time that copy gave it."""
-    if not made_from:
+    if not made_from or export == DB_READ:  # a snapshot read now holds every playlist made before it
         return None
     read = folder.root / export
     kind, value = parse_source(made_from)
@@ -610,6 +610,7 @@ def preview(
     *,
     today: date | None = None,
     now: datetime | None = None,
+    source: str | None = None,
 ) -> BuildPreview:
     """CREATE / SKIP / CONFLICT / MANUAL per node, and a preview id for the gate.
 
@@ -619,7 +620,7 @@ def preview(
     folder = _folder(folder)
     current = _current_tree(folder)
     found = find_proposal(folder, ref)
-    lib, export = _library(folder)
+    lib, export = _library(folder, source)
 
     created = False
     if not found.exists:
@@ -793,12 +794,13 @@ def apply(
     *,
     today: date | None = None,
     now: datetime | None = None,
+    source: str | None = None,
 ) -> BuildResult:
     """Write `proposals/<slug>.xml` for a preview the DJ said yes to. Refuses (GateError /
     BuildError, nothing written) without a valid preview id, after any change since the
     preview, on a CONFLICT, with nothing to create, or when log.md / library.yaml cannot take
-    their change. Once the XML is written, a later failure is a warning in the result. Never
-    opens master.db (R-504)."""
+    their change. Once the XML is written, a later failure is a warning in the result. Reads a
+    master.db snapshot only when the library's source is db (W-36); never writes it (R-504)."""
     require_id(preview_id)  # no id, no write: refused before anything is read
     folder = _folder(folder)
     device = _meta_device(folder)
@@ -806,7 +808,7 @@ def apply(
     found = find_proposal(folder, ref)
     if not found.exists:
         raise BuildError(f"proposals/{found.slug}.yaml is missing: run the preview first.")
-    lib, export = _library(folder)
+    lib, export = _library(folder, source)
     state = _state(found.slug, found.doc, current, lib, export, _vetoed(folder, lib))
     blocked = _source_block(folder, found.made_from, export) or state.blocked
     if blocked:

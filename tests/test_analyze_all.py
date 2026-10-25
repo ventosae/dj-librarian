@@ -94,7 +94,8 @@ def test_analyze_xml_writes_every_file_and_only_inside_the_library(lib_dir, tmp_
     assert result["written"] == WRITTEN and result["kept"] == [] and result["failed"] == []
     assert [line.split(" ", 3)[2] for line in result["log"]] == ["profile", "structure", "taste", "identity", "report"]
     changed = {p for p in after if before.get(p) != after[p]}
-    assert changed == {f"dj-library/{rel}" for rel in WRITTEN} | {"dj-library/log.md"}
+    assert changed == {f"dj-library/{rel}" for rel in WRITTEN} | {"dj-library/log.md", "dj-library/library.yaml"}
+    assert libfolder.load_meta(lib_dir)["source"] == "xml"  # W-36: dj-build reads what this analysis read
     assert set(before) <= set(after)  # nothing removed; the export and the DJ's XML untouched
 
 
@@ -262,3 +263,15 @@ def test_mcp_tool_writes_text_files_only():
     tool = {t.name: t for t in asyncio.run(m.server.list_tools())}["dj_library_analyze"]
     assert tool.annotations.read_only_hint is False and tool.annotations.destructive_hint is False
     assert "source" in tool.input_schema["properties"]
+
+
+def test_analyze_db_writes_the_same_files_as_the_xml_and_records_its_source(lib_dir, live, tmp_path):
+    """W-36 (D-30): the engine path (no export read) gives the same file set as the XML path, and
+    library.yaml says which read it was, so dj-build reads the same."""
+    other = tmp_path / "xml" / "dj-library"
+    libfolder.scaffold(other, device="windows", today=DAY)
+    libfolder.import_export(other, fx.write_xml(tmp_path / "xml" / "collection.xml"), today=DAY)
+    from_xml = run_all.analyze(other, today=DAY)
+    from_db = run_all.analyze(lib_dir, source="db", today=DAY)
+    assert from_db["failed"] == [] and sorted(from_db["written"]) == sorted(from_xml["written"])
+    assert libfolder.load_meta(lib_dir)["source"] == "db" and libfolder.load_meta(other)["source"] == "xml"

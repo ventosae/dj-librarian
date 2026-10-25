@@ -62,9 +62,9 @@ def test_three_routes_in_order_with_no_terminal_for_the_dj():
 def test_the_install_command_route():
     cmd = _routes()["1. The install command (first choice)"]
     assert "**Code** tab" in cmd and "**`/dj-librarian:install`**" in cmd and "**Allow**" in cmd
-    assert "asks once for your dj-library folder" in cmd and "a backup of the config first" in cmd
+    assert "asks once which folder should be your dj-library (it makes it" in cmd and "a backup of the config first" in cmd
     assert "Restart Claude Desktop" in cmd and "**Customize → Connectors → dj-librarian**" in cmd
-    assert "say **set me up**" in cmd and "`dj_status`" in cmd
+    assert "say **/dj-librarian:dj-start**" in cmd and "`dj_status`" in cmd and "**set me up**" in cmd
     assert "`/dj-librarian:uninstall`" in cmd and "(Q-32)" in cmd
 
 

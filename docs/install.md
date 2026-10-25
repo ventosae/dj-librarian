@@ -1,6 +1,6 @@
 # Install
 
-Two doors, no terminal. Door 1 is all a DJ needs for the first session. Door 2 is the engine, for live reads, My Tags, Spotify and tidy: the plugin zip carries its source, and one command in Claude Code installs it. The engine on its own, a desktop extension, is the second route.
+Install comes first (D-30). Upload the plugin zip (Door 1), then type `/dj-librarian:install` in Claude Code (Door 2, route 1): it installs the engine and makes your dj-library folder. Then say `/dj-librarian:dj-start` in a Cowork task: the first session reads rekordbox directly, no export. Without the install, the first session works from an XML export you make in rekordbox (Door 1, below). No terminal of your own either way.
 
 ## Door 1 — the plugin (Mac or Windows, 5 minutes)
 
@@ -9,7 +9,7 @@ What you need: the Claude desktop app, signed in to a plan that has Cowork. reko
 1. Get `dj-librarian-plugin-<version>.zip` (from a GitHub release, or from whoever is testing with you). Don't unzip it. The light `dj-librarian-plugin-<version>-no-engine.zip` is the same without the install command, for Door 1 only.
 2. Claude desktop app → **Customize → Plugins → Add → Upload plugin** → pick the zip. Turn the plugin on if it isn't.
 3. Start a Cowork task **on this computer** (not a cloud task: the folder you connect must be on your machine).
-4. Type **hi**. The first session is six steps; the A6 card (`docs/handout/dj-librarian-a6.pdf`) has them.
+4. Type **/dj-librarian:dj-start**. With the engine installed the first session is four steps and needs no export; without it, six steps, the XML export among them. The A6 card (`docs/handout/dj-librarian-a6.pdf`) has them.
 
 Analysis runs on a copy of your rekordbox XML export, inside Cowork. rekordbox is never touched; a structure you choose arrives as an XML you import yourself.
 
@@ -28,9 +28,9 @@ The engine runs on your computer. Pick the first route that works for you.
 The plugin zip carries the engine's source. Claude Code installs it; you type one line and click **Allow** on each step.
 
 1. Claude desktop app → **Code** tab → type **`/dj-librarian:install`**.
-2. Click **Allow** on each step (8 of them): it finds or installs uv, copies the engine to `dj-librarian` in your home folder, installs what it needs, checks it with `dj status`, asks once for your dj-library folder, and adds the engine to Claude Desktop's config (a backup of the config first; no other entry changes).
+2. Click **Allow** on each step (8 of them): it finds or installs uv, copies the engine to `dj-librarian` in your home folder, installs what it needs, checks it with `dj status`, asks once which folder should be your dj-library (it makes it; `Music/dj-library` in your home folder is the offer), and adds the engine to Claude Desktop's config (a backup of the config first; no other entry changes).
 3. Restart Claude Desktop. In **Customize → Connectors → dj-librarian**, leave every write tool on **Ask every time** (the list is below).
-4. In a Cowork task, say **set me up**: Claude calls `dj_status` and answers with your track count, read live from rekordbox.
+4. In a Cowork task, say **/dj-librarian:dj-start**: the first session reads your collection straight from rekordbox (`dj_status`, then the analysis from master.db) and ends with the same report. Later, **set me up** checks the engine.
 
 A step fails: the command stops and shows one line. Send that line to whoever gave you the plugin. To take the engine out again: `/dj-librarian:uninstall` (the config entry goes, the folder stays). Unverified on a Mac until it has run there once (Q-32).
 

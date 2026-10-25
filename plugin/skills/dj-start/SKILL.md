@@ -1,6 +1,6 @@
 ---
 name: dj-start
-description: First session with a DJ, from hello to the HTML report on their rekordbox library in six steps (device, XML export, library folder, analysis, report, next move). Use on a first hello, or when the DJ says "sort my library", "start", "analyse my library" or "analyze my library", or when no dj-library folder is set up yet.
+description: First session with a DJ, from hello to the HTML report on their rekordbox library. With the engine installed it reads rekordbox directly in four steps, else six (device, XML export, library folder, analysis, report, next move). Use on a first hello, or when the DJ says "sort my library", "start", "analyse my library" or "analyze my library", or when no dj-library folder is set up yet.
 ---
 
 # dj-start
@@ -49,6 +49,50 @@ Pass the name as `--dj-name "<name>"` to that init; "skip" passes `--dj-name You
 - Nothing to read (no `xml` and no `library.latest_export`): step 2.
 - A new export (`new_export` true) or no report yet (`library.latest_report` null): step 4.
 - Otherwise nothing is new: step 6, with its "no new export" first line.
+
+## With the engine (session 1b)
+
+Install comes first (D-30). Check this before step 1: the engine is installed when its `dj_status`
+tool is among your tools (`mcp__dj-librarian__dj_status`, or the plugin's
+`mcp__plugin_dj-librarian_dj-librarian__dj_status`; `dj.library_setup.session_path` is the same
+rule). Engine present: no export and no folder step, four steps (`Step N of 4`), the same report.
+Engine absent: the six steps below, as before.
+
+**E1 Hello.** Call `dj_status`: it reads master.db live, and `links_file` sits in the dj-library
+folder the install made (`DJ_LIBRARY`). This task reads and writes that folder's files: when no
+connected folder holds `library.yaml`, ask once and wait (Q-33):
+
+```text
+Step 1 of 4 · under a minute. Connect your dj-library folder (<folder name>) to this task, then say done.
+```
+
+`library.yaml` holds the device (the install wrote it). `dj_name` missing: ask the handle in one
+line, then `python3 scripts/start.py handle --library <folder> --dj-name "<name>"` ("skip" passes
+`--dj-name You`).
+
+```text
+Step 1 of 4 · under a minute. The engine is in: I read your collection straight from rekordbox, no export. What do they call you in the booth? It goes on the report; skip it and it says You.
+```
+
+**E2 Working.** The same task list as step 4, run differently: profile, structure, taste and
+identity come from one call, `dj_library_analyze(source="db")` (it reads a master.db snapshot,
+writes their files and a first report, and records `source: db` in `library.yaml`). Then write
+`profile/habits.md` and `profile/identity.md` yourself as in step 4, then
+`python3 ../dj-report/scripts/report.py --library <folder>`: the report with the liner notes.
+
+```text
+Step 2 of 4 · about 5 minutes. Go make a coffee.
+```
+
+**E3 Report and E4 Next.** As steps 5 and 6, numbered `Step 3 of 4` and `Step 4 of 4`; the file
+card is the newest report the report script names. The last line of E4 replaces the engine offer:
+
+```text
+Step 4 of 4 · under 2 minutes. Pick one below: I show you the new tree before anything gets written.
+Read live from your rekordbox, My Tags included; play history is not read yet.
+```
+
+The DJ picks a structure: dj-build reads master.db too (`source: db` in `library.yaml`).
 
 ## The six steps
 

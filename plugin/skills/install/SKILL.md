@@ -26,11 +26,11 @@ Eight steps; the DJ clicks Allow on every command. Before each step send one lin
 
 5. **The proof.** `"<uv>" run --directory "<engine folder>" --no-sync dj status`. It prints the rekordbox version and the track count. On any error: show it, say "send this line to whoever gave you the plugin", and stop here. Do not go on to the config.
 
-6. **The dj-library folder.** Ask once: "Which folder is your dj-library? Drag it into this chat or paste its path." Check that it holds `library.yaml` (Mac: `test -f "<folder>/library.yaml"`; Windows: `Test-Path "<folder>\library.yaml"`). If it does not, say "That folder has no library.yaml: run session 1 first (say hi in a Cowork task)." and stop.
+6. **The dj-library folder.** Ask once: "Which folder should be your dj-library? Drag one in or paste a path. If it doesn't exist I make it." Offer `~/Music/dj-library` (Windows: `%USERPROFILE%\Music\dj-library`) as the default: "Or say ok for <that path>." Then `"<uv>" run --directory "<engine folder>" --no-sync python "<engine folder>/scripts/library_init.py" --folder "<folder>" --device <mac|windows>`, the device from step 1. It makes a missing folder, sets up an empty one, keeps one that already holds `library.yaml` as it is, and refuses a folder with other files in it or one inside OneDrive, Dropbox, iCloud or Google Drive (the rule of step 3). It prints one JSON line: say its `status` (created, existing). An `error` line: show it, ask for another folder once, and stop if that one is refused too.
 
 7. **Claude Desktop's config.** `"<uv>" run --directory "<engine folder>" --no-sync python "<engine folder>/scripts/merge_desktop_config.py" merge --uv "<uv>" --folder "<engine folder>" --library "<dj-library folder>"`. It backs the config up to `claude_desktop_config.json.bak-<date>` first, then adds or replaces only `mcpServers["dj-librarian"]` (with `DJ_LIBRARY` set to the dj-library folder) and keeps every other key. It prints one JSON line: say its `status` (added, replaced, unchanged) and where the backup went. An `error` line: show it and stop.
 
-8. **Restart.** Say: "Restart Claude Desktop. Then in Customize → Connectors → dj-librarian, leave every `_apply`, `_write`, `_undo` tool on Ask every time." End with one line: `say "set me up" in a Cowork task to check it`.
+8. **Restart.** Say: "Restart Claude Desktop. Then in Customize → Connectors → dj-librarian, leave every `_apply`, `_write`, `_undo` tool on Ask every time." End with one line: `In a Cowork task, say /dj-librarian:dj-start`.
 
 To take the engine out again: `/dj-librarian:uninstall`.
 

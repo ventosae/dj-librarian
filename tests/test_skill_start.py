@@ -660,7 +660,7 @@ def test_without_the_core_the_script_still_prints_one_json_object(tmp_path):
 def test_the_script_is_thin():
     """Contract section 0: argument parsing + a call into dj.*. The rules live in dj.onboarding."""
     text = SCRIPT.read_text(encoding="utf-8")
-    assert "from dj import onboarding" in text
+    assert re.search(r"from dj import (?:\w+, )*onboarding\b", text)
     for logic in ("os.walk", "import_export", "scaffold(", "append_log", "read_xml", "_library_root"):
         assert logic not in text, logic
 
@@ -763,7 +763,7 @@ def test_frontmatter_names_the_skill_and_its_triggers():
     description = meta["description"]
     for trigger in ("hello", "sort my library", '"start"', "analyse my library"):
         assert trigger in description, trigger
-    assert "engine" not in description.lower()
+    assert "with the engine installed it reads rekordbox directly in four steps" in description.lower()  # D-30
 
 
 def test_header_lines_voice_and_requirements():
@@ -951,12 +951,27 @@ def test_step_3_has_a_reply_for_every_error_reason():  # matter-of-fact, with th
     assert "device_was" in step
 
 
-def test_the_engine_is_offered_only_in_step_6():  # R-102
-    text, step = _text().lower(), _step(6).lower()
-    for phrase in ("engine", "set me up"):
+def test_the_xml_path_offers_the_engine_only_in_step_6():  # R-102, D-30
+    """Without the engine, the install is offered once, at step 6. The engine path (session 1b)
+    is the other branch of the same skill, so it may name the engine; the six steps may not."""
+    steps = _section("##", "The six steps").lower()
+    step = _step(6).lower()
+    for phrase in ("/dj-librarian:install", "set me up"):
         assert step.count(phrase) > 0, phrase
-        assert text.count(phrase) == step.count(phrase), f"{phrase!r} appears outside step 6"
+        assert steps.count(phrase) == step.count(phrase), f"{phrase!r} appears outside step 6"
     assert ENGINE_OFFER in _step(6)
+
+
+def test_the_engine_path_skips_export_and_folder():  # D-30, W-36
+    engine = _section("##", "With the engine")
+    flat = " ".join(engine.split())
+    assert "`dj_status`" in flat and "`mcp__dj-librarian__dj_status`" in flat and "session_path" in flat
+    assert "no export and no folder step, four steps (`Step N of 4`), the same report" in flat
+    assert '`dj_library_analyze(source="db")`' in flat and "records `source: db`" in flat
+    assert "python3 scripts/start.py handle --library <folder>" in flat and "(Q-33)" in flat
+    for block in _templates(engine):
+        assert re.match(r"Step [1-4] of 4 · ", block), block
+    assert "Read live from your rekordbox, My Tags included; play history is not read yet." in engine
 
 
 def test_step_6_offers_the_proposals_and_says_what_was_missing():  # R-102, Q-01

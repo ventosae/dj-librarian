@@ -168,3 +168,45 @@ def test_a_proposals_file_from_before_still_reads(folder):
     path.write_text(yaml.safe_dump(bad, sort_keys=False), encoding="utf-8")
     with pytest.raises(P.ProposalsError, match="`source` must be one line"):
         P.load(path)
+
+
+# -- W-36: a library analysed from master.db builds from master.db ---------------------------------------
+
+
+@pytest.fixture
+def live(tmp_path, monkeypatch):
+    from dj import safety
+
+    db = fx.write_master_files(tmp_path / "Pioneer" / "rekordbox")
+    monkeypatch.setattr(safety, "_connect", lambda db_path, quiet=False: fx.fake_db())
+    monkeypatch.setattr(safety, "find_master_db", lambda: db)
+    return db
+
+
+def _db_made(folder, when: str) -> None:
+    path = folder.root / "structure" / "proposals.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    for entry in data:
+        entry["source"] = P.db_source(datetime.fromisoformat(when))
+    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+
+def test_a_db_library_builds_from_master_db_even_with_an_older_export(folder, live):
+    """Q-17 for the engine path: proposals made from master.db after the newest export are blocked
+    on the export, but build from a fresh snapshot when library.yaml says source: db."""
+    _db_made(folder, "2099-01-01T00:00:00+00:00")  # newer than any export
+    assert bs.preview(folder, "lanes", today=DAY, now=NOW).blocked  # the XML read: blocked as before
+    libfolder.update_meta(folder.root, today=DAY, source="db")
+    found = bs.preview(folder, "lanes", today=DAY, now=NOW)
+    assert found.export == "master.db" and found.blocked is None and found.preview_id
+    result = bs.apply(folder, "lanes", found.preview_id, today=DAY, now=NOW)
+    assert result.xml_path.is_file() and result.xml_file == "proposals/lanes.xml"
+
+
+def test_the_cli_takes_source_db_and_refuses_another(folder, live):
+    done = CliRunner().invoke(cli.app, ["library", "build", "lanes", "--library", str(folder.root), "--source", "db",
+                                        "--today", "2026-10-20", "--json"])  # fmt: skip
+    assert done.exit_code == 0, done.output
+    assert json.loads(done.output[done.output.index("{"):])["export"] == "master.db"
+    bad = CliRunner().invoke(cli.app, ["library", "build", "lanes", "--library", str(folder.root), "--source", "web"])
+    assert bad.exit_code != 0 and "source must be one of xml, db" in bad.output
