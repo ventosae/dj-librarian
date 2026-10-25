@@ -7,5 +7,6 @@
   },
   "license": "Apache-2.0",
   "repository": "https://github.com/ventosae/dj-librarian",
+  "icon": "./icon.png",
   "keywords": ["rekordbox", "dj", "spotify", "playlists", "music-library", "id3", "mcp"]
 }

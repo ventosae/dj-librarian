@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<rect width="512" height="512" rx="112" fill="#1a1a19"/>
+<circle cx="256" cy="256" r="216" fill="#0b0b0b"/>
+<circle cx="256" cy="256" r="204" fill="none" stroke="#262624" stroke-width="2.5"/><circle cx="256" cy="256" r="191" fill="none" stroke="#262624" stroke-width="2.5"/><circle cx="256" cy="256" r="178" fill="none" stroke="#262624" stroke-width="2.5"/><circle cx="256" cy="256" r="165" fill="none" stroke="#262624" stroke-width="2.5"/><circle cx="256" cy="256" r="152" fill="none" stroke="#262624" stroke-width="2.5"/><circle cx="256" cy="256" r="139" fill="none" stroke="#262624" stroke-width="2.5"/><circle cx="256" cy="256" r="126" fill="none" stroke="#262624" stroke-width="2.5"/><circle cx="256" cy="256" r="113" fill="none" stroke="#262624" stroke-width="2.5"/>
+<path d="M 106,106 A 212 212 0 0 1 406,106" fill="none" stroke="#ffffff" stroke-opacity=".10" stroke-width="10" stroke-linecap="round"/>
+<path d="M 406,406 A 212 212 0 0 1 106,406" fill="none" stroke="#ffffff" stroke-opacity=".06" stroke-width="10" stroke-linecap="round"/>
+<path d="M256,256 L256.00,170.00 A86,86 0 0,1 342.00,256.00 Z" fill="#3987e5"/><path d="M256,256 L342.00,256.00 A86,86 0 0,1 256.00,342.00 Z" fill="#d95926"/><path d="M256,256 L256.00,342.00 A86,86 0 0,1 170.00,256.00 Z" fill="#199e70"/><path d="M256,256 L170.00,256.00 A86,86 0 0,1 256.00,170.00 Z" fill="#c98500"/>
+<path d="M256,170 V342 M170,256 H342" stroke="#0b0b0b" stroke-width="5"/>
+<circle cx="256" cy="256" r="86" fill="none" stroke="#0b0b0b" stroke-width="3"/>
+<circle cx="256" cy="256" r="13" fill="#1a1a19"/>
+</svg>
