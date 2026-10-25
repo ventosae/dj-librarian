@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "dj-librarian",
   "display_name": "dj-librarian engine",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "The engine of dj-librarian: reads your rekordbox library and Spotify inboxes, proposes crates, playlist trees and tag fixes. Create and add only, dry-run first, nothing written without your yes.",
   "long_description": "The part of dj-librarian that talks to rekordbox and Spotify. It reads your library, matches Spotify inboxes against your crates, builds playlist trees and tidies empty tags. rekordbox stays the source of truth: every write tool has a preview first and runs only after you say yes, and it only ever adds. Point it at your dj-library folder; your Spotify keys stay in this extension's settings.",
   "author": {

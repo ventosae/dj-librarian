@@ -1,6 +1,6 @@
 {
   "name": "dj-librarian",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A DJ librarian for rekordbox you talk to through Claude. Syncs Spotify inboxes into crates, builds playlist trees and tidies tags. Create and add only, dry-run first, nothing written without your yes.",
   "author": {
     "name": "Anton Surov"
