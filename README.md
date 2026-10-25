@@ -39,7 +39,7 @@ DJs: [docs/install.md](docs/install.md) is the one install doc. The plugin zip, 
 You need [uv](https://docs.astral.sh/uv/) and rekordbox 7.
 
 ```bash
-git clone https://github.com/OWNER/dj-librarian.git
+git clone https://github.com/ventosae/dj-librarian.git
 cd dj-librarian
 uv sync
 uv run dj status

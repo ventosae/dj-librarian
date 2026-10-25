@@ -6,6 +6,6 @@
     "name": "Anton Surov"
   },
   "license": "Apache-2.0",
-  "repository": "https://github.com/OWNER/dj-librarian",
+  "repository": "https://github.com/ventosae/dj-librarian",
   "keywords": ["rekordbox", "dj", "spotify", "playlists", "music-library", "id3", "mcp"]
 }

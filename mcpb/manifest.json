@@ -11,7 +11,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/OWNER/dj-librarian"
+    "url": "https://github.com/ventosae/dj-librarian"
   },
   "keywords": ["rekordbox", "dj", "spotify", "playlists", "music-library", "id3", "mcp"],
   "server": {
