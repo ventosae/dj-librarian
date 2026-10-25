@@ -43,7 +43,7 @@ def test_two_doors_and_a_status_table():
     titles = list(_sections(_text()))
     assert titles[0].startswith("Door 1") and titles[1].startswith("Door 2")
     assert titles[2] == "Status of each route"
-    assert "no terminal" in _text().split("\n## ")[0]
+    assert "no terminal" in _text().split("\n## ")[0].lower()
 
 
 def _routes() -> dict[str, str]:
