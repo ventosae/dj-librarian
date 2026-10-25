@@ -1,6 +1,6 @@
 ---
 name: dj-build
-description: Turn a structure proposal from the library report into a rekordbox XML the DJ imports. Preview the tree first (CREATE / SKIP per node, where existing playlists land), ask "Write the XML?", write proposals/<slug>.xml only after an explicit yes, then give the import card for their OS. Use when the DJ says "Build me the <name> structure", picks a proposal chip from the report, or asks to build, rebuild or import a new playlist tree, even if they never say "build".
+description: Turn a structure proposal from the library report into a rekordbox XML the DJ imports. Preview the tree first (CREATE / SKIP per node, where existing playlists land), ask "Write the XML?", write the XML into proposals/ only after an explicit yes, then give the import card for their OS. Use when the DJ says "Build me the ... structure" with a proposal's name, picks a proposal chip from the report, or asks to build, rebuild or import a new playlist tree, even if they never say "build".
 ---
 
 # dj-build

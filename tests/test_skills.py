@@ -126,6 +126,16 @@ def test_frontmatter_name_and_description(skill_dir):
 
 
 @pytest.mark.parametrize("skill_dir", SKILL_DIRS, ids=lambda p: p.name)
+def test_frontmatter_passes_the_claude_ai_upload_check(skill_dir):
+    """claude.ai's Upload plugin refused the zip over `<slug>` in a description: no XML tags, a
+    lowercase-hyphen name of at most 64 characters, a description of at most 1,024 (Q-21)."""
+    meta, _ = _frontmatter(_text(skill_dir / "SKILL.md"))
+    assert re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", meta["name"]) and len(meta["name"]) <= 64
+    assert "<" not in meta["description"] and ">" not in meta["description"], skill_dir.name
+    assert len(meta["description"]) <= 1024
+
+
+@pytest.mark.parametrize("skill_dir", SKILL_DIRS, ids=lambda p: p.name)
 def test_body_names_requirement_ids(skill_dir):
     _, body = _frontmatter(_text(skill_dir / "SKILL.md"))
     assert re.search(r"R-[0-9]{3,4}", body), "the body must name the R-ids it serves"

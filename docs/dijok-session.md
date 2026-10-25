@@ -4,7 +4,7 @@ About 75 minutes. Dijok drives; Anton writes, out of the room by screen share fo
 
 ## Before (Anton, about 20 minutes)
 
-- [ ] Zip built from `main` (`uv run python scripts/build_plugin_zip.py`) and uploaded in his Claude app (Customize → Plugins → Add → Upload plugin). Refused? Rebuild with `--flat`.
+- [ ] Zip built from `main` (`uv run python scripts/build_plugin_zip.py`) and uploaded in his Claude app (Customize → Plugins → Add → Upload plugin). Refused? Note the error lines.
 - [ ] A new Cowork task open, not a chat. Folder name agreed: `dj-library`, new and empty.
 - [ ] Noted: Mac or Windows ____ · rekordbox version ____ · rekordbox playlist count ____
 - [ ] Screen share tested; `docs/samples/reports/sample-library.html` open on your laptop.

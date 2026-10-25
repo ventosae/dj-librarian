@@ -1,7 +1,7 @@
 """scripts/build_plugin_zip.py: the plugin zip with one copy of the core inside, plugin/engine/
 (D-29, Q-21).
 
-The zip holds plugin/ (with the install and uninstall commands) and plugin/engine/: the tracked
+The zip holds the plugin at its root (with the install and uninstall commands) and engine/: the tracked
 src/dj/**, the project files, examples/ and the config script, byte for byte, never a test, a doc,
 vendor/ or the engine bundle. `--no-engine` gives the light zip: engine/src for Door 1, no install
 pieces. A zip over 15 MB is refused. Unzipped where there is no clone and `dj` cannot be imported,
@@ -95,20 +95,21 @@ def _engine_rel() -> set[str]:
 def test_the_zip_holds_the_plugin_and_one_copy_of_the_core(built, bz):
     _result, path = built
     names = set(_names(path))
-    assert all(name.startswith("plugin/") for name in names)
-    plugin = {f"plugin/{p.relative_to(REPO / 'plugin').as_posix()}" for p in bz.plugin_files()}
-    engine = {f"plugin/engine/{rel}" for rel in _engine_rel()}
-    assert names == plugin | engine | {"plugin/engine/BUILD.txt"}
-    assert {"plugin/commands/install.md", "plugin/commands/uninstall.md", "plugin/engine/src/dj/installer.py",
-            "plugin/engine/scripts/merge_desktop_config.py", "plugin/engine/uv.lock"} <= names  # fmt: skip
-    for gone in ("plugin/.mcp.json", "plugin/engine.mcpb"):  # D-29: no bundle inside, no vendor/
+    assert ".claude-plugin/plugin.json" in names  # at the root: Upload plugin wants it there (Q-21)
+    assert not any(name.startswith("plugin/") for name in names)
+    plugin = {p.relative_to(REPO / "plugin").as_posix() for p in bz.plugin_files()}
+    engine = {f"engine/{rel}" for rel in _engine_rel()}
+    assert names == plugin | engine | {"engine/BUILD.txt"}
+    assert {"commands/install.md", "commands/uninstall.md", "engine/src/dj/installer.py",
+            "engine/scripts/merge_desktop_config.py", "engine/uv.lock"} <= names  # fmt: skip
+    for gone in (".mcp.json", "engine.mcpb"):  # D-29: no bundle inside, no vendor/
         assert gone not in names
-    assert not any(n.startswith(("plugin/vendor/", "plugin/engine/tests/", "plugin/engine/docs/")) for n in names)
+    assert not any(n.startswith(("vendor/", "engine/tests/", "engine/docs/")) for n in names)
     with zipfile.ZipFile(path) as zf:
         for rel in _engine_rel():  # byte for byte what the repo holds
-            assert zf.read(f"plugin/engine/{rel}") == (REPO / rel).read_bytes(), rel
-        assert "mcpServers" not in json.loads(zf.read("plugin/.claude-plugin/plugin.json"))
-        assert re.fullmatch(rf"dj-librarian {_version()} [0-9a-f]{{16}}\n", zf.read("plugin/engine/BUILD.txt").decode())
+            assert zf.read(f"engine/{rel}") == (REPO / rel).read_bytes(), rel
+        assert "mcpServers" not in json.loads(zf.read(".claude-plugin/plugin.json"))
+        assert re.fullmatch(rf"dj-librarian {_version()} [0-9a-f]{{16}}\n", zf.read("engine/BUILD.txt").decode())
 
 
 def test_the_same_files_give_the_same_zip(bz, built, tmp_path):
@@ -119,13 +120,10 @@ def test_the_same_files_give_the_same_zip(bz, built, tmp_path):
     assert [p.name for p in tmp_path.iterdir()] == [first.name]  # its temp file is gone
 
 
-def test_flat_puts_the_plugin_at_the_zip_root(bz, tmp_path):
-    if not _git_checkout():
-        pytest.skip("not a git checkout: the zip is built from the files git tracks")
-    bz.build(tmp_path, flat=True)
-    names = _names(tmp_path / f"dj-librarian-plugin-{_version()}.zip")
-    assert ".claude-plugin/plugin.json" in names and "engine/src/dj/libfolder.py" in names
-    assert not any(name.startswith("plugin/") for name in names)
+def test_the_plugin_sits_at_the_zip_root():
+    """claude.ai's Upload plugin refused a zip with a top `plugin/` folder: it wants
+    `.claude-plugin/plugin.json` at the root (Q-21)."""
+    assert "--flat" not in SCRIPT.read_text(encoding="utf-8")
 
 
 def test_no_engine_gives_the_light_zip_for_door1(built, light):
@@ -136,9 +134,8 @@ def test_no_engine_gives_the_light_zip_for_door1(built, light):
     names, everything = set(_names(path)), set(_names(full))
     assert names < everything and result["files"] == len(names)
     for name in everything - names:  # only what installs the engine is left out
-        assert name.startswith("plugin/commands/") or (
-            name.startswith("plugin/engine/") and not name.startswith("plugin/engine/src/")), name
-    assert {n for n in everything if n.startswith("plugin/engine/src/")} <= names  # Door 1 needs the core
+        assert name.startswith("commands/") or (name.startswith("engine/") and not name.startswith("engine/src/")), name
+    assert {n for n in everything if n.startswith("engine/src/")} <= names  # Door 1 needs the core
 
 
 def test_main_no_engine_prints_the_light_zip(bz, tmp_path, capsys):
@@ -276,7 +273,7 @@ def test_unzipped_without_a_clone_the_scripts_run_the_chain_from_engine_src(buil
     unzipped = tmp_path / "upload"
     with zipfile.ZipFile(path) as zf:
         zf.extractall(unzipped)
-    skills = unzipped / "plugin" / "skills"
+    skills = unzipped / "skills"
     assert not (tmp_path / "src").exists()  # no clone: only plugin/engine/src can serve the core
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
     env["PYTHONPATH"] = str(site)  # PyYAML, but no dj: the .pth is not read under -S

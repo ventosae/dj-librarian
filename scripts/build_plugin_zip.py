@@ -1,13 +1,13 @@
 """Build the plugin zip a DJ uploads: plugin/ and one copy of the core inside it, plugin/engine/
 (D-17, D-29, Q-21).
 
-    uv run python scripts/build_plugin_zip.py [--out DIR] [--flat] [--no-engine]
+    uv run python scripts/build_plugin_zip.py [--out DIR] [--no-engine]
 
 Writes `<out>/dj-librarian-plugin-<version>.zip` (default `dist/`, gitignored) and prints one
 JSON object: the zip, its file count and size, the version, and whether the engine is in it.
 
-What goes in, under the top folder `plugin/` (with `--flat`, at the zip's root instead: which
-layout Claude's "Upload plugin" wants is unverified until the first upload, Q-21):
+What goes in, at the zip's root: claude.ai's Upload plugin wants `.claude-plugin/plugin.json` there
+and refuses a zip with the plugin under a top folder (Q-21, answered at the first upload):
 - every file git tracks under `plugin/` except caches (`__pycache__/`, `*.pyc`, `.mcpb-cache/`,
   OS files) and anything a local build or an older zip layout left there (`engine/`, `vendor/`,
   `engine.mcpb`). A file under `plugin/` that git does not track (a `.env`, notes, local
@@ -49,7 +49,6 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 PLUGIN = REPO / "plugin"
-TOP = "plugin"  # the zip's one top folder: the plugin as it sits in the repo
 ENGINE = "engine"  # plugin/engine/: the engine's source
 ENGINE_EXTRA = ("examples", "scripts/merge_desktop_config.py")  # beside the bundle's files
 STAMP_FILE = "BUILD.txt"  # engine/BUILD.txt: the version and a hash of the engine's files
@@ -143,10 +142,10 @@ def stamp(files: dict[str, Path], ver: str) -> bytes:
     return f"dj-librarian {ver} {digest.hexdigest()[:16]}\n".encode("utf-8")
 
 
-def entries(*, flat: bool = False, engine: bool = True) -> dict[str, Path | bytes]:
-    """{name in the zip: source file, or the bytes that go in}. `flat`: no top folder. Not
-    `engine`: the light zip."""
-    top = "" if flat else f"{TOP}/"
+def entries(*, engine: bool = True) -> dict[str, Path | bytes]:
+    """{name in the zip: source file, or the bytes that go in}, every name at the zip's root
+    (`.claude-plugin/plugin.json`, `skills/...`, `engine/...`). Not `engine`: the light zip."""
+    top = ""
     names: dict[str, Path | bytes] = {}
     for path in plugin_files():  # first: a stray file refuses before anything else
         rel = path.relative_to(PLUGIN).as_posix()
@@ -165,11 +164,11 @@ def zip_name(ver: str, *, engine: bool = True) -> str:
     return f"dj-librarian-plugin-{ver}.zip" if engine else f"dj-librarian-plugin-{ver}-no-engine.zip"
 
 
-def build(out_dir: Path, *, flat: bool = False, engine: bool = True) -> dict[str, object]:
+def build(out_dir: Path, *, engine: bool = True) -> dict[str, object]:
     """Write the zip into `out_dir` (a temp file first, then its name) and say what is in it.
     Nothing is written when the zip would be over MAX_BYTES."""
     ver = version()
-    names = entries(flat=flat, engine=engine)
+    names = entries(engine=engine)
     out_dir.mkdir(parents=True, exist_ok=True)
     target = out_dir / zip_name(ver, engine=engine)
     fd, tmp = tempfile.mkstemp(dir=out_dir, prefix=f".{target.name}.", suffix=".tmp")
@@ -201,12 +200,11 @@ def build(out_dir: Path, *, flat: bool = False, engine: bool = True) -> dict[str
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build dist/dj-librarian-plugin-<version>.zip (nothing is uploaded).")
     parser.add_argument("--out", type=Path, default=REPO / "dist", help="folder for the zip (default: dist/)")
-    parser.add_argument("--flat", action="store_true", help="the plugin's files at the zip's root, no plugin/ folder")
     parser.add_argument("--no-engine", action="store_true",
                         help="the light zip ...-no-engine.zip: Door 1 only, no install command")  # fmt: skip
     args = parser.parse_args(argv)
     try:
-        result = build(args.out.resolve(), flat=args.flat, engine=not args.no_engine)
+        result = build(args.out.resolve(), engine=not args.no_engine)
     except BuildError as exc:
         print(json.dumps({"error": str(exc)}))
         return 1

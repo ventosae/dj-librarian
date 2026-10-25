@@ -1,6 +1,6 @@
 ---
 name: dj-crate
-description: Crate me. Pick a crate for a night (30, 50 or 70 tracks plus 20% spares) from the DJ's own library, from a brief ("Crate me 50 for Saturday's rooftop"). Turn the brief into crates/<slug>.spec.yaml, preview the picks with one reason each, ask "Write the crate XML?", and only after an explicit yes write proposals/crate-<slug>.xml and crates/<slug>.md, then give the import card. Use when the DJ asks for a crate, a set list, tracks for a gig, a warm-up or peak-time selection, or says "crate me", even if they never say "crate". Syncing a Spotify inbox playlist into a crate is dj-sync, not this skill.
+description: Crate me. Pick a crate for a night (30, 50 or 70 tracks plus 20% spares) from the DJ's own library, from a brief ("Crate me 50 for Saturday's rooftop"). Turn the brief into a crate spec in crates/, preview the picks with one reason each, ask "Write the crate XML?", and only after an explicit yes write the crate XML into proposals/ and the crate record into crates/, then give the import card. Use when the DJ asks for a crate, a set list, tracks for a gig, a warm-up or peak-time selection, or says "crate me", even if they never say "crate". Syncing a Spotify inbox playlist into a crate is dj-sync, not this skill.
 ---
 
 # dj-crate

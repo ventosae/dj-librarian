@@ -26,7 +26,7 @@ Until the first release, a tester runs the plugin from a zip. This is Door 1: no
 4. Three moves from you: say Mac or Windows, export your collection from rekordbox (File → Export Collection in xml format), connect a folder in Cowork (a new one called `dj-library`) and drop the XML into it.
 5. About 5 minutes later the report is in `reports/<date>-library.html`: who you are as a DJ, how your library is built, two or three ways to rebuild it. Pick one and you see the new tree first; after your yes you get `proposals/<slug>.xml` to import in rekordbox yourself.
 
-rekordbox is never touched: Door 1 reads a copy of your export, and you do the import. Crate me and Style Barber run from the zip too. If the upload refuses the zip, build it again with `--flat` (the plugin at the zip's root; which layout the upload wants is still open, Q-21).
+rekordbox is never touched: Door 1 reads a copy of your export, and you do the import. Crate me and Style Barber run from the zip too.
 
 The engine (live reads of your rekordbox database for My Tags, Spotify, `dj tidy` on your audio files) comes in the same zip as source: in the Claude desktop app's Code tab, type `/dj-librarian:install` and click Allow on each step, then say "set me up" in a Cowork task; the engine card ([plugin/skills/dj-start/engine.md](plugin/skills/dj-start/engine.md), about 5 minutes) walks you through it. The second route is the engine on its own, `dj-librarian-engine-<version>.mcpb`: Claude desktop app → Settings → Extensions → drag it in → Install (unverified, Q-31). The light zip, `dj-librarian-plugin-<version>-no-engine.zip`, is Door 1 only. All of it in one place: [docs/install.md](docs/install.md).
 
