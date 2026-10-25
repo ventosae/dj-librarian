@@ -70,7 +70,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-206 | Every machine with the engine gets a verified copy of the rekordbox database (`master.db`, `-wal`, `-shm`, `masterPlaylists6.xml`) in `<dj-library>/backups/rekordbox-<date>/` before the first thing that can change it: install step 7, the start of an engine session, right before every import card (D-31). Unchanged since the last verified copy: nothing copied. Never written into rekordbox's folder; no backup ever deleted; refused in a synced folder. `RESTORE.md` holds the steps back for that OS. | M | On a real Windows and a real Mac: `dj backup` prints `Backup: <path> · <size> · verified`, its `RESTORE.md` names the real Pioneer folder, a second run says `unchanged since <date>`. | Built (live check: W-28) | v0.1 |
 | R-203 | Mac port: process check without `tasklist.exe`, DB discovery under `~/Library/Pioneer/rekordbox`, path handling, Claude Desktop config path on macOS. | M | Tests green on `macos-latest` and `windows-latest`; live `dj_status` on one Mac when a Mac tester appears. | Built | v0.1 |
 | R-204 | One track/tree model fed by two readers: XML export and master.db. Fields: track metadata, playlist tree, smart playlists, ratings, colours, comments, date added; My Tags, play counts, history where the source has them. | M | Field list documented per reader; fixtures for each. Streamed rows (Spotify, Beatport Streaming, ...) are counted apart and never analysed as library tracks, from master.db and from an export alike; `dj status` prints `tracks: N · L local · S streaming`, and N is what rekordbox's collection shows (Q-34). | Built (play history deferred, Q-13) | v0.1 |
-| R-205 | Direct master.db writes (`dj tree --apply`, `dj apply --apply`, `dj copy --apply`) stay Windows-only power mode behind an explicit flag. | M | Flag absent → command refuses with a one-line reason. | Built | v0.1 |
+| R-205 | Direct master.db writes (`dj tree --apply`, `dj apply --apply`, `dj copy --apply`, and since W-38 `dj library build` / `dj library crate --apply`) stay Windows-only power mode behind an explicit flag, through one chain in this order: power mode on (`DJ_POWER_MODE`, `--power-mode`, Windows) → a valid preview id → rekordbox not running → a verified backup of master.db + masterPlaylists6.xml + `-wal`/`-shm` → the write, one commit, rollback on any exception. | M | Flag absent → command refuses with a one-line reason; each link refuses on its own, before the next, with nothing written (tests per writer). | Built | v0.1 |
 
 ### E3 Analysis (`dj-profile`, `dj-structure`, `dj-taste`)
 
@@ -107,7 +107,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 | R-501 | A trigger prompt produces `proposals/<name>.yaml` (tree as code) and a preview diff against the current tree. | M | Preview lists CREATE / SKIP per node; nothing written yet. | Built | v0.1 |
 | R-502 | After an explicit yes, write `proposals/<name>.xml` (rekordbox XML) and show per-OS import steps (Preferences → Advanced → Database → rekordbox xml; drag in). | M | XML validates with pyrekordbox; rekordbox imports it on Mac and Windows. | Built | v0.1 |
 | R-503 | Playlists in the XML pre-filled from existing playlists where the proposal maps them; tracks referenced by location. | M | Imported playlists contain the mapped tracks. | Built | v0.1 |
-| R-504 | master.db is never written by `dj-build`. | M | Test: no write session opened. | Built | v0.1 |
+| R-504 | `dj-build` (and `dj-crate`) write master.db only through the power-mode writer (`dj.db_write`, R-205): after the preview and the DJ's yes, with the engine, power mode on and rekordbox closed; the folders, playlists and memberships of the plan the preview showed, in one session, smart playlists left MANUAL. Without that route they write the XML only and never open a write session (D-32). | M | Tests: the XML route opens no write session; the db route creates exactly the previewed nodes and tracks in one commit and rolls back to the db as it was on a failure. | Built | v0.1 |
 | R-505 | Every build appends a line to `log.md` (R-904). | M | Line present after build. | Built | v0.1 |
 
 ### E6 Crate me
@@ -116,7 +116,7 @@ V-1. A DJ librarian you talk to. It learns how a DJ already works from their own
 |---|---|---|---|---|---|
 | R-601 | From a brief (event or vibe; size chips 30 / 50 / 70), select tracks from the DJ's own library. | M | Exactly N owned tracks, one-line reason each. | Built | v0.1 |
 | R-602 | Claude turns the brief into a structured spec; code selects and orders from `taste/` (lanes, anchors, co-occurrence, vetoes) and rekordbox fields (BPM, key, rating, My Tags); Claude writes the reasons. | M | Selection reproducible from the spec. | Built | v0.1 |
-| R-603 | Preview → yes → `proposals/crate-<name>.xml` for import (R-502) + `crates/<name>.md`. | M | Files produced; rekordbox imports the playlist. | Built | v0.1 |
+| R-603 | Preview → yes → `proposals/crate-<name>.xml` for import (R-502) + `crates/<name>.md`; with the engine and power mode on, straight into rekordbox instead (R-504). | M | Files produced; rekordbox imports the playlist. | Built | v0.1 |
 | R-604 | Spares: +20% tracks across energy levels, marked as spares. | M | Spares listed separately. | Built | v0.1 |
 
 ### E7 Style Barber

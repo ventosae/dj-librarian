@@ -40,9 +40,21 @@ def merge(s, **kw):
     return installer.merge_desktop_config(s["config"], s["uv"], s["folder"], s["library"], today=DAY, **kw)
 
 
-def ours(s):
+def ours(s, platform: str = sys.platform):
+    power = "true" if platform == "win32" else "false"  # W-38: writes into rekordbox on Windows only (Q-35)
     return {"command": str(s["uv"]), "args": ["run", "--directory", str(s["folder"]), "--no-sync", "dj-mcp"],
-            "env": {"UV_PROJECT_ENVIRONMENT": str(s["folder"] / ".venv"), "DJ_LIBRARY": str(s["library"].resolve())}}  # fmt: skip
+            "env": {"UV_PROJECT_ENVIRONMENT": str(s["folder"] / ".venv"), "DJ_POWER_MODE": power,
+                    "DJ_LIBRARY": str(s["library"].resolve())}}  # fmt: skip
+
+
+@pytest.mark.parametrize("platform, power", [("win32", "true"), ("darwin", "false")])
+def test_the_entry_sets_power_mode_per_os(setup, platform, power):
+    """D-32: on Windows the engine may write a previewed proposal or crate into rekordbox; on a Mac
+    it stays off until the live Mac write test (Q-35)."""
+    result = merge(setup, platform=platform)
+    entry = json.loads(setup["config"].read_text(encoding="utf-8"))["mcpServers"]["dj-librarian"]
+    assert entry["env"]["DJ_POWER_MODE"] == power and result["entry"] == entry
+    assert entry == ours(setup, platform) | {"command": entry["command"]}  # Windows may add uv's .exe
 
 
 def test_no_file_yet_gets_one_with_only_our_entry(setup):

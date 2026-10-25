@@ -1,32 +1,40 @@
 ---
 name: dj-crate
-description: Crate me. Pick a crate for a night (30, 50 or 70 tracks plus 20% spares) from the DJ's own library, from a brief ("Crate me 50 for Saturday's rooftop"). Turn the brief into a crate spec in crates/, preview the picks with one reason each, ask "Write the crate XML?", and only after an explicit yes write the crate XML into proposals/ and the crate record into crates/, then give the import card. Use when the DJ asks for a crate, a set list, tracks for a gig, a warm-up or peak-time selection, or says "crate me", even if they never say "crate". Syncing a Spotify inbox playlist into a crate is dj-sync, not this skill.
+description: Crate me. Pick a crate for a night (30, 50 or 70 tracks plus 20% spares) from the DJ's own library, from a brief ("Crate me 50 for Saturday's rooftop"). Turn the brief into a crate spec in crates/, preview the picks with one reason each; with the engine and power mode on (Windows) ask "Write it into rekordbox?" and after an explicit yes write it straight into rekordbox (closed, a backup first), otherwise ask "Write the crate XML?" and only after an explicit yes write the crate XML into proposals/ and give the import card; the crate record goes into crates/ either way. Use when the DJ asks for a crate, a set list, tracks for a gig, a warm-up or peak-time selection, or says "crate me", even if they never say "crate". Syncing a Spotify inbox playlist into a crate is dj-sync, not this skill.
 ---
 
 # dj-crate
 
-A brief becomes a crate the DJ imports into rekordbox by hand. Code picks and orders the tracks
-from their own library and `taste/` (lanes, anchors, co-occurrence, vetoes); you turn the brief
-into the spec and say the reasons in your words. rekordbox changes only when the DJ drags the
-playlists in. master.db is never opened.
+A brief becomes a crate in rekordbox. Code picks and orders the tracks from their own library and
+`taste/` (lanes, anchors, co-occurrence, vetoes); you turn the brief into the spec and say the
+reasons in your words. With the engine and power mode on (Windows) the crate is written straight
+into rekordbox after the preview, the DJ's explicit yes and a verified backup, only while rekordbox
+is closed (D-32, R-205); otherwise it is an XML the DJ imports, and rekordbox changes only when they
+drag the playlists in.
 
 **Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
 
-**Requirements:** R-601, R-602, R-603, R-604, R-702.
+**Requirements:** R-205, R-601, R-602, R-603, R-604, R-702.
 
 ## How to run things
+
+`library.yaml` says `source: db` (the engine path, D-30): use the engine column. The crate then reads
+a master.db snapshot (`dj library crate --source db`); the script reads the export only.
 
 | Step | Engine (MCP tool) | Cowork sandbox (script) |
 |---|---|---|
 | Preview | `dj_crate_preview(spec)` | `python3 scripts/crate.py preview <slug> --library <folder>` |
-| Write | `dj_crate_write(spec, preview_id)` | `python3 scripts/crate.py apply <slug> --preview-id <id> --library <folder>` |
+| Write the XML | `dj_crate_write(spec, preview_id)` | `python3 scripts/crate.py apply <slug> --preview-id <id> --library <folder>` |
+| Write into rekordbox | `dj_crate_write(spec, preview_id, mode="db", power_mode=true)` | (engine only) |
 
 - Scripts run with `python3` (`python` on Windows, `uv run python` inside a clone of the repo).
 - `<slug>` names `crates/<slug>.spec.yaml` in the dj-library folder (the path works too).
 - The script prints one JSON object. Exit 0 = done, 1 = error, 2 = refused. The MCP tools return
   `{ok, exit_code, result | stderr}`; a `REFUSED` line means the same as exit 2.
-- The tracks come from the latest export in `exports/`. `taste/` comes from dj-taste; without it
-  the preview measures lanes and anchors from the export and says so in `warnings`.
+- The tracks come from what `library.yaml`'s `source` says: the latest export in `exports/`, or with
+  the engine (`source: db`) a master.db snapshot (`export` in the result says which). `taste/` comes
+  from dj-taste; without it the preview measures lanes and anchors from the library and says so in
+  `warnings`.
 
 ### Gig feedback (R-702)
 
@@ -95,7 +103,13 @@ suggests.
 
 ### Step 4 of 5: the gate (C2)
 
-Ask the direct question **Write the crate XML?** with three answers: **Yes / Change / Stop**.
+The preview's `into_rekordbox` says which question. It is set (the engine, power mode on, Windows,
+the crate read from master.db; D-32): before asking, one line: "Close rekordbox first." Then ask the
+direct question **Write it into rekordbox?** with four answers: **Yes / XML instead / Change / Stop**.
+Yes writes with `mode="db", power_mode=true`; **XML instead** writes the crate XML (step 5, the XML).
+
+It is null or missing (no engine, power mode off, a Mac; `into_rekordbox_off` says why): ask the
+direct question **Write the crate XML?** with three answers: **Yes / Change / Stop**, as before.
 
 - **Yes** = an explicit yes to this preview: "yes", "write it", the Yes chip. Silence, "nice", a question back, or a yes to something else is not a yes: ask again.
 - **Change** = edit `crates/<slug>.spec.yaml` the way the DJ says, preview again, back to step 3 with the new preview id. What can change: `size`, `curve`, the filters (`bpm`, `lanes`, `genres`, `exclude_genres`, `keys`, `min_rating`), `anchors` and `my_tags`. The spec cannot drop one pick by id: to lose a track, narrow a filter. A "never propose" line in `taste/vetoes.md` keeps it out of every crate from now on, so write one only when the DJ says never.
@@ -103,7 +117,16 @@ Ask the direct question **Write the crate XML?** with three answers: **Yes / Cha
 
 ### Step 5 of 5: write and import
 
-Only after the yes: call the write with the preview id from the latest preview. Then show:
+Only after the yes: call the write with the preview id from the latest preview.
+
+Into rekordbox: `exit_code 2` = rekordbox is open, nothing written. Say so in one line ("rekordbox
+is still open: close it, then say yes again.") and ask once more; open again: offer **XML instead**.
+Written: show its first line (folders, playlists, tracks, one commit, where the backup went) and the
+crate record `crates/<slug>.md`, then one line: "Open rekordbox: it's in the tree. Then: *Crate me 50
+for Saturday*." (with the next night's brief in place of Saturday's when the DJ named one). No import
+card. The `log.md` line ends `; master.db`.
+
+The XML: show:
 
 1. "Wrote `proposals/crate-<slug>.xml`" and the crate record `crates/<slug>.md` (name the files the result gives; they can end in `-2`).
 2. With the engine (the MCP column above): call `dj_backup` right before the card and show its `line`. The DJ's import is the first thing that changes rekordbox, so a verified copy comes first (D-31, R-206); nothing changed since the last copy, nothing is copied. Without the engine, no line.
@@ -121,6 +144,9 @@ is written; state each one in one line.
 
 ## Refusals and errors
 
+- `exit_code 2` without a `REFUSED` line on a write into rekordbox: rekordbox is open (step 5).
+- "The write stopped (...). Rolled back: nothing written.": rekordbox is as it was. Say the line; offer the same yes again, or XML instead.
+- "The write stopped after rekordbox's files changed (...)": not a rollback. Say the line as it is (it names the backup); the DJ opens rekordbox and checks the tree before anything else. Offer no second write.
 - Refused (exit 2 / `REFUSED`): the preview id is missing, already used, older than 24 hours, or the spec, the export or `taste/` changed since the preview. Preview again, show it, ask again. Never look for a way around it.
 - A spec problem: the error lists each one; fix the spec and preview again.
 - A vetoed track (`taste/vetoes.md`) never appears, as a pick or a spare; a never-pair is never in one crate. A veto names the song, so every copy of it (same artist and title) stays out too. A vetoed anchor, or a second copy of another anchor, is left out with a warning: tell the DJ.

@@ -91,6 +91,7 @@ def test_install_asks_for_the_library_once_and_writes_it_as_dj_library():
     assert '"<engine folder>/scripts/merge_desktop_config.py" merge --uv "<uv>" --folder "<engine folder>" ' \
            '--library "<dj-library folder>"' in merge  # fmt: skip
     assert "`DJ_LIBRARY`" in merge and "claude_desktop_config.json.bak-<date>" in merge
+    assert "`DJ_POWER_MODE`: `true` on Windows" in merge and "`false` on a Mac until its live write test, Q-35" in merge
     assert "keeps every other key" in merge
 
 
@@ -108,6 +109,8 @@ def test_install_ends_with_the_restart_and_the_set_me_up_line():
     assert "Restart Claude Desktop." in step and "Customize → Connectors → dj-librarian" in step
     assert "`_apply`, `_write`, `_undo`" in step and "Ask every time" in step
     assert "End with one line: `In a Cowork task, say /dj-librarian:dj-start`." in step
+    assert ("Writes into rekordbox happen only after a preview, your yes and a backup — and only while rekordbox "
+            "is closed.") in step  # W-38 (D-32)
 
 
 def test_uninstall_removes_only_our_entry_and_keeps_the_folder():

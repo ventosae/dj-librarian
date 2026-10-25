@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 import typer
 
-from dj import barber, build_structure, hostenv, libfolder
+from dj import barber, build_structure, db_write, hostenv, libfolder
 from dj import crate as crate_mod
 from dj import report as report_mod
 from dj.analysis import identity as identity_analysis
@@ -468,6 +468,10 @@ def _fail(message: str) -> None:
     raise typer.Exit(EXIT_ERROR)
 
 
+_POWER_MODE = typer.Option(False, "--power-mode", help="With --apply: write into rekordbox's master.db (Windows, "
+                           "rekordbox closed, a backup first; dj.db_write) instead of the XML to import.")  # fmt: skip
+
+
 def _preview_lines(data: dict[str, Any], rows: list[Any], slug: str) -> list[str]:
     c = data["counts"]
     state = "new, written now" if data["yaml_created"] else "yours, read as it is"
@@ -531,9 +535,11 @@ def build(
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     source: str = typer.Option(None, "--source", help="xml: the latest export; db: a master.db snapshot. Default: library.yaml's."),
+    power_mode: bool = _POWER_MODE,
 ) -> None:
     """Preview a proposal (CREATE / SKIP / CONFLICT / MANUAL per node), or with --apply and the
-    preview id write proposals/<slug>.xml for the DJ to import. Reads master.db only for --source db."""
+    preview id write proposals/<slug>.xml for the DJ to import, or with --power-mode write it into
+    master.db (dj.db_write). Reads master.db only for --source db."""
     if apply and not (preview_id or "").strip():
         _refuse("--apply needs --preview-id: run the preview, show it, write only after a yes.")
     try:
@@ -544,14 +550,18 @@ def build(
         root = Path(library) if library else libfolder.configured_root()
         if not root.is_dir():
             _fail(f"{root} is not a folder. Scaffold the dj-library folder first (dj-start).")
+        if apply and power_mode:  # into master.db: dj.db_write prints and exits itself
+            return db_write.run_cli(as_json, lambda: db_write.build(root, proposal, preview_id.strip(), today=day,
+                                                                     source=source))  # fmt: skip
         if apply:
             result = build_structure.apply(root, proposal, (preview_id or "").strip(), today=day, source=source)
             data = result.to_dict()
             text = _apply_lines(data)
         else:
             found = build_structure.preview(root, proposal, today=day, source=source)
-            data = found.to_dict(root, limit=rows_limit or len(found.rows))
+            data = found.to_dict(root, limit=rows_limit or len(found.rows)) | db_write.preview_keys(root, source)
             text = _preview_lines(data, list(found.rows), found.slug)
+            text += db_write.preview_lines(data, f"dj library build {found.slug} --source db")
     except GateError as exc:
         _refuse(str(exc))
     except (build_structure.BuildError, TreeSchemaError, LibraryError, OSError, ValueError) as exc:
@@ -721,10 +731,12 @@ def crate_cmd(
     picks_limit: int = typer.Option(crate_mod.PICKS_LIMIT, "--picks-limit", min=0,
                                     help="Picks listed in the preview JSON; 0 = all (the MCP tool pages them)."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    source: str = typer.Option(None, "--source", help="xml: the latest export; db: a master.db snapshot. Default: library.yaml's."),
+    power_mode: bool = _POWER_MODE,
 ) -> None:
     """Preview a crate from crates/<slug>.spec.yaml (picks with a reason each, spares by energy),
     or with --apply and the preview id write proposals/crate-<slug>.xml and crates/<slug>.md
-    for the DJ to import. Never opens master.db."""
+    for the DJ to import, or with --power-mode write it into master.db (dj.db_write)."""
     if apply and not (preview_id or "").strip():
         _refuse("--apply needs --preview-id: run the preview, show it, write only after a yes.")
     try:
@@ -735,13 +747,16 @@ def crate_cmd(
         root = Path(library) if library else libfolder.configured_root()
         if not root.is_dir():
             _fail(f"{root} is not a folder. Scaffold the dj-library folder first (dj-start).")
+        if apply and power_mode:  # into master.db: dj.db_write prints and exits itself
+            return db_write.run_cli(as_json, lambda: db_write.crate(root, spec, preview_id.strip(), today=day,
+                                                                     source=source))  # fmt: skip
         if apply:
-            data = crate_mod.apply(root, spec, (preview_id or "").strip(), today=day).to_dict()
+            data = crate_mod.apply(root, spec, (preview_id or "").strip(), today=day, source=source).to_dict()
             text = _crate_apply_lines(data)
         else:
-            found = crate_mod.preview(root, spec, today=day)
-            data = found.to_dict(picks_limit)
-            text = _crate_preview_lines(found)
+            found = crate_mod.preview(root, spec, today=day, source=source)
+            data = found.to_dict(picks_limit) | db_write.preview_keys(root, source)
+            text = _crate_preview_lines(found) + db_write.preview_lines(data, f"dj library crate {found.slug} --source db")
     except GateError as exc:
         _refuse(str(exc))
     except (crate_mod.CrateError, build_structure.BuildError, LibraryError, OSError) as exc:

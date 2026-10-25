@@ -82,9 +82,9 @@ def main(argv: list[str] | None = None) -> NoReturn:
         if not root.is_dir():
             emit({"ok": False, "error": f"{root} is not a folder. Run dj-start first."}, EXIT_ERROR)
         if args.command == "preview":
-            data = crate.preview(root, args.spec, today=today).to_dict()
+            data = crate.preview(root, args.spec, today=today, source="xml").to_dict()
         else:
-            data = crate.apply(root, args.spec, args.preview_id.strip(), today=today).to_dict()
+            data = crate.apply(root, args.spec, args.preview_id.strip(), today=today, source="xml").to_dict()
     except GateError as exc:
         emit({"ok": False, "refused": str(exc)}, EXIT_REFUSED)
     except (crate.CrateError, BuildError, LibraryError, OSError) as exc:

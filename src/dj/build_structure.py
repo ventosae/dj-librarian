@@ -634,6 +634,8 @@ def preview(
     if blocked is None:
         gate = Gate(folder.cache)
         preview_id = gate.record(KIND, {"proposal": found.slug}, state.digest, now=now)
+        if gate.load(preview_id).written == DB_READ:  # written into rekordbox, gone from its tree since (W-38)
+            preview_id = gate.record(KIND, {"proposal": found.slug}, state.digest, now=now, rearm=True)
         blocked = _already_built(gate, preview_id, found.slug)
         if blocked:
             preview_id = None
@@ -787,6 +789,31 @@ def product_version() -> str:
     return "unknown"
 
 
+def checked(
+    folder: LibraryFolder | str | Path, ref: str, preview_id: str, *, now: datetime | None = None,
+    source: str | None = None,
+) -> tuple[LibraryFolder, FoundProposal, _State, Library, Gate]:
+    """Everything a write needs checked before it writes, for the XML (`apply`) and for master.db
+    (`dj.db_write`): the id's shape, the proposal, the library, no block, the gate record (same
+    content, unused), log.md and library.yaml writable. GateError / BuildError, nothing written."""
+    require_id(preview_id)  # no id, no write: refused before anything is read
+    folder = _folder(folder)
+    _meta_device(folder)
+    current = _current_tree(folder)
+    found = find_proposal(folder, ref)
+    if not found.exists:
+        raise BuildError(f"proposals/{found.slug}.yaml is missing: run the preview first.")
+    lib, export = _library(folder, source)
+    state = _state(found.slug, found.doc, current, lib, export, _vetoed(folder, lib))
+    blocked = _source_block(folder, found.made_from, export) or state.blocked
+    if blocked:
+        raise BuildError(blocked + " Nothing was written.")
+    gate = Gate(folder.cache)
+    gate.check(preview_id, KIND, {"proposal": found.slug}, state.digest, now=now)
+    _preflight(folder, found.slug)
+    return folder, found, state, lib, gate
+
+
 def apply(
     folder: LibraryFolder | str | Path,
     ref: str,
@@ -801,22 +828,8 @@ def apply(
     preview, on a CONFLICT, with nothing to create, or when log.md / library.yaml cannot take
     their change. Once the XML is written, a later failure is a warning in the result. Reads a
     master.db snapshot only when the library's source is db (W-36); never writes it (R-504)."""
-    require_id(preview_id)  # no id, no write: refused before anything is read
-    folder = _folder(folder)
+    folder, found, state, _lib, gate = checked(folder, ref, preview_id, now=now, source=source)
     device = _meta_device(folder)
-    current = _current_tree(folder)
-    found = find_proposal(folder, ref)
-    if not found.exists:
-        raise BuildError(f"proposals/{found.slug}.yaml is missing: run the preview first.")
-    lib, export = _library(folder, source)
-    state = _state(found.slug, found.doc, current, lib, export, _vetoed(folder, lib))
-    blocked = _source_block(folder, found.made_from, export) or state.blocked
-    if blocked:
-        raise BuildError(blocked + " Nothing was written.")
-    gate = Gate(folder.cache)
-    gate.check(preview_id, KIND, {"proposal": found.slug}, state.digest, now=now)
-    _preflight(folder, found.slug)
-
     text = render(state.plan, product_version=product_version())
     xml_path = write_xml(text, folder.proposals / f"{found.slug}.xml")
     # The XML is written: from here on the build is done, and a failure below is a warning.

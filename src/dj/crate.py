@@ -111,6 +111,7 @@ import yaml
 from dj import libfolder, treeschema
 from dj.analysis import taste as taste_analysis
 from dj.analysis.common import dup_key
+from dj.build_library import DB_READ, read_for_build
 from dj.build_structure import import_steps, product_version
 from dj.gate import Gate, GateError, preview_id_for, require_id
 from dj.libfolder import LibraryFolder, LibraryFolderError
@@ -983,11 +984,11 @@ def _ordered(picks: list[Pick], curve: str) -> list[Pick]:
 # -- the library folder: spec, export, taste, vetoes ---------------------------------------
 
 
-def _library(folder: LibraryFolder) -> tuple[Library, str]:
+def _library(folder: LibraryFolder, source: str | None = None) -> tuple[Library, str]:
+    """The latest export, or a master.db snapshot for `source` db (library.yaml's when None, W-38)."""
     try:
-        export = libfolder.latest_export(folder.root)
-        return read_xml(export), folder.relative(export)
-    except (LibraryFolderError, LibraryError) as exc:
+        return read_for_build(folder, source)
+    except (LibraryFolderError, LibraryError, ValueError) as exc:
         raise CrateError(str(exc)) from exc
 
 
@@ -1213,11 +1214,11 @@ def _digest(slug: str, spec: CrateSpec, export: str, folder_name: str, result: C
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _state(folder: LibraryFolder, ref: str) -> _State:
+def _state(folder: LibraryFolder, ref: str, source: str | None = None) -> _State:
     slug, path = spec_path(folder, ref)
     spec_file = folder.relative(path)
     spec = load_spec(path, spec_file)
-    lib, export = _library(folder)
+    lib, export = _library(folder, source)
     taste, taste_source, taste_warnings = load_taste(folder, lib, export)
     result = select(lib, spec, taste, _vetoes(folder), _feedback(folder, lib))
     names = _playlist_names(spec.name, result)
@@ -1306,17 +1307,20 @@ def preview(
     *,
     today: date | None = None,
     now: datetime | None = None,
+    source: str | None = None,
 ) -> CratePreview:
     """The crate the spec gives, and a preview id for the gate. Writes nothing but the gate
     record in `.cache/previews/` (no XML, no MD). `today` is accepted for the shared interface
     (the files carry their date at `apply`); `now` dates the gate record (tests)."""
     del today
     folder = _folder(folder)
-    state = _state(folder, spec_ref)
+    state = _state(folder, spec_ref, source)
     preview_id, blocked = None, state.blocked
     if blocked is None:
         gate = Gate(folder.cache)
         preview_id = gate.record(KIND, {"crate": state.slug}, state.digest, now=now)
+        if gate.load(preview_id).written == DB_READ:  # written into rekordbox, gone from its tree since (W-38)
+            preview_id = gate.record(KIND, {"crate": state.slug}, state.digest, now=now, rearm=True)
         record = gate.load(preview_id)
         if record.used:
             blocked = (
@@ -1417,7 +1421,8 @@ def render_md(state: _State, xml_file: str, day: date) -> str:
         f"{c['picks']} picks and {c['spares']} spares for: {spec.brief}. Curve: {spec.curve}.",
         f"Picked from {c['candidates']} tracks that fit ({spec.filters_text()}); taste from {state.taste}.",
         "Left out: " + ", ".join(left) + ".",
-        f"Import {xml_file}: playlists " + " and ".join(f"{folder}/{n}" for n in state.playlists) + ".",
+        ("Written into rekordbox: playlists " if xml_file == DB_READ else f"Import {xml_file}: playlists ")
+        + " and ".join(f"{folder}/{n}" for n in state.playlists) + ".",
     ]
     if state.warnings:
         summary.append("Note: " + " ".join(state.warnings))
@@ -1454,6 +1459,34 @@ def _write_new(path: Path, text: str) -> Path:
     raise CrateError(f"{path.name}: every numbered name is taken. Nothing was written.")
 
 
+def checked(
+    folder: LibraryFolder | str | Path, spec_ref: str, preview_id: str, *, now: datetime | None = None,
+    source: str | None = None,
+) -> tuple[LibraryFolder, _State, Gate]:
+    """Everything a write needs checked before it writes, for the XML (`apply`) and for master.db
+    (`dj.db_write`): the id's shape, the crate, no block, the gate record (same content, unused),
+    log.md writable. GateError / CrateError, nothing written."""
+    require_id(preview_id)  # no id, no write: refused before anything is read
+    folder = _folder(folder)
+    _meta_device(folder)
+    state = _state(folder, spec_ref, source)
+    if state.blocked:
+        raise CrateError(state.blocked + " Nothing was written.")
+    gate = Gate(folder.cache)
+    gate.check(preview_id, KIND, {"crate": state.slug}, state.digest, now=now)
+    _preflight(folder)
+    return folder, state, gate
+
+
+def playlist_lists(state: _State) -> list[tuple[tuple[str, str], list[str]]]:
+    """The crate's playlists in its Crates folder with their track ids: the picks, the spares."""
+    name, result = state.spec.name, state.result
+    lists = [((state.folder_name, name), [p.id for p in result.picks])]
+    if result.spares:  # none fit: no empty spares playlist (the preview warned)
+        lists.append(((state.folder_name, name + SPARES_SUFFIX), [p.id for p in result.spares]))
+    return lists
+
+
 def apply(
     folder: LibraryFolder | str | Path,
     spec_ref: str,
@@ -1461,26 +1494,17 @@ def apply(
     *,
     today: date | None = None,
     now: datetime | None = None,
+    source: str | None = None,
 ) -> CrateWriteResult:
     """Write `proposals/crate-<slug>.xml` and `crates/<slug>.md` for a preview the DJ said yes
     to, then one log.md line. Refuses (GateError / CrateError, nothing written) without a valid
     preview id, after any change since the preview, when the crate is blocked, or when log.md
     cannot take its line. Once the XML is written, a later failure is a warning in the result.
     Never opens master.db."""
-    require_id(preview_id)  # no id, no write: refused before anything is read
-    folder = _folder(folder)
+    folder, state, gate = checked(folder, spec_ref, preview_id, now=now, source=source)
     device = _meta_device(folder)
-    state = _state(folder, spec_ref)
-    if state.blocked:
-        raise CrateError(state.blocked + " Nothing was written.")
-    gate = Gate(folder.cache)
-    gate.check(preview_id, KIND, {"crate": state.slug}, state.digest, now=now)
-    _preflight(folder)
-
     name, result = state.spec.name, state.result
-    lists = [((state.folder_name, name), [p.id for p in result.picks])]
-    if result.spares:  # none fit: no empty spares playlist (the preview warned)
-        lists.append(((state.folder_name, name + SPARES_SUFFIX), [p.id for p in result.spares]))
+    lists = playlist_lists(state)
     try:
         text = build_lists_xml(lists, state.lib, product_version=product_version())
     except BuildError as exc:

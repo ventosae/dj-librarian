@@ -8,8 +8,8 @@ command made (`~/dj-librarian`), before or after `uv sync`.
     default_config_path()                           -> the config file on this Mac or Windows PC
 
 The entry is `{"command": <absolute uv>, "args": ["run", "--directory", <absolute folder>,
-"--no-sync", "dj-mcp"], "env": {"UV_PROJECT_ENVIRONMENT": <folder>/.venv, "DJ_LIBRARY": <the dj-library
-folder>}}`; the engine reads DJ_LIBRARY first (dj.hostenv), and the venv is pinned so an inherited
+"--no-sync", "dj-mcp"], "env": {"UV_PROJECT_ENVIRONMENT": <folder>/.venv, "DJ_POWER_MODE": true on Windows,
+false on a Mac (W-38, Q-35), "DJ_LIBRARY": <the dj-library folder>}}`; the engine reads DJ_LIBRARY first (dj.hostenv), and the venv is pinned so an inherited
 UV_PROJECT_ENVIRONMENT (a contributor's setting) never redirects it. Only `mcpServers["dj-librarian"]` ever changes: every other key keeps
 its value and its order, written back in the two-space layout Claude Desktop itself writes. Before
 any change the file is copied to `claude_desktop_config.json.bak-<date>` (create-only: `-2`, `-3`
@@ -63,8 +63,10 @@ def entry(uv: str | Path, folder: str | Path, library: str | Path | None = None,
         uv = uv.with_suffix(".exe")
     if not (folder / "pyproject.toml").is_file():
         raise InstallerError(f"{folder} holds no pyproject.toml: copy the engine there first.")
+    # W-38 (D-32): writes into rekordbox on Windows; off on a Mac until its live write test (Q-35)
+    power = "true" if platform == "win32" else "false"
     out: dict[str, Any] = {"command": str(uv), "args": ["run", "--directory", str(folder), "--no-sync", "dj-mcp"],
-                           "env": {"UV_PROJECT_ENVIRONMENT": str(folder / ".venv")}}  # fmt: skip
+                           "env": {"UV_PROJECT_ENVIRONMENT": str(folder / ".venv"), "DJ_POWER_MODE": power}}  # fmt: skip
     if library is not None:
         library = Path(library).expanduser()
         if not (library / "library.yaml").is_file():
@@ -125,10 +127,10 @@ def _write(path: Path, data: dict[str, Any]) -> None:
 
 
 def merge_desktop_config(path: str | Path, uv: str | Path, folder: str | Path, library: str | Path | None = None,
-                         *, today: date | None = None) -> dict[str, Any]:  # fmt: skip
+                         *, today: date | None = None, platform: str = sys.platform) -> dict[str, Any]:  # fmt: skip
     """Add or replace mcpServers["dj-librarian"]; every other key stays as it was."""
     path = Path(path)
-    new = entry(uv, folder, library)
+    new = entry(uv, folder, library, platform=platform)
     data = _read(path)
     servers = data.get("mcpServers", {})
     if servers.get(SERVER) == new:

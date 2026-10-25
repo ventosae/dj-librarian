@@ -4,6 +4,13 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Added
+- dj-build and dj-crate write into rekordbox directly (W-38, D-32): with the engine, power mode on (Windows) and rekordbox closed, a previewed proposal or crate goes into master.db after the DJ's yes (`dj library build|crate --source db --apply --power-mode`, `dj_structure_write` / `dj_crate_write` with `mode="db", power_mode=true`): power mode on, a valid preview id, rekordbox not running, a verified backup, then one write session and one commit, rolled back on any failure. The XML route stays for everything else. The preview says `Writes into rekordbox directly (rekordbox must be closed). Backup first.`; the skills ask **Write it into rekordbox?** (Yes / XML instead / Change / Stop).
+- `dj library crate --source xml|db` (default library.yaml's), so a crate on the engine path reads master.db.
+
+### Changed
+- The install writes `DJ_POWER_MODE` into the engine's config entry: `true` on Windows, `false` on a Mac until its live write test (Q-35). R-504 reworded: dj-build writes master.db only through the power-mode writer.
+
 ## [0.1.1] - 2026-10-25
 
 ### Added

@@ -1,16 +1,18 @@
 ---
 name: dj-build
-description: Turn a structure proposal from the library report into a rekordbox XML the DJ imports. Preview the tree first (CREATE / SKIP per node, where existing playlists land), ask "Write the XML?", write the XML into proposals/ only after an explicit yes, then give the import card for their OS. Use when the DJ says "Build me the ... structure" with a proposal's name, picks a proposal chip from the report, or asks to build, rebuild or import a new playlist tree, even if they never say "build".
+description: Turn a structure proposal from the library report into rekordbox. Preview the tree first (CREATE / SKIP per node, where existing playlists land). With the engine and power mode on (Windows) ask "Write it into rekordbox?" and, after an explicit yes, write it straight into rekordbox (closed, a backup first); otherwise ask "Write the XML?", write the XML into proposals/ only after an explicit yes, then give the import card for their OS. Use when the DJ says "Build me the ... structure" with a proposal's name, picks a proposal chip from the report, or asks to build, rebuild or import a new playlist tree, even if they never say "build".
 ---
 
 # dj-build
 
-A proposal becomes an XML the DJ imports into rekordbox by hand. You only propose: rekordbox
-changes when the DJ drags the playlists in, never before. master.db is never opened (R-504).
+A proposal goes into rekordbox one of two ways. With the engine and power mode on (Windows), it is
+written straight into rekordbox after the preview, the DJ's explicit yes and a verified backup, and
+only while rekordbox is closed (D-32, R-504, R-205). Otherwise it becomes an XML the DJ imports by
+hand, and rekordbox changes only when they drag the playlists in. You only propose.
 
 **Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
 
-**Requirements:** R-501, R-502, R-503, R-504, R-505, R-702, R-904.
+**Requirements:** R-205, R-501, R-502, R-503, R-504, R-505, R-702, R-904.
 
 ## How to run things
 
@@ -21,7 +23,8 @@ last export (`dj library build --source db`, Q-17). The script reads the export 
 | Step | Engine (MCP tool) | Cowork sandbox (script) |
 |---|---|---|
 | Preview | `dj_structure_preview(proposal)` | `python3 scripts/build.py preview "<proposal>" --library <folder>` |
-| Write | `dj_structure_write(proposal, preview_id)` | `python3 scripts/build.py apply "<proposal>" --preview-id <id> --library <folder>` |
+| Write the XML | `dj_structure_write(proposal, preview_id)` | `python3 scripts/build.py apply "<proposal>" --preview-id <id> --library <folder>` |
+| Write into rekordbox | `dj_structure_write(proposal, preview_id, mode="db", power_mode=true)` | (engine only) |
 
 - Scripts run with `python3` (`python` on Windows, `uv run python` inside a clone of the repo).
 - `<proposal>` = the slug, the name, or the trigger sentence the DJ typed ("Build me the Lanes structure").
@@ -57,7 +60,13 @@ If `warnings` is not empty, state each one in one line (for example: `structure/
 
 ### Step 2 of 4: the gate (B2)
 
-Ask the direct question **Write the XML?** with three answers: **Yes / Change / Stop**.
+The preview's `into_rekordbox` says which question. It is set (the engine, power mode on, Windows,
+the build reads master.db; D-32): before asking, one line: "Close rekordbox first." Then ask the
+direct question **Write it into rekordbox?** with four answers: **Yes / XML instead / Change / Stop**.
+Yes writes with `mode="db", power_mode=true`; **XML instead** writes the XML (step 3, the XML).
+
+It is null or missing (no engine, power mode off, a Mac; `into_rekordbox_off` says why): ask the
+direct question **Write the XML?** with three answers: **Yes / Change / Stop**, as before.
 
 - **Yes** = an explicit yes to this preview: "yes", "write it", the Yes chip. Silence, "sounds good", "nice", a question back, or a yes to something else is not a yes: ask again.
 - **Change** = edit `proposals/<slug>.yaml` the way the DJ says (it is their file; the tool never overwrites it), then preview again and go back to step 1 with the new preview id.
@@ -65,7 +74,14 @@ Ask the direct question **Write the XML?** with three answers: **Yes / Change / 
 
 ### Step 3 of 4: write and import (B3)
 
-Only after the yes: call the write with the preview id from the latest preview. Then show:
+Only after the yes: call the write with the preview id from the latest preview.
+
+Into rekordbox: `exit_code 2` = rekordbox is open, nothing written. Say so in one line ("rekordbox
+is still open: close it, then say yes again.") and ask once more; open again: offer **XML instead**.
+Written: show its first line (folders, playlists, tracks, one commit, where the backup went), then
+step 4. No import card: it is in rekordbox already. The `log.md` line ends `; master.db`.
+
+The XML: show:
 
 1. "Wrote `proposals/<slug>.xml`." (name the file the result gives; it can be `<slug>-2.xml`).
 2. With the engine (the MCP column above): call `dj_backup` right before the card and show its `line`. The DJ's import is the first thing that changes rekordbox, so a verified copy comes first (D-31, R-206); nothing changed since the last copy, nothing is copied. Without the engine, no line.
@@ -79,10 +95,14 @@ DJ says yes.
 
 ### Step 4 of 4: next (B4)
 
-One line: "Open rekordbox, check the tree. Then: *Crate me 50 for Saturday*."
+One line. Into rekordbox: "Open rekordbox: it's in the tree. Then: *Crate me 50 for Saturday*."
+The XML: "Open rekordbox, check the tree. Then: *Crate me 50 for Saturday*."
 
 ## Refusals and errors
 
+- `exit_code 2` without a `REFUSED` line on a write into rekordbox: rekordbox is open (step 3).
+- "The write stopped (...). Rolled back: nothing written.": rekordbox is as it was. Say the line; offer the same yes again, or XML instead.
+- "The write stopped after rekordbox's files changed (...)": not a rollback. Say the line as it is (it names the backup); the DJ opens rekordbox and checks the tree before anything else. Offer no second write.
 - Refused (exit 2 / `REFUSED`): the preview id is missing, already used, older than 24 hours, or something changed since the preview. Run the preview again, show it, ask again. One preview id, one write: an id that was used never writes again. Never look for a way around it.
 - "log.md cannot be written" or "library.yaml cannot be written": nothing was written. The DJ closes what holds the file open (a sync client, an editor); then write again with the same preview id.
 - "run dj-structure first": `structure/current-tree.yaml` is missing. Run dj-structure, then preview.

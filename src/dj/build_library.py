@@ -15,10 +15,12 @@ from pathlib import Path
 
 from dj import libfolder
 from dj.libfolder import SOURCES, LibraryFolder
-from dj.model import Library
+from dj.model import Library, LibraryError
 from dj.readers.xml import read_xml
 
 DB_READ = "master.db"  # how the build and the files it writes name a master.db read
+NO_ENGINE = ("library.yaml says source: db: this library is read from rekordbox through the engine. Use the "
+             "engine's tools (dj_structure_* / dj_crate_*), or export the collection and analyse that export.")  # fmt: skip
 
 
 def source_of(folder: LibraryFolder, source: str | None = None) -> str:
@@ -33,8 +35,12 @@ def source_of(folder: LibraryFolder, source: str | None = None) -> str:
 def read_for_build(folder: LibraryFolder | str | Path, source: str | None = None) -> tuple[Library, str]:
     folder = folder if isinstance(folder, LibraryFolder) else LibraryFolder(Path(folder))
     if source_of(folder, source) == "db":
-        from dj.readers.db import read_db  # Door 2, only when master.db is asked for
-
+        try:
+            from dj.readers.db import (
+                read_db,  # Door 2, only when master.db is asked for
+            )
+        except ImportError as exc:  # a skill script in Cowork's sandbox: no pyrekordbox there
+            raise LibraryError(NO_ENGINE) from exc
         return read_db(), DB_READ
     export = libfolder.latest_export(folder.root)
     return read_xml(export), folder.relative(export)

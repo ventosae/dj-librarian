@@ -57,9 +57,11 @@ server = MCPServer(
         "propose. Read the dj-sync skill first. Every *_apply / *_write / *_undo tool "
         "needs the preview_id its preview tool returned: call the preview, show the DJ the result, "
         "ask, and only after their explicit yes pass that preview_id. Direct master.db writes "
-        "(dj_tree_apply, dj_apply_write and dj_copy_apply with mode=\"db\") also need power_mode=true and "
-        "run on Windows only; the default write path is an XML the DJ imports: for new structures and "
-        "crates (dj_structure_preview / dj_structure_write, dj_crate_preview / dj_crate_write), and for "
+        "(dj_tree_apply; dj_apply_write, dj_copy_apply, dj_structure_write and dj_crate_write with mode=\"db\") "
+        "also need power_mode=true and run on Windows only, with rekordbox closed. A structure or crate preview "
+        "whose `into_rekordbox` is set may go straight into rekordbox after the DJ's yes to \"Write it into "
+        "rekordbox?\"; else the write path is an XML the DJ imports: for new structures and crates "
+        "(dj_structure_preview / dj_structure_write, dj_crate_preview / dj_crate_write), and for "
         "inbox adds and copies (dj_apply_write / dj_copy_apply with mode=\"xml\"). "
         "exit_code 2 = refused: the `hint` says why. Usually rekordbox is open: ask "
         "them to close it, then retry the same call; a library folder that is not set up needs "
@@ -566,9 +568,8 @@ def preview_id_arg(preview_id: Any, preview_tool: str) -> str:
 
 POWER_MODE_REFUSAL = (
     "master.db writes are power mode (Windows only): pass power_mode=true only when the DJ asked for a "
-    "direct write. The default write path is an XML to import instead: mode=\"xml\" for inbox adds and "
-    "copies (dj_apply_write, dj_copy_apply), dj_structure_preview / dj_structure_write for new folders "
-    "and playlists."
+    "direct write. The default write path is an XML to import instead: mode=\"xml\" for inbox adds, "
+    "copies, structures and crates (dj_apply_write, dj_copy_apply, dj_structure_write, dj_crate_write)."
 )
 ADD_MODES = ("xml", "db")
 
@@ -893,7 +894,9 @@ def dj_structure_preview(proposal: str, page: int = 1, page_size: int = PAGE_SIZ
     page). `proposal` = its slug, its name, or "Build me the <name> structure".
     Writes only proposals/<slug>.yaml (if missing; an existing one is the DJ's and is read as
     it is) and the preview record. No XML, rekordbox and master.db untouched. Show the DJ the
-    result and ask "Write the XML?" before dj_structure_write. A `blocked` result has no
+    result. `into_rekordbox` set (power mode on, Windows, a master.db read): ask "Write it into
+    rekordbox?" (Yes / XML instead / Change / Stop) and after that yes call dj_structure_write with
+    mode="db", power_mode=true; else ask "Write the XML?" and write with the default mode. A `blocked` result has no
     preview_id (a conflict, nothing to create, current-tree.yaml older than the export, or this
     exact build already written)."""
     page, page_size = page_args(page, page_size)
@@ -905,16 +908,19 @@ def dj_structure_preview(proposal: str, page: int = 1, page_size: int = PAGE_SIZ
 
 @server.tool(annotations=WRITE)
 @guarded
-def dj_structure_write(proposal: str, preview_id: str) -> str:
-    """WRITES proposals/<slug>.xml (a rekordbox XML the DJ imports by hand; master.db is never
-    opened), appends one log.md line and records the chosen structure in library.yaml. Needs the
-    preview_id from dj_structure_preview and the DJ's explicit yes to that preview. Refuses
-    without one, after any change since the preview, or when the id was already used (one
-    preview, one write). Never overwrites a file: a taken name becomes <slug>-2.xml. `warnings`
-    in the result: the XML is written; tell the DJ each one."""
+def dj_structure_write(proposal: str, preview_id: str, mode: str = "", power_mode: bool = False) -> str:
+    """WRITES the previewed structure. mode="xml" (default): proposals/<slug>.xml, a rekordbox XML
+    the DJ imports by hand. mode="db" with power_mode=true (when the preview's `into_rekordbox` is
+    set; W-38): straight into rekordbox's master.db, Windows, rekordbox closed, a verified backup
+    first, one commit. Either way one log.md line and the chosen structure in library.yaml. Needs the
+    preview_id from dj_structure_preview and the DJ's explicit yes to that preview. Refuses without
+    one, after any change since the preview, or when the id was already used (one preview, one
+    write). exit_code 2: rekordbox is open. Never overwrites a file: a taken name becomes
+    <slug>-2.xml. `warnings`: it is written; tell the DJ each one."""
+    flags = [f for f in add_mode_flags(mode, power_mode) if f != "--xml"]  # power mode first, then the id
     pid = preview_id_arg(preview_id, "dj_structure_preview")
     root = str(library_root())
-    options = ["library", "build", "--library", root, "--apply", "--preview-id", pid]
+    options = ["library", "build", "--library", root, "--apply", *flags, "--preview-id", pid]
     return run_dj(options, (_proposal(proposal),))
 
 
@@ -941,8 +947,9 @@ def dj_crate_preview(spec: str, page: int = 1, page_size: int = PAGE_SIZE) -> st
     in the dj-library folder (or that path). Returns counts first, the picks in order with a
     one-line reason each and the spares by energy tier, in pages (`paging`; pages 2+ are cut from
     page 1's run), and a preview_id on every page. Writes nothing but the preview record: no XML, no crates/*.md, rekordbox
-    and master.db untouched. Show the DJ the result and ask "Write the crate XML?" before
-    dj_crate_write. A `blocked` result has no preview_id (a playlist of that name exists in the
+    and master.db untouched. Show the DJ the result. `into_rekordbox` set: ask "Write it into
+    rekordbox?" and after that yes call dj_crate_write with mode="db", power_mode=true; else ask
+    "Write the crate XML?" and write with the default mode. A `blocked` result has no preview_id (a playlist of that name exists in the
     DJ's Crates folder, or this exact crate was written already)."""
     page, page_size = page_args(page, page_size)
     root = str(library_root())
@@ -953,13 +960,16 @@ def dj_crate_preview(spec: str, page: int = 1, page_size: int = PAGE_SIZE) -> st
 
 @server.tool(annotations=WRITE)
 @guarded
-def dj_crate_write(spec: str, preview_id: str) -> str:
-    """WRITES proposals/crate-<slug>.xml (a rekordbox XML the DJ imports by hand: folder Crates
-    with the playlist and its spares) and crates/<slug>.md (the crate record), and appends one
-    log.md line. Needs the preview_id from dj_crate_preview and the DJ's explicit yes to that
-    preview. Refuses without one, after any change since the preview, or when the id was already
-    used. Never overwrites a file (a taken name becomes -2). `warnings`: the XML is written; tell
-    the DJ each one."""
+def dj_crate_write(spec: str, preview_id: str, mode: str = "", power_mode: bool = False) -> str:
+    """WRITES the previewed crate (folder Crates with the playlist and its spares) and crates/<slug>.md
+    (the crate record), and appends one log.md line. mode="xml" (default): proposals/crate-<slug>.xml,
+    a rekordbox XML the DJ imports by hand. mode="db" with power_mode=true (when the preview's
+    `into_rekordbox` is set; W-38): straight into rekordbox's master.db, Windows, rekordbox closed,
+    a verified backup first, one commit. Needs the preview_id from dj_crate_preview and the DJ's
+    explicit yes to that preview. Refuses without one, after any change since the preview, or when
+    the id was already used. exit_code 2: rekordbox is open. Never overwrites a file (a taken name
+    becomes -2). `warnings`: it is written; tell the DJ each one."""
+    flags = [f for f in add_mode_flags(mode, power_mode) if f != "--xml"]  # power mode first, then the id
     pid = (preview_id or "").strip() if isinstance(preview_id, str) else ""
     if not pid:
         raise ToolInputError(
@@ -969,7 +979,7 @@ def dj_crate_write(spec: str, preview_id: str) -> str:
     if not valid_id(pid):
         raise ToolInputError(f"{preview_id!r} is not a preview id (12 hex digits from dj_crate_preview).")
     root = str(library_root())
-    options = ["library", "crate", "--library", root, "--apply", "--preview-id", pid]
+    options = ["library", "crate", "--library", root, "--apply", *flags, "--preview-id", pid]
     return run_dj(options, (_crate_spec(spec),))
 
 

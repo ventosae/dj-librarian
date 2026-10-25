@@ -43,7 +43,9 @@ Rules adapted from the i-have-adhd skill by ayghri (MIT licence).
 - Preview, then an explicit yes. Show the preview, ask one direct question, write only after a
   clear yes. Silence or "sounds good" is not a yes.
 - The default write path is a rekordbox XML the DJ imports into rekordbox. Direct writes to
-  rekordbox's database are a Windows power mode behind an explicit flag; never offer them first.
+  rekordbox's database are a Windows power mode: with the engine and power mode on, a previewed
+  structure or crate may go straight into rekordbox after an explicit yes, with rekordbox closed
+  and a backup first; offer anything else that way only when the DJ asks for it.
 - The DJ's Spotify keys live in the engine's settings form (in a clone: `.env`). Never ask for or
   repeat them, and never open or print `.env`.
 

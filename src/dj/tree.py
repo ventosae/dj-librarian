@@ -181,6 +181,11 @@ def counts(actions: list[Action]) -> dict[str, int]:
 
 def apply(actions: list[Action], db: Any) -> int:
     """Run the CREATE actions. The caller commits. Never passes seq= (see CLAUDE.md)."""
+    return len(apply_rows(actions, db))
+
+
+def apply_rows(actions: list[Action], db: Any) -> dict[tuple[str, ...], Any]:
+    """`apply`, returning the created rows by path (dj.db_write adds tracks to the new playlists)."""
     if any(a.op == CONFLICT for a in actions):
         raise ConflictError("The plan holds a CONFLICT. Resolve it first. Nothing written.")
 
@@ -203,4 +208,4 @@ def apply(actions: list[Action], db: Any) -> int:
             smart = rules_mod.build_smartlist(action.rules)
             row = db.create_smart_playlist(action.name, smart, parent=parent)
         created[action.path] = row
-    return len(created)
+    return created

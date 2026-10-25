@@ -82,9 +82,9 @@ def main(argv: list[str] | None = None) -> NoReturn:
         if not root.is_dir():
             emit({"ok": False, "error": f"{root} is not a folder. Run dj-start first."}, EXIT_ERROR)
         if args.command == "preview":
-            data = build_structure.preview(root, args.proposal, today=today).to_dict(root)
+            data = build_structure.preview(root, args.proposal, today=today, source="xml").to_dict(root)
         else:
-            result = build_structure.apply(root, args.proposal, args.preview_id.strip(), today=today)
+            result = build_structure.apply(root, args.proposal, args.preview_id.strip(), today=today, source="xml")
             data = result.to_dict()
     except GateError as exc:
         emit({"ok": False, "refused": str(exc)}, EXIT_REFUSED)

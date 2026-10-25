@@ -14,11 +14,13 @@ A write needs a preview, then your explicit yes, then the write tool with the pr
 | Claude Code | The same: write tools on ask (see the settings below). | Plus the plugin's PreToolUse hook (`plugin/hooks/`): a write tool called without a `preview_id` is denied before it runs. |
 
 Plugin hooks are not a Cowork component (C-10, Q-03), so in Cowork the permission setting is the
-hard gate. Direct master.db writes (`dj_tree_apply`, and `dj_apply_write` / `dj_copy_apply` with
-`mode="db"`) are a Windows power mode on top: they also need `power_mode=true` (R-205). The engine
-from the plugin zip or the `.mcpb` adds a switch in its settings form, Power mode (Windows): off,
-the default, refuses every master.db write whatever the call says. Inbox adds and copies default
-to `mode="xml"`: an XML you import, any OS.
+hard gate. Direct master.db writes (`dj_tree_apply`, and `dj_apply_write` / `dj_copy_apply` /
+`dj_structure_write` / `dj_crate_write` with `mode="db"`) are a Windows power mode on top: they also
+need `power_mode=true`, rekordbox closed and a backup first (R-205, D-32). `DJ_POWER_MODE` switches
+it: `/dj-librarian:install` sets it `true` on Windows and `false` on a Mac (Q-35); the `.mcpb`'s
+settings form, Power mode (Windows), defaults to off. Off refuses every master.db write whatever the
+call says. Everything else defaults to `mode="xml"`: an XML you import, any OS. So nothing reaches
+rekordbox before your import, except those power-mode writes after a preview and your yes.
 
 ## Read tools: Allow (or Ask, your call)
 
@@ -67,8 +69,8 @@ rekordbox, Spotify or audio files.
 
 | Tool | Writes to | Its preview |
 |---|---|---|
-| `dj_structure_write` | `proposals/<slug>.xml`, a rekordbox XML you import | `dj_structure_preview` |
-| `dj_crate_write` | `proposals/crate-<slug>.xml` (a rekordbox XML you import) and `crates/<slug>.md` | `dj_crate_preview` |
+| `dj_structure_write` | `proposals/<slug>.xml`, a rekordbox XML you import (mode `xml`, default); or rekordbox master.db (mode `db`: power mode, Windows, rekordbox closed, a backup first; D-32) | `dj_structure_preview` |
+| `dj_crate_write` | `proposals/crate-<slug>.xml` (a rekordbox XML you import; mode `xml`, default) or rekordbox master.db (mode `db`: power mode, Windows, rekordbox closed, a backup first; D-32), and `crates/<slug>.md` | `dj_crate_preview` |
 | `dj_tree_apply` | rekordbox master.db (power mode, Windows) | `dj_tree_preview` |
 | `dj_apply_write` | `proposals/<crate>-adds-<date>.xml`, a rekordbox XML you import (mode `xml`, default); or rekordbox master.db (mode `db`: power mode, Windows) | `dj_apply_preview` |
 | `dj_copy_apply` | `proposals/<target>-adds-<date>.xml`, a rekordbox XML you import (mode `xml`, default); or rekordbox master.db (mode `db`: power mode, Windows) | `dj_copy_preview` |
