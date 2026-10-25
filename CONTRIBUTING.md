@@ -66,8 +66,17 @@ claude plugin validate .
 - Conventional commit titles: `feat:`, `fix:`, `docs:`, `chore:`, `test:`. Pull requests are squash-merged; the PR title becomes the commit.
 - **Every PR cites the requirement ids it satisfies** (`R-…`, `NFR-…`, `C-…`) from [docs/requirements.md](docs/requirements.md). A change with no requirement starts as an issue.
 - Update [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`.
-- The versions in `pyproject.toml`, `plugin/.claude-plugin/plugin.json` and `mcpb/manifest.json` stay equal (`scripts/build_mcpb.py` refuses to build otherwise).
+- The version changes only through `scripts/bump_version.py` (see Versioning below).
 - Run `claude plugin validate ./plugin --strict` before opening a PR that touches `plugin/`, and `uv run python scripts/build_mcpb.py --smoke` for one that touches `mcpb/`.
+
+## Versioning
+
+`version` in `pyproject.toml` is the one source. `uv run python scripts/bump_version.py patch|minor` writes it into `uv.lock`, `plugin/.claude-plugin/plugin.json`, the marketplace entry in `.claude-plugin/marketplace.json` and `mcpb/manifest.json`, and turns CHANGELOG.md's `[Unreleased]` into `[<version>] - <date>` with a fresh, empty `[Unreleased]` above it. The zip names and the zip's `engine/BUILD.txt` stamp follow pyproject.toml when they are built. `tests/test_version_sync.py` fails CI on any drift; run `uv sync` after a bump, so `dj status` reports the new version.
+
+- **Patch** for every PR that changes the plugin or the engine. The bump is the PR's last commit.
+- **Minor** when the DJ must re-upload the zip, re-run `/dj-librarian:install`, or `library.yaml` changes shape.
+- Docs-only and test-only PRs don't bump.
+- A tag `v<version>` only when a zip is handed to a DJ, after the maintainer's yes. The tag runs `.github/workflows/release.yml`, and the zip in that release is the one handed over.
 
 ## Writes: the safety rule
 
