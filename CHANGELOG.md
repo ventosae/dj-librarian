@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-27
+
+### Added
+- The track catalog (D-37): `catalog/catalog.db` and `catalog/tracks.csv` in the dj-library folder, built by `dj_library_analyze` from the master.db snapshot and rebuilt when master.db's sha256 changes. `dj_query(sql, page)` runs one read-only SELECT, 200 rows a page; `dj_note(track_id, field, value, source)` adds a note that survives every rebuild (`dj library query|note`).
+- Long playlists in dj-crate (D-38): a seed track or "build it with me" starts up to 4 questions, web research (8 searches at most) and `dj_match_tracks(candidates, crate)` (`dj library match-tracks`), which splits candidates into owned ids and tracks to buy, written to `crates/<slug>.to-buy.md`. The crate spec gains `seed`, `prefer`, `exclude` and `sources`. The fast path is unchanged.
+
+### Changed
+- Direct write into rekordbox on every OS (D-33): no OS check and no power mode. The chain is preview id, rekordbox not running (refused when the check cannot run), verified backup, one transaction with rollback. `DJ_POWER_MODE=false` is the only off switch; the install no longer writes it.
+- Seven skills (D-35): dj-start, dj-crate, dj-build, dj-barber, dj-tidy, dj-spotify, install. dj-profile, dj-structure, dj-taste, dj-identity and dj-report are in dj-start; dj-sync in dj-spotify; uninstall and backup in install. Each SKILL.md starts with the same ten "How to reply" rules (D-36). The write questions are "Close rekordbox first." then "Write it into rekordbox?" Yes / Change / Stop.
+
+### Removed
+- The XML route and Door 1 (D-34): `src/dj/writers/`, the skill scripts, `--xml`, `mode="xml"`, the import cards, the vendored core, the light zip and `mcpb/`. Without the engine a skill says one line: "Run /dj-librarian:install in the Code tab."
+- `plugin/shared/` (voice.md, adhd.md) and the pre-send checklist.
+
 ## [0.1.2] - 2026-10-25
 
 ### Added
