@@ -1093,6 +1093,9 @@ def dj_barber_record(n: int, answer: str) -> str:
     return run_dj(["library", "barber", "record"], (str(n), answer.strip()))
 
 
+from dj import mcp_catalog as _catalog_tools  # noqa: E402,F401  registers its tools on `server` (D-37)
+
+
 def main() -> None:
     server.run("stdio")
 

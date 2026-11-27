@@ -112,6 +112,17 @@ def analyze(
 
     for name, work in zip(STEPS, (do_profile, do_structure, do_taste, do_identity, do_report)):
         step(name, work)
+    catalog: dict[str, Any] = {}
+
+    def do_catalog() -> None:  # D-37: catalog/catalog.db and tracks.csv, kept while master.db hashes as stored
+        from dj import catalog as catalog_mod  # the engine's: it hashes master.db
+
+        catalog.update(catalog_mod.ensure(folder, lib, today=today))
+        line = catalog.pop("log")
+        logs.extend([line] if line else [])
+
+    if lib.source == "db":  # the catalog is built from master.db only
+        step("catalog", do_catalog)
 
     c = lib.counts()
     return {
@@ -127,6 +138,7 @@ def analyze(
         "source": lib.source,
         "read": label,
         "report": report.get("path"),
+        "catalog": catalog or None,  # {db, csv, tracks, rebuilt}
         "proposals": [p.summary() for p in found],
         "written": written,
         "kept": kept,

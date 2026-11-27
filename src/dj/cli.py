@@ -17,6 +17,7 @@ from dj import build as build_mod
 from dj import playlist_copy as copy_mod
 from dj import push as push_mod
 from dj import tree as tree_mod
+from dj.commands import catalog as catalog_commands
 from dj.commands.backup import backup as backup_command
 from dj.commands.library import library_app
 from dj.commands.wishlist import wishlist_app
@@ -38,6 +39,8 @@ app = typer.Typer(
 app.add_typer(library_app, name="library")
 app.add_typer(wishlist_app, name="wishlist")
 app.command(name="backup")(backup_command)
+library_app.command("query")(catalog_commands.query)  # the track catalog (dj.catalog)
+library_app.command("note")(catalog_commands.note)
 
 EXIT_ERROR = 1
 EXIT_REKORDBOX_RUNNING = 2
