@@ -37,6 +37,11 @@ A brief becomes a crate in rekordbox. The tool picks and orders the tracks from 
 
 `spec` = the slug of `crates/<slug>.spec.yaml` in the dj-library folder. The tracks are read from a snapshot of rekordbox's database. `taste/` comes from dj-start's analysis; without it the preview measures lanes and anchors itself and says so in `warnings`.
 
+## Two speeds
+
+- **Fast** (below): a brief like "Crate me 50 for Saturday". One question at most, then the preview.
+- **Long**: the DJ names a seed track or says "build it with me". Up to 4 questions, digging on the web, `dj_query` and `dj_match_tracks`, edits by talking. Read `long.md` beside this file and follow it.
+
 ## The fast path: 3 steps, one question at most
 
 "Crate me 50 for Saturday" goes straight to a preview.
@@ -102,6 +107,9 @@ Put in only the fields the brief supports; leave the rest out. Unknown fields ar
 | `my_tags` | My Tags that score a track up (they never filter) | `[Vocal]` |
 | `anchors` | track ids that must be in | `["9", "13"]` |
 | `curve` | `flat`, `warmup` (BPM rising) or `peak` (rising, then easing) | `warmup` |
+| `seed` | one track id the crate is built around (long path) | `"412"` |
+| `prefer`, `exclude` | track ids that score up / never go in, for this crate | `["7", "19"]` |
+| `sources` | links the research came from, kept in the crate record | `["https://... label page"]` |
 
 ```yaml
 name: Saturday Rooftop

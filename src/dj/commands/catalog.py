@@ -89,3 +89,26 @@ def note(
         return out + ([f"log: {result['log']}"] if result["log"] else [])
 
     _run(as_json, call, lines)
+
+
+def match_tracks(
+    candidates: list[str] = typer.Argument(..., help='"Artist - Title" lines, each with an optional link at the end.'),
+    crate: str = typer.Option("", "--crate", help="A crate slug: the missing ones go to crates/<slug>.to-buy.md."),
+    library: str = _LIBRARY,
+    as_json: bool = _JSON,
+) -> None:
+    """Split research candidates into owned tracks (their ids go into the spec's `prefer`) and
+    the ones to buy, with Beatport and Bandcamp search links (D-38). rekordbox is only read."""
+    from dj import crate_match
+
+    def call() -> dict[str, Any]:
+        return crate_match.run(library or configured_root(), candidates, crate)
+
+    def lines(result: dict[str, Any]) -> list[str]:
+        c = result["counts"]
+        out = [f"{c['owned']} of {c['candidates']} owned, {c['missing']} to buy"]
+        out += [f"  owned {o['id']}: {o['artist']} - {o['title']}" for o in result["owned"]]
+        out += [f"  buy {r['candidate']}: {r['beatport']}" for r in result["missing"]]
+        return out + ([f"to buy: {result['to_buy']}"] if result["to_buy"] else [])
+
+    _run(as_json, call, lines)

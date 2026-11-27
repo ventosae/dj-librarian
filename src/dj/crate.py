@@ -94,7 +94,7 @@ import json
 import math
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -160,10 +160,12 @@ W_TAG, MAX_TAG = 10, 20
 W_STAR = 4
 W_PLAYS = 2  # per binary digit of min(play count, 255)
 W_FEEDBACK = 1  # taste/feedback.md: + worked at a gig, - flopped (R-702, Q-19)
+W_PREFER = 15  # an owned track the web research named (`prefer`, D-38)
+SEED_BPM = 3  # a seed without a BPM window in the spec sets seed BPM +/- this
 
 FILTERS = ("bpm", "lanes", "genres", "exclude_genres", "keys", "min_rating")
 SPEC_KEYS = ("name", "size", "brief", "bpm", "lanes", "genres", "exclude_genres", "keys", "anchors",
-             "my_tags", "min_rating", "curve")  # fmt: skip
+             "my_tags", "min_rating", "curve", "seed", "prefer", "exclude", "sources")  # fmt: skip
 LIST_KEYS = ("lanes", "genres", "exclude_genres", "keys", "my_tags")
 
 
@@ -273,6 +275,10 @@ class CrateSpec:
     my_tags: tuple[str, ...] = ()
     min_rating: int = 0
     curve: str = "flat"
+    seed: str = ""  # a track id: an anchor that sets bpm, keys and genres the spec leaves out (D-38)
+    prefer: tuple[str, ...] = ()  # track ids that score up (owned research candidates)
+    exclude: tuple[str, ...] = ()  # track ids that never go in
+    sources: tuple[str, ...] = ()  # where the research came from, kept in the crate record
 
     @property
     def spares(self) -> int:
@@ -290,6 +296,11 @@ class CrateSpec:
         if self.min_rating:
             out["min_rating"] = self.min_rating
         out["curve"] = self.curve
+        if self.seed:
+            out["seed"] = self.seed
+        for key in ("prefer", "exclude", "sources"):
+            if getattr(self, key):
+                out[key] = list(getattr(self, key))
         return out
 
     def filters_text(self) -> str:
@@ -404,6 +415,11 @@ def parse_spec(data: Any, where: str = "spec") -> CrateSpec:
         elif code not in codes:
             codes.append(code)
     anchors = _texts(data, "anchors", errors)
+    extra = {key: _texts(data, key, errors) for key in ("prefer", "exclude", "sources")}
+    seed = data.get("seed")
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, (str, int)) or not str(seed).strip()):
+        errors.append(f"`seed` must be one track id, got {seed!r}")
+        seed = None
 
     min_rating = data.get("min_rating", 0)
     if min_rating is None:
@@ -433,7 +449,27 @@ def parse_spec(data: Any, where: str = "spec") -> CrateSpec:
         my_tags=lists["my_tags"],
         min_rating=min_rating,
         curve=curve,
+        seed=_one_line(seed) if seed is not None else "",
+        **extra,
     )
+
+
+def with_seed(lib: Library, spec: CrateSpec) -> CrateSpec:
+    """The seed as an anchor, and its BPM (+/- SEED_BPM) and genre for whatever the spec leaves
+    out; its key and neighbours score up (`_Scorer`), never filter. An unknown seed -> CrateError."""
+    if not spec.seed:
+        return spec
+    t = lib.tracks.get(spec.seed)
+    if t is None:
+        raise CrateError(f"`seed`: {spec.seed} not in the library (a track id from dj_query).")
+    changes: dict[str, Any] = {}
+    if spec.seed not in spec.anchors:
+        changes["anchors"] = (spec.seed, *spec.anchors)
+    if not spec.bpm and not spec.lanes and t.bpm > 0:
+        changes["bpm"] = (max(1.0, t.bpm - SEED_BPM), min(float(MAX_BPM), t.bpm + SEED_BPM))
+    if not spec.genres and t.genre.strip():
+        changes["genres"] = (_one_line(t.genre),)
+    return replace(spec, **changes)
 
 
 def load_spec(path: str | Path, where: str | None = None) -> CrateSpec:
@@ -648,6 +684,9 @@ class _Scorer:
         self.lib, self.spec, self.lanes, self.named, self.pairs = lib, spec, lanes, named, pairs
         self.refs, self.taste_anchors = refs, taste_anchors
         self.feedback = feedback or {}
+        seed = lib.tracks.get(spec.seed) if spec.seed else None
+        code = camelot(seed.key) if seed is not None else None
+        self.keys = spec.keys or ((code,) if code else ())
         if named:
             self.centres = [lane.centre for lane in named]
         elif spec.bpm:
@@ -661,8 +700,13 @@ class _Scorer:
     def score(self, t: Track) -> _Scored:
         spec = self.spec
         points, parts = 0, []
-        if t.id in spec.anchors:
+        if t.id == spec.seed:
+            parts.append("your seed")
+        elif t.id in spec.anchors:
             parts.append("anchor you named")
+        if t.id in spec.prefer:
+            points += W_PREFER
+            parts.append("named in the research")
         lane = self.lane_of(t.bpm)
         if lane is not None:
             points += W_LANE
@@ -686,8 +730,8 @@ class _Scorer:
             if fit:
                 points += W_GENRE if fit == 2 else W_GENRE_NEAR
                 parts.append(t.genre.strip())
-        if spec.keys:
-            fit, want = key_fit(t.key, spec.keys)
+        if self.keys:
+            fit, want = key_fit(t.key, self.keys)
             if fit == 2:
                 points += W_KEY
                 parts.append(f"key {want}")
@@ -764,6 +808,7 @@ def select(
     (`Vetoes.with_copies`), so the FLAC of a vetoed MP3 stays out too (R-702). `feedback`: track id
     -> +1 (worked at a gig) / -1 (flopped), from `taste_files.feedback_scores`: added to the score;
     a flopped track is never a spare."""
+    spec = with_seed(lib, spec)
     named_vetoes = vetoes or Vetoes()
     feedback = {str(k): v for k, v in (feedback or {}).items() if v}
     vetoes = named_vetoes.with_copies(lib.tracks.values())
@@ -782,6 +827,8 @@ def select(
     for t in tracks:
         if not t.location:
             counts["no_file"] += 1
+            continue
+        if t.id in spec.exclude:
             continue
         if t.bpm <= 0:
             counts["no_bpm"] += 1
@@ -1278,6 +1325,8 @@ def render_md(state: _State, written: str, day: date) -> str:
     ]
     if state.warnings:
         summary.append("Note: " + " ".join(state.warnings))
+    if spec.sources:
+        summary.append("Research: " + ", ".join(spec.sources) + ".")
     lines = [
         f"# Crate: {spec.name}",
         "",

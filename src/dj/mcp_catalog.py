@@ -68,3 +68,22 @@ def dj_note(track_id: str, field: str, value: str, source: str = "dj") -> str:
                 "track_id", 40)  # fmt: skip
     values = (tid, _text(field, "field", NOTE_FIELD_MAX), _text(value, "value", NOTE_VALUE_MAX))
     return _run(["library", "note", "--source", _text(source, "source", NOTE_FIELD_MAX)], values)
+
+
+@m.server.tool(annotations=m.LIBRARY_TEXT)
+@m.guarded
+def dj_match_tracks(candidates: list[str], crate: str = "") -> str:
+    """Split web-research candidates for a long crate into the tracks the DJ owns and the ones to
+    buy (D-38). `candidates`: "Artist - Title" lines, each with an optional link at the end (at most
+    200). `crate`: the crate's slug; with one, the missing ones are written to
+    crates/<slug>.to-buy.md (a text file of the DJ's library folder: no preview id). Returns counts
+    first {candidates, owned, missing}, `owned` (candidate, id, artist, title, bpm, key), `missing`
+    (candidate, source, beatport, bandcamp search links, never fetched), `prefer` (every owned id: put
+    them in the spec's `prefer`) and `to_buy` (the file, or null). rekordbox is only read."""
+    if not isinstance(candidates, list) or not candidates or len(candidates) > 200:
+        raise m.ToolInputError("candidates must be a list of 1 to 200 \"Artist - Title\" lines.")
+    lines = tuple(_text(c, "a candidate", 500) for c in candidates)
+    options = ["library", "match-tracks"]
+    if crate:
+        options += ["--crate", _text(crate, "crate", 80)]
+    return _run(options, lines)

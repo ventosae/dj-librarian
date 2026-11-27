@@ -41,6 +41,7 @@ app.add_typer(wishlist_app, name="wishlist")
 app.command(name="backup")(backup_command)
 library_app.command("query")(catalog_commands.query)  # the track catalog (dj.catalog)
 library_app.command("note")(catalog_commands.note)
+library_app.command("match-tracks")(catalog_commands.match_tracks)
 
 EXIT_ERROR = 1
 EXIT_REKORDBOX_RUNNING = 2

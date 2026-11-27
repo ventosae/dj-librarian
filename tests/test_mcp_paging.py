@@ -176,7 +176,7 @@ PAGED = {  # tool -> (call, the CLI's list keys)
 def test_the_paged_tools_here_are_all_the_tools_with_a_page_argument():
     tools = {t.name: t for t in asyncio.run(m.server.list_tools())}
     with_page = {name for name, t in tools.items() if "page" in t.input_schema["properties"]}
-    assert with_page == set(PAGED)
+    assert with_page - {"dj_query"} == set(PAGED)  # dj_query pages the catalog itself, 200 rows (D-37)
     for name in PAGED:
         props = tools[name].input_schema["properties"]
         assert (props["page"]["default"], props["page_size"]["default"]) == (1, 50), name
