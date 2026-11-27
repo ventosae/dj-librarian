@@ -8,8 +8,8 @@ command made (`~/dj-librarian`), before or after `uv sync`.
     default_config_path()                           -> the config file on this Mac or Windows PC
 
 The entry is `{"command": <absolute uv>, "args": ["run", "--directory", <absolute folder>,
-"--no-sync", "dj-mcp"], "env": {"UV_PROJECT_ENVIRONMENT": <folder>/.venv, "DJ_POWER_MODE": true on Windows,
-false on a Mac (W-38, Q-35), "DJ_LIBRARY": <the dj-library folder>}}`; the engine reads DJ_LIBRARY first (dj.hostenv), and the venv is pinned so an inherited
+"--no-sync", "dj-mcp"], "env": {"UV_PROJECT_ENVIRONMENT": <folder>/.venv, "DJ_LIBRARY": <the dj-library
+folder>}}`; the engine reads DJ_LIBRARY first (dj.hostenv), and the venv is pinned so an inherited
 UV_PROJECT_ENVIRONMENT (a contributor's setting) never redirects it. Only `mcpServers["dj-librarian"]` ever changes: every other key keeps
 its value and its order, written back in the two-space layout Claude Desktop itself writes. Before
 any change the file is copied to `claude_desktop_config.json.bak-<date>` (create-only: `-2`, `-3`
@@ -63,10 +63,9 @@ def entry(uv: str | Path, folder: str | Path, library: str | Path | None = None,
         uv = uv.with_suffix(".exe")
     if not (folder / "pyproject.toml").is_file():
         raise InstallerError(f"{folder} holds no pyproject.toml: copy the engine there first.")
-    # W-38 (D-32): writes into rekordbox on Windows; off on a Mac until its live write test (Q-35)
-    power = "true" if platform == "win32" else "false"
+    # No DJ_POWER_MODE: writes into rekordbox are on on every OS; the DJ sets it to false to switch them off.
     out: dict[str, Any] = {"command": str(uv), "args": ["run", "--directory", str(folder), "--no-sync", "dj-mcp"],
-                           "env": {"UV_PROJECT_ENVIRONMENT": str(folder / ".venv"), "DJ_POWER_MODE": power}}  # fmt: skip
+                           "env": {"UV_PROJECT_ENVIRONMENT": str(folder / ".venv")}}  # fmt: skip
     if library is not None:
         library = Path(library).expanduser()
         if not (library / "library.yaml").is_file():

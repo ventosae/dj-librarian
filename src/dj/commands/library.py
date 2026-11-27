@@ -468,8 +468,8 @@ def _fail(message: str) -> None:
     raise typer.Exit(EXIT_ERROR)
 
 
-_POWER_MODE = typer.Option(False, "--power-mode", help="With --apply: write into rekordbox's master.db (Windows, "
-                           "rekordbox closed, a backup first; dj.db_write) instead of the XML to import.")  # fmt: skip
+_XML = typer.Option(False, "--xml", help="With --apply: write an XML to import instead of writing into "
+                    "rekordbox's master.db (the default: rekordbox closed, a backup first; dj.db_write).")  # fmt: skip
 
 
 def _preview_lines(data: dict[str, Any], rows: list[Any], slug: str) -> list[str]:
@@ -503,8 +503,8 @@ def _preview_lines(data: dict[str, Any], rows: list[Any], slug: str) -> list[str
     else:
         lines.append(f"preview id:  {data['preview_id']}")
         lines.append(
-            f"to write:    dj library build {slug} --apply --preview-id {data['preview_id']} "
-            "(only after the DJ said yes)"
+            f"to write:    dj library build {slug} --apply --xml --preview-id {data['preview_id']} "
+            "(an XML to import; only after the DJ said yes)"
         )
     return lines
 
@@ -526,7 +526,7 @@ def _apply_lines(data: dict[str, Any]) -> list[str]:
 def build(
     proposal: str = typer.Argument(..., help="Slug, name, or 'Build me the <name> structure'."),
     library: str = typer.Option(None, "--library", help="The dj-library folder. Default: the configured one."),
-    apply: bool = typer.Option(False, "--apply", help="Write proposals/<slug>.xml. Needs --preview-id."),
+    apply: bool = typer.Option(False, "--apply", help="Write it into rekordbox. Needs --preview-id."),
     preview_id: str = typer.Option(None, "--preview-id", help="The id the preview printed, after the DJ's yes."),
     today: str = typer.Option(None, "--today", help="Date for new files and library.yaml (YYYY-MM-DD)."),
     rows_limit: int = typer.Option(
@@ -535,11 +535,11 @@ def build(
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     source: str = typer.Option(None, "--source", help="xml: the latest export; db: a master.db snapshot. Default: library.yaml's."),
-    power_mode: bool = _POWER_MODE,
+    xml: bool = _XML,
 ) -> None:
     """Preview a proposal (CREATE / SKIP / CONFLICT / MANUAL per node), or with --apply and the
-    preview id write proposals/<slug>.xml for the DJ to import, or with --power-mode write it into
-    master.db (dj.db_write). Reads master.db only for --source db."""
+    preview id write it into master.db (dj.db_write: rekordbox closed, a backup first, one
+    commit); with --xml write proposals/<slug>.xml for the DJ to import instead."""
     if apply and not (preview_id or "").strip():
         _refuse("--apply needs --preview-id: run the preview, show it, write only after a yes.")
     try:
@@ -550,7 +550,7 @@ def build(
         root = Path(library) if library else libfolder.configured_root()
         if not root.is_dir():
             _fail(f"{root} is not a folder. Scaffold the dj-library folder first (dj-start).")
-        if apply and power_mode:  # into master.db: dj.db_write prints and exits itself
+        if apply and not xml:  # into master.db: dj.db_write prints and exits itself
             return db_write.run_cli(as_json, lambda: db_write.build(root, proposal, preview_id.strip(), today=day,
                                                                      source=source))  # fmt: skip
         if apply:
@@ -561,7 +561,7 @@ def build(
             found = build_structure.preview(root, proposal, today=day, source=source)
             data = found.to_dict(root, limit=rows_limit or len(found.rows)) | db_write.preview_keys(root, source)
             text = _preview_lines(data, list(found.rows), found.slug)
-            text += db_write.preview_lines(data, f"dj library build {found.slug} --source db")
+            text += db_write.preview_lines(data, f"dj library build {found.slug}")
     except GateError as exc:
         _refuse(str(exc))
     except (build_structure.BuildError, TreeSchemaError, LibraryError, OSError, ValueError) as exc:
@@ -701,8 +701,8 @@ def _crate_preview_lines(found: crate_mod.CratePreview) -> list[str]:
     else:
         lines.append(f"preview id:  {data['preview_id']}")
         lines.append(
-            f"to write:    dj library crate {data['crate']} --apply --preview-id {data['preview_id']} "
-            "(only after the DJ said yes)"
+            f"to write:    dj library crate {data['crate']} --apply --xml --preview-id {data['preview_id']} "
+            "(an XML to import; only after the DJ said yes)"
         )
     return lines
 
@@ -725,18 +725,18 @@ def _crate_apply_lines(data: dict[str, Any]) -> list[str]:
 def crate_cmd(
     spec: str = typer.Argument(..., help="The crate's slug, or the path of crates/<slug>.spec.yaml."),
     library: str = typer.Option(None, "--library", help="The dj-library folder. Default: the configured one."),
-    apply: bool = typer.Option(False, "--apply", help="Write proposals/crate-<slug>.xml. Needs --preview-id."),
+    apply: bool = typer.Option(False, "--apply", help="Write the crate into rekordbox. Needs --preview-id."),
     preview_id: str = typer.Option(None, "--preview-id", help="The id the preview printed, after the DJ's yes."),
     today: str = typer.Option(None, "--today", help="Date written into crates/<slug>.md (YYYY-MM-DD)."),
     picks_limit: int = typer.Option(crate_mod.PICKS_LIMIT, "--picks-limit", min=0,
                                     help="Picks listed in the preview JSON; 0 = all (the MCP tool pages them)."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     source: str = typer.Option(None, "--source", help="xml: the latest export; db: a master.db snapshot. Default: library.yaml's."),
-    power_mode: bool = _POWER_MODE,
+    xml: bool = _XML,
 ) -> None:
     """Preview a crate from crates/<slug>.spec.yaml (picks with a reason each, spares by energy),
-    or with --apply and the preview id write proposals/crate-<slug>.xml and crates/<slug>.md
-    for the DJ to import, or with --power-mode write it into master.db (dj.db_write)."""
+    or with --apply and the preview id write it into master.db (dj.db_write) and crates/<slug>.md;
+    with --xml write proposals/crate-<slug>.xml for the DJ to import instead."""
     if apply and not (preview_id or "").strip():
         _refuse("--apply needs --preview-id: run the preview, show it, write only after a yes.")
     try:
@@ -747,7 +747,7 @@ def crate_cmd(
         root = Path(library) if library else libfolder.configured_root()
         if not root.is_dir():
             _fail(f"{root} is not a folder. Scaffold the dj-library folder first (dj-start).")
-        if apply and power_mode:  # into master.db: dj.db_write prints and exits itself
+        if apply and not xml:  # into master.db: dj.db_write prints and exits itself
             return db_write.run_cli(as_json, lambda: db_write.crate(root, spec, preview_id.strip(), today=day,
                                                                      source=source))  # fmt: skip
         if apply:
@@ -756,7 +756,7 @@ def crate_cmd(
         else:
             found = crate_mod.preview(root, spec, today=day, source=source)
             data = found.to_dict(picks_limit) | db_write.preview_keys(root, source)
-            text = _crate_preview_lines(found) + db_write.preview_lines(data, f"dj library crate {found.slug} --source db")
+            text = _crate_preview_lines(found) + db_write.preview_lines(data, f"dj library crate {found.slug}")
     except GateError as exc:
         _refuse(str(exc))
     except (crate_mod.CrateError, build_structure.BuildError, LibraryError, OSError) as exc:

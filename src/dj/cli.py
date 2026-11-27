@@ -44,20 +44,16 @@ app.command(name="backup")(backup_command)
 EXIT_ERROR = 1
 EXIT_REKORDBOX_RUNNING = 2
 
-# The write gate (R-1102, R-205): a write needs the id of the dry-run the DJ said yes to; a
-# master.db write also needs --power-mode, on Windows.
+# The write gate (R-1102): a write needs the id of the dry-run the DJ said yes to. A master.db
+# write then runs the one chain on every OS (dj.safety.open_db): rekordbox closed, a verified
+# backup, one transaction. DJ_POWER_MODE=false switches master.db writes off.
 _PREVIEW_ID_OPT = typer.Option(
     None, "--preview-id", help="With --apply: the id the dry-run printed, after the DJ said yes to it."
 )
-_POWER_MODE_OPT = typer.Option(
-    False, "--power-mode",
-    help="With --apply: write master.db directly (Windows only). The default write path is an XML "
-         "you import: dj library build for new folders and playlists, --xml for adds and copies.",
-)  # fmt: skip
 _XML_OPT = typer.Option(
     False, "--xml",
-    help="With --apply: write proposals/<crate>-adds-<date>.xml for the DJ to import (any OS, no "
-         "--power-mode, master.db is never opened for writing), instead of writing master.db.",
+    help="With --apply: write proposals/<crate>-adds-<date>.xml for the DJ to import (master.db is "
+         "never opened for writing), instead of writing master.db.",
 )  # fmt: skip
 
 
@@ -75,25 +71,22 @@ def _gate_id(preview_id: str | None) -> None:
         _refused(exc)
 
 
-def _gate_db_write(power_mode: bool, preview_id: str | None) -> None:
-    """Before a master.db write reads anything: --power-mode and Windows first (R-205), then an
-    id with the shape of a preview id (R-1102). Its content is checked once the plan is known."""
-    try:
-        write_gate.require_power_mode(power_mode)
-        write_gate.require_id(preview_id)
-    except GateError as exc:
-        _refused(exc)
+def _gate_db_write(preview_id: str | None) -> None:
+    """Before a master.db write reads anything: the off switch (DJ_POWER_MODE=false), then an id
+    with the shape of a preview id (R-1102). Its content is checked once the plan is known."""
+    off = hostenv.power_mode_refusal()
+    if off:
+        _refused(off)
+    _gate_id(preview_id)
 
 
-def _gate_adds_write(xml: bool, power_mode: bool, preview_id: str | None) -> None:
-    """Before `dj apply` / `dj copy --apply` reads anything: --xml (an XML to import, any OS, no
-    write session) or --power-mode (master.db, Windows), never both; then the preview id's shape."""
-    if xml and power_mode:
-        _refused("--xml and --power-mode are two ways to write: pick one. Nothing written.")
+def _gate_adds_write(xml: bool, preview_id: str | None) -> None:
+    """Before `dj apply` / `dj copy --apply` reads anything: master.db (the default), or --xml
+    (an XML to import, no write session); then the preview id's shape."""
     if xml:
         _gate_id(preview_id)
     else:
-        _gate_db_write(power_mode, preview_id)
+        _gate_db_write(preview_id)
 
 
 def _preview_keys(recorded: write_gate.Recorded | None) -> dict[str, Any]:
@@ -103,27 +96,28 @@ def _preview_keys(recorded: write_gate.Recorded | None) -> dict[str, Any]:
 
 def _db_off_keys() -> dict[str, Any]:
     """A master.db dry-run's --json key when the engine settings refuse master.db writes
-    (DJ_POWER_MODE, dj.hostenv; additive, absent otherwise): the preview tool's result then tells
-    the DJ that the power-mode route cannot be written."""
+    (DJ_POWER_MODE=false, dj.hostenv; additive, absent otherwise): the preview tool's result then
+    tells the DJ that this preview cannot be written."""
     off = hostenv.power_mode_refusal()
     return {"master_db_write": off} if off else {}
 
 
-def _to_write(preview_id: str, power_mode: bool = False, xml: bool = False) -> str:
-    """The dry-run's last line: how the write is called, after the DJ's yes. `xml`: the command
-    also writes an XML to import (`dj apply`, `dj copy`), named first. When the engine settings
-    refuse master.db writes, the power-mode route is not offered: the line says why instead."""
-    flags = "--apply --power-mode" if power_mode else "--apply"
-    off = hostenv.power_mode_refusal() if power_mode else None
+def _to_write(preview_id: str, db: bool = False, xml: bool = False) -> str:
+    """The dry-run's last line: how the write is called, after the DJ's yes. `db`: the write goes
+    into master.db (rekordbox closed). `xml`: the command can also write an XML to import
+    (`dj apply`, `dj copy`). When DJ_POWER_MODE=false refuses master.db writes, the line says so."""
+    off = hostenv.power_mode_refusal() if db else None
     if off and xml:
         return (f"DRY-RUN. Nothing written. To write, after the DJ's yes: --apply --xml --preview-id {preview_id} "
-                f"(an XML to import, any OS). Not master.db: {off}")
+                f"(an XML to import). Not master.db: {off}")
     if off:
         return f"DRY-RUN. Nothing written. This preview cannot be written: {off}"
+    told = f"DRY-RUN. Nothing written. To write, after the DJ's yes: --apply --preview-id {preview_id}"
+    if db:
+        told += " (into rekordbox: close it first)"
     if xml:
-        return (f"DRY-RUN. Nothing written. To write, after the DJ's yes: --apply --xml --preview-id {preview_id} "
-                f"(an XML to import, any OS), or master.db on Windows: {flags} --preview-id {preview_id}")
-    return f"DRY-RUN. Nothing written. To write, after the DJ's yes: {flags} --preview-id {preview_id}"
+        told += f", or an XML to import: --apply --xml --preview-id {preview_id}"
+    return told
 
 
 def _used(preview_id: str, written: str) -> None:
@@ -381,16 +375,15 @@ def tree(
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     preview_id: str = _PREVIEW_ID_OPT,
-    power_mode: bool = _POWER_MODE_OPT,
 ) -> None:
     """Create what is missing from tree.yaml. Never changes what exists.
 
-    The dry-run prints a preview id; --apply needs --power-mode and that id (R-205, R-1102)."""
+    The dry-run prints a preview id; --apply needs that id and rekordbox closed (R-1102)."""
     if apply and as_json:
         typer.echo("ERROR --json is for the dry-run; apply without it.", err=True)
         raise typer.Exit(EXIT_ERROR)
     if apply:
-        _gate_db_write(power_mode, preview_id)
+        _gate_db_write(preview_id)
     try:
         file = _config_arg(file)
         nodes = tree_mod.load_tree(file)
@@ -433,7 +426,7 @@ def tree(
         recorded = write_gate.record("tree", gate_args, changes)
         for line in recorded.lines():
             typer.echo(line)
-        typer.echo(_to_write(recorded.preview_id, power_mode=True))
+        typer.echo(_to_write(recorded.preview_id, db=True))
         return
     if not totals[tree_mod.CREATE]:
         typer.echo("Nothing to create. Nothing written.")
@@ -451,7 +444,7 @@ def tree(
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
     except GateError as exc:
         _refused(exc)
-    except safety.SafetyError as exc:  # e.g. not Windows (DB_WRITE_PLATFORMS): one line, nothing written
+    except safety.SafetyError as exc:  # e.g. the process check could not run: one line, nothing written
         _fail(exc)
     _used(preview_id, f"{created} node(s) in master.db")
     typer.echo(f"APPLIED. Created {created} node(s) in one commit. Backup in {safety.backup_folder_text()}.")
@@ -750,15 +743,14 @@ def apply_plan(
     xml: bool = _XML_OPT,
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     preview_id: str = _PREVIEW_ID_OPT,
-    power_mode: bool = _POWER_MODE_OPT,
 ) -> None:
     """Add the `decision: yes` tracks of a plan to its crate. Appends only.
 
     The dry-run reads a snapshot of master.db and prints a preview id. --apply needs that id and
-    one way to write: --xml (an XML the DJ imports, then one drag into the crate; any OS, master.db
-    never opened for writing) or --power-mode (master.db, Windows) (R-205, R-802, R-1102)."""
+    writes master.db (rekordbox closed, a backup first, one commit), or with --xml an XML the DJ
+    imports, then one drag into the crate (R-802, R-1102)."""
     if apply:
-        _gate_adds_write(xml, power_mode, preview_id)
+        _gate_adds_write(xml, preview_id)
     paths = intake.default_paths()
     try:
         plan_data = intake.load_plan(plan_file)
@@ -784,7 +776,7 @@ def apply_plan(
         if not apply:
             recorded = write_gate.record("apply", gate_args, changes)
             payload |= _preview_keys(recorded) | _db_off_keys()
-            lines += recorded.lines() + [_to_write(recorded.preview_id, power_mode=True, xml=True)]
+            lines += recorded.lines() + [_to_write(recorded.preview_id, db=True, xml=True)]
         elif xml:
             write_gate.check(preview_id, "apply", gate_args, changes)  # before the XML is written
             done, more = _apply_as_xml(plan_data, plan_file, adds, found, paths, preview_id)
@@ -903,15 +895,14 @@ def copy_playlist(
     xml: bool = _XML_OPT,
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     preview_id: str = _PREVIEW_ID_OPT,
-    power_mode: bool = _POWER_MODE_OPT,
 ) -> None:
     """Append the tracks of one rekordbox playlist to another. Adds only, never removes.
 
     The dry-run reads a snapshot of master.db and prints a preview id. --apply needs that id and
-    one way to write: --xml (an XML the DJ imports, then one drag into the target; any OS, master.db
-    never opened for writing) or --power-mode (master.db, Windows) (R-205, R-802, R-1102)."""
+    writes master.db (rekordbox closed, a backup first, one commit), or with --xml an XML the DJ
+    imports, then one drag into the target (R-802, R-1102)."""
     if apply:
-        _gate_adds_write(xml, power_mode, preview_id)
+        _gate_adds_write(xml, preview_id)
     try:
         with _snapshot() as db:  # R-202; for --xml also the fresh read the gate checks
             planned = copy_mod.plan(db, source, target, allow_missing_target=not apply)
@@ -928,7 +919,7 @@ def copy_playlist(
         if not apply:
             recorded = write_gate.record("copy", gate_args, changes)
             payload |= _preview_keys(recorded) | _db_off_keys()
-            lines += recorded.lines() + [_to_write(recorded.preview_id, power_mode=True, xml=True)]
+            lines += recorded.lines() + [_to_write(recorded.preview_id, db=True, xml=True)]
         elif xml:
             write_gate.check(preview_id, "copy", gate_args, changes)  # before the XML is written
             if not planned.adds:

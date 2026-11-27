@@ -679,7 +679,7 @@ def test_cli_apply_without_preview_id_refuses_before_anything_runs(folder, monke
 
 def test_cli_apply_with_a_wrong_id_is_refused(folder):
     _cli("lanes", "--library", folder.root, "--today", "2026-10-20")
-    result = _cli("lanes", "--library", folder.root, "--apply", "--preview-id", "0123456789ab")
+    result = _cli("lanes", "--library", folder.root, "--apply", "--xml", "--preview-id", "0123456789ab")
     assert result.exit_code == 1 and result.stderr.startswith("REFUSED No preview with id")
     assert not list(folder.proposals.glob("*.xml"))
 
@@ -688,7 +688,7 @@ def test_cli_preview_then_apply_json(folder):
     preview = _cli("lanes", "--library", folder.root, "--today", "2026-10-20", "--json")
     data = json.loads(preview.stdout)
     assert list(data)[0] == "counts" and data["preview_id"]
-    applied = _cli("lanes", "--library", folder.root, "--today", "2026-10-20", "--apply",
+    applied = _cli("lanes", "--library", folder.root, "--today", "2026-10-20", "--apply", "--xml",
                    "--preview-id", data["preview_id"], "--json")  # fmt: skip
     assert applied.exit_code == 0, applied.stderr
     out = json.loads(applied.stdout)
@@ -711,7 +711,7 @@ def test_cli_preview_rows_limit_caps_the_json_rows_and_0_gives_every_row(folder)
 
 def test_cli_text_apply_prints_the_import_card(folder):
     pid = bs.preview(folder, "lanes", today=DAY).preview_id
-    result = _cli("lanes", "--library", folder.root, "--apply", "--preview-id", pid)
+    result = _cli("lanes", "--library", folder.root, "--apply", "--xml", "--preview-id", pid)
     assert result.exit_code == 0, result.stderr
     assert "Wrote proposals/lanes.xml" in result.stdout and "  3. Drag the new playlists" in result.stdout
 

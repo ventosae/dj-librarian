@@ -5,20 +5,16 @@ pgrep or tasklist (subprocess.run is replaced), opens a real master.db (safety._
 fake) or looks outside tmp_path (Path.home and the env are replaced).
 """
 
-import functools
 import json
 import os
 import subprocess
 import sys
-from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 import pytest
 import xml_fixtures as fx
 from test_cli import sessions  # noqa: F401  (fixture used by `env`)
-from test_intake import CrateDB, plan_with
-from test_playlist_copy import CopyDB, song
 from test_tidy_cli import _planned, env  # noqa: F401  (fixture)
 from tidy_fixtures import make_audio
 from typer.testing import CliRunner
@@ -386,100 +382,6 @@ def test_darwin_read_db_finds_master_db_under_library_and_keeps_mac_paths(monkey
     assert any(loc.startswith("/Users/dj/Music/") for loc in locations)
     assert any(loc.startswith("/Volumes/") for loc in locations)
     assert not any("\\" in loc or loc.startswith("D:/") for loc in locations)
-
-
-@pytest.mark.parametrize("platform", ["darwin", "linux"])
-def test_master_db_writes_stay_windows_only(monkeypatch, platform):
-    on(monkeypatch, platform)
-
-    def untouched(*args, **kwargs):
-        raise AssertionError("nothing may run before the platform refusal")
-
-    for name in ("find_master_db", "rekordbox_running", "backup", "_connect"):
-        monkeypatch.setattr(safety, name, untouched)
-    with pytest.raises(safety.SafetyError, match="Windows-only"):
-        with safety.open_db(write=True):
-            pytest.fail("must not yield")
-
-
-def test_windows_is_the_db_write_platform():
-    assert safety.DB_WRITE_PLATFORMS == ("win32",)
-
-
-@pytest.fixture
-def db_write_cli(monkeypatch, tmp_path, live_master_db):
-    """The read pass sees a fake db (it locates master.db to copy it: a snapshot, R-202); the write
-    session is the real open_db, so its platform refusal runs. Nothing behind the refusal (backup,
-    process check, connect) may run."""
-    state = SimpleNamespace(db=None, sessions=[])
-
-    @contextmanager
-    def open_db(write=False, db_path=None):
-        state.sessions.append(write)
-        if write:
-            with REAL_OPEN_DB(write=True, db_path=db_path) as real:
-                yield real
-        else:
-            yield state.db
-
-    def untouched(*args, **kwargs):
-        raise AssertionError("nothing may run before the platform refusal")
-
-    monkeypatch.setattr(safety, "open_db", open_db)
-    for name in ("rekordbox_running", "backup", "_connect"):
-        monkeypatch.setattr(safety, name, untouched)
-    monkeypatch.setattr(cli.intake, "Paths", functools.partial(cli.intake.Paths, tmp_path))
-    return state
-
-
-def db_write_jobs(tmp_path, db):
-    """(fake db, dry-run arguments) for `dj tree`, `dj apply` and `dj copy`."""
-    tree_file = tmp_path / "tree.yaml"
-    tree_file.write_text("- playlist: inbox\n", encoding="utf-8")
-    plan = tmp_path / "x.plan.json"
-    plan.write_text(json.dumps(plan_with(("yes", "1"))), encoding="utf-8")
-    crate, copy_db = CrateDB(), CopyDB([song("1", 1)])
-    return [
-        (db, ["tree", "--file", str(tree_file)]),
-        (crate, ["apply", str(plan)]),
-        (copy_db, ["copy", "jazzy", "jazz_base/2.1_jazzy"]),
-    ]
-
-
-@pytest.mark.parametrize("platform", ["darwin", "linux"])
-def test_db_write_commands_refuse_off_windows_in_one_line(monkeypatch, db_write_cli, db, tmp_path, platform):
-    """R-205 / R-203: `dj tree|apply|copy --apply --power-mode` on a Mac end in one REFUSED line
-    (exit 1), not a traceback, before any read, preview check or backup; nothing is written."""
-    jobs = db_write_jobs(tmp_path, db)
-    on(monkeypatch, platform)
-    for fake, args in jobs:
-        db_write_cli.db, db_write_cli.sessions = fake, []
-        result = runner.invoke(cli.app, [*args, "--apply", "--power-mode", "--preview-id", "0" * 12])
-        assert result.exit_code == cli.EXIT_ERROR, tidy_text(result)
-        assert isinstance(result.exception, SystemExit), repr(result.exception)  # a clean exit, no traceback
-        assert f"REFUSED master.db writes are power mode, Windows only; this is {platform}" in tidy_text(result)
-        assert db_write_cli.sessions == [], args
-    assert db.calls == [] and all(fake.added == [] for fake, _ in jobs[1:])
-    assert not (tmp_path / "state").exists() and not (tmp_path / "reports").exists()
-
-
-@pytest.mark.parametrize("platform", ["darwin", "linux"])
-def test_open_db_refusal_off_windows_is_one_line_too(monkeypatch, db_write_cli, db, tmp_path, platform):
-    """The second wall: were the up-front check gone, safety.open_db(write=True) still refuses off
-    Windows (DB_WRITE_PLATFORMS), and the command prints that as one ERROR line, not a traceback."""
-    jobs = db_write_jobs(tmp_path, db)
-    on(monkeypatch, platform)
-    monkeypatch.setattr(cli.write_gate, "require_power_mode", lambda power_mode: None)
-    for fake, args in jobs:
-        db_write_cli.db, db_write_cli.sessions = fake, []
-        pid = json.loads(runner.invoke(cli.app, [*args, "--json"]).output)["preview_id"]
-        result = runner.invoke(cli.app, [*args, "--apply", "--power-mode", "--preview-id", pid])
-        assert result.exit_code == cli.EXIT_ERROR, tidy_text(result)
-        assert isinstance(result.exception, SystemExit), repr(result.exception)
-        assert f"ERROR Direct master.db writes are Windows-only power mode; this is {platform}" in tidy_text(result)
-        assert db_write_cli.sessions == [False, False, True], args  # dry-run, read pass, write refused
-    assert db.calls == [] and all(fake.added == [] for fake, _ in jobs[1:])
-    assert not (tmp_path / "state").exists() and not (tmp_path / "reports").exists()
 
 
 # -- dj status with rekordbox running, per OS (R-201), from a snapshot (R-202) -----------

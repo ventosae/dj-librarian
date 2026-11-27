@@ -125,7 +125,7 @@ def test_the_cli_says_the_line_and_refuses_the_write(folder):
     set_source(folder, "exports/gone.xml")
     dry = runner.invoke(cli.app, ["library", "build", "lanes", "--library", str(folder.root), "--json"])
     assert dry.exit_code == 0 and json.loads(dry.stdout)["blocked"].endswith(LINE)
-    wet = runner.invoke(cli.app, ["library", "build", "lanes", "--library", str(folder.root), "--apply",
+    wet = runner.invoke(cli.app, ["library", "build", "lanes", "--library", str(folder.root), "--apply", "--xml",
                                   "--preview-id", "0123456789ab"])  # fmt: skip
     assert wet.exit_code == 1 and LINE in wet.output and not (folder.proposals / "lanes.xml").exists()
 

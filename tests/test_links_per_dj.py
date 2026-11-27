@@ -312,14 +312,14 @@ def test_mcp_plan_and_tracklist_files_may_live_in_the_library(repo, lib, calls, 
 
     assert json.loads(m.dj_apply_preview("plans/2026-10-20-x.plan.json"))["ok"] is True
     assert calls[-1][3:] == ["apply", "--json", "--", str(plan.resolve())]
-    assert json.loads(m.dj_apply_write(str(plan), preview_id=PID, power_mode=True))["ok"] is True
-    assert calls[-1][3:] == ["apply", "--apply", "--power-mode", "--preview-id", PID, "--json", "--",
+    assert json.loads(m.dj_apply_write(str(plan), preview_id=PID))["ok"] is True
+    assert calls[-1][3:] == ["apply", "--apply", "--preview-id", PID, "--json", "--",
                              str(plan.resolve())]
     assert json.loads(m.dj_build_preview("crates/saturday.txt"))["ok"] is True
     assert calls[-1][3:] == ["build", "--json", "--", str(tracklist.resolve())]
     n = len(calls)
     for bad in (str(outside), "../elsewhere.plan.json"):
-        assert json.loads(m.dj_apply_write(bad, preview_id=PID, power_mode=True))["ok"] is False
+        assert json.loads(m.dj_apply_write(bad, preview_id=PID))["ok"] is False
     assert len(calls) == n  # nothing ran for a file outside both folders
 
 
@@ -348,7 +348,7 @@ def test_mcp_repo_files_still_work_when_the_library_setting_is_unusable(repo, ca
 
     assert intake.library_links_root() is None  # the CLI side: default_paths() = the repo layout
     for tool, arg, target in ((m.dj_apply_preview, "plans/2026-10-20-x.plan.json", plan),
-                              (lambda a: m.dj_apply_write(a, preview_id=PID, power_mode=True), str(plan), plan),
+                              (lambda a: m.dj_apply_write(a, preview_id=PID), str(plan), plan),
                               (m.dj_build_preview, "tracklists/saturday.txt", tracklist),
                               (lambda a: m.dj_build_apply(a, preview_id=PID), "tracklists/saturday.txt", tracklist)):
         answer = json.loads(tool(arg))

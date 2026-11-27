@@ -906,7 +906,7 @@ def test_cli_preview_then_apply_json(folder):
     preview = _cli("sat", "--library", folder.root, "--json")
     data = json.loads(preview.stdout)
     assert list(data)[0] == "counts" and data["preview_id"]
-    applied = _cli("crates/sat.spec.yaml", "--library", folder.root, "--today", "2026-10-20", "--apply",
+    applied = _cli("crates/sat.spec.yaml", "--library", folder.root, "--today", "2026-10-20", "--apply", "--xml",
                    "--preview-id", data["preview_id"], "--json")  # fmt: skip
     assert applied.exit_code == 0, applied.stderr
     out = json.loads(applied.stdout)
@@ -916,14 +916,14 @@ def test_cli_preview_then_apply_json(folder):
 
 def test_cli_text_apply_prints_the_import_card(folder):
     pid = crate.preview(folder, "sat").preview_id
-    result = _cli("sat", "--library", folder.root, "--apply", "--preview-id", pid)
+    result = _cli("sat", "--library", folder.root, "--apply", "--xml", "--preview-id", pid)
     assert result.exit_code == 0, result.stderr
     assert "Wrote proposals/crate-sat.xml (50 picks, 10 spares)" in result.stdout
     assert "Crate record: crates/sat.md" in result.stdout and "  3. Drag the new playlists" in result.stdout
 
 
 def test_cli_apply_with_a_wrong_id_is_refused(folder):
-    result = _cli("sat", "--library", folder.root, "--apply", "--preview-id", "0123456789ab")
+    result = _cli("sat", "--library", folder.root, "--apply", "--xml", "--preview-id", "0123456789ab")
     assert result.exit_code == 1 and result.stderr.startswith("REFUSED No preview with id")
     assert not list(folder.proposals.glob("*.xml"))
 

@@ -162,7 +162,7 @@ TOOLS = {  # tool -> (call with a bare name, the folder, the file's name)
     "dj_build_preview": (lambda name: m.dj_build_preview(name), "tracklists", "set.txt"),
     "dj_build_apply": (lambda name: m.dj_build_apply(name, preview_id=PID), "tracklists", "set.txt"),
     "dj_apply_preview": (lambda name: m.dj_apply_preview(name), "plans", "a.plan.json"),
-    "dj_apply_write": (lambda name: m.dj_apply_write(name, preview_id=PID, power_mode=True), "plans", "a.plan.json"),
+    "dj_apply_write": (lambda name: m.dj_apply_write(name, preview_id=PID), "plans", "a.plan.json"),
     "dj_tidy_apply_preview": (lambda name: m.dj_tidy_apply_preview(name), "plans", "t.plan.json"),
     "dj_tidy_apply": (lambda name: m.dj_tidy_apply(name, preview_id=PID), "plans", "t.plan.json"),
     "dj_tidy_undo_preview": (lambda name: m.dj_tidy_undo_preview(name), "plans", "t.plan.json"),
@@ -225,7 +225,7 @@ def test_a_tree_file_comes_from_the_library_folder_first(repo, calls):
     assert tree_arg(calls[-1]) == str(in_repo.resolve())  # the repo, while the library has none
     in_library = write(repo.library / "bases.yaml", "[]")
     assert json.loads(m.dj_tree_preview("bases.yaml"))["ok"] is True
-    assert json.loads(m.dj_tree_apply(preview_id=PID, file="bases.yaml", power_mode=True))["ok"] is True
+    assert json.loads(m.dj_tree_apply(preview_id=PID, file="bases.yaml"))["ok"] is True
     assert tree_arg(calls[-2]) == tree_arg(calls[-1]) == str(in_library.resolve())
 
 

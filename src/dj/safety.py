@@ -28,9 +28,6 @@ PROCESS_NAME = "rekordbox.exe"  # Windows image name, as tasklist shows it
 MAC_PROCESS_NAME = "rekordbox"  # macOS process name, as pgrep -x matches it
 PGREP = "/usr/bin/pgrep"  # by absolute path, never from PATH
 PGREP_TIMEOUT_S = 30
-# Direct master.db writes are Windows power mode (CLAUDE.md rule 4, R-205). The macOS port
-# (R-203) makes the process check work there; it must not open the write path with it.
-DB_WRITE_PLATFORMS = ("win32",)
 # `dj tidy apply/undo --apply` write audio files on Windows only in v0.1 (macOS is R-1303,
 # v0.2): a working pgrep must not open tidy's write path on a Mac either.
 TIDY_WRITE_PLATFORMS = ("win32",)
@@ -103,7 +100,7 @@ def rekordbox_running() -> bool:
     """True if rekordbox runs: tasklist on Windows, pgrep on macOS.
 
     Any other OS, or a check that cannot answer, raises SafetyError: never report
-    "not running" when the processes cannot actually be seen."""
+    "not running" when the processes cannot actually be seen. A write is refused then."""
     if sys.platform == "win32":
         return _running_windows()
     if sys.platform == "darwin":
@@ -251,22 +248,18 @@ def open_db(write: bool = False, db_path: Path | None = None) -> Iterator[Any]:
     """Open master.db and yield the pyrekordbox database.
 
     write=False: never commits; rolls back on exit.
-    write=True:  refused when the engine settings turn power mode off (DJ_POWER_MODE false, or
-                 unset in the desktop extension) ->
-                 Windows only (DB_WRITE_PLATFORMS) -> refuses if rekordbox runs ->
+    write=True:  the same chain on every OS (the caller checked the preview id before):
+                 refused when DJ_POWER_MODE is false (the one off switch) ->
+                 refuses if rekordbox runs, or if the process check cannot answer
+                 (`rekordbox_running`: `rekordbox` on a Mac, `rekordbox.exe` on Windows) ->
                  verified backup -> yield -> exactly one commit on clean exit.
                  Any exception -> rollback, no commit.
                  The db object is closed and discarded either way.
     """
     if write:
-        refusal = hostenv.power_mode_refusal()  # power mode off in the settings: refused before anything else
+        refusal = hostenv.power_mode_refusal()  # DJ_POWER_MODE=false: refused before anything else
         if refusal:
             raise SafetyError(refusal)
-    if write and sys.platform not in DB_WRITE_PLATFORMS:
-        raise SafetyError(
-            f"Direct master.db writes are Windows-only power mode; this is {sys.platform}. "
-            "Nothing written."
-        )
     path = db_path or find_master_db()
     bk: Backup | None = None
     if write:

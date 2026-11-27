@@ -421,7 +421,7 @@ def tree_apply_text(nodes: int) -> str:
 def test_tree_apply_keeps_the_summary_of_a_long_text_and_leaves_the_final_tree_out(cli, monkeypatch):
     text = tree_apply_text(3000)
     monkeypatch.setattr(m.subprocess, "run", lambda cmd, **kw: NS(returncode=0, stdout=text, stderr=""))
-    answer = m.dj_tree_apply(preview_id=PID, file="bases.yaml", power_mode=True)
+    answer = m.dj_tree_apply(preview_id=PID, file="bases.yaml")
     assert len(answer) < LIMIT, len(answer)
     output = json.loads(answer)["output"]
     assert output.startswith("CREATE playlist  house_base / 0000 a playlist")
@@ -435,8 +435,8 @@ def test_tree_apply_keeps_the_summary_of_a_long_text_and_leaves_the_final_tree_o
 
 
 WRITTEN = {  # tool -> (call, list key, the key naming the file with the full list)
-    "dj_apply_write": (lambda: m.dj_apply_write("p.plan.json", preview_id=PID, power_mode=True), "adds", "report"),
-    "dj_copy_apply": (lambda: m.dj_copy_apply("a", "b", preview_id=PID, power_mode=True), "rows", "report"),
+    "dj_apply_write": (lambda: m.dj_apply_write("p.plan.json", preview_id=PID), "adds", "report"),
+    "dj_copy_apply": (lambda: m.dj_copy_apply("a", "b", preview_id=PID), "rows", "report"),
     "dj_push_apply": (lambda: m.dj_push_apply("p", preview_id=PID), "items", "report"),
     "dj_build_apply": (lambda: m.dj_build_apply("set.txt", preview_id=PID), "items", "report"),
     "dj_tidy_apply": (lambda: m.dj_tidy_apply("p.plan.json", preview_id=PID), "items", "report"),
@@ -468,7 +468,7 @@ def test_a_short_written_list_has_no_rest_in(cli):
 def test_tree_apply_prints_text_and_is_left_as_it_is(cli, monkeypatch):
     text = "APPLIED. Created 2 node(s) in one commit. Backup in backups/."
     monkeypatch.setattr(m.subprocess, "run", lambda cmd, **kw: NS(returncode=0, stdout=text, stderr=""))
-    answer = json.loads(m.dj_tree_apply(preview_id=PID, file="bases.yaml", power_mode=True))
+    answer = json.loads(m.dj_tree_apply(preview_id=PID, file="bases.yaml"))
     assert answer == {"ok": True, "exit_code": 0, "output": text}
 
 

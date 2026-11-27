@@ -83,8 +83,8 @@ def xml_env(sessions, tmp_path, monkeypatch):  # noqa: F811
 
 
 def xml_flags(sessions, *dry_run):  # noqa: F811
-    """The flags of an --xml write after the DJ's yes to the dry-run (no --power-mode)."""
-    return [*approve(sessions, *dry_run, power_mode=False), "--xml"]
+    """The flags of an --xml write after the DJ's yes to the dry-run."""
+    return [*approve(sessions, *dry_run), "--xml"]
 
 
 def refused(result) -> str:
@@ -111,7 +111,7 @@ def test_apply_dry_run_writes_nothing_with_or_without_xml(xml_env):
         data = json.loads(run("apply", xml_env.plan, *extra, "--json").output)
         assert (data["applied"], data["would_add"]) == (False, 2) and data["preview_id"]
     text = run("apply", xml_env.plan).stdout
-    assert "--apply --xml --preview-id" in text and "--apply --power-mode --preview-id" in text
+    assert "--apply --xml --preview-id" in text and ": --apply --preview-id" in text
     assert xml_env.sessions.log == [False, False, False]
     assert not (xml_env.root / "proposals").exists() and not (xml_env.root / "state").exists()
     assert not (xml_env.root / "reports").exists() and log_lines() == []
@@ -160,7 +160,7 @@ def test_apply_xml_text_output_gives_the_import_card(xml_env):
 
 @pytest.mark.parametrize("case", ["missing", "unknown", "changed"])
 def test_apply_xml_refusals_write_nothing(xml_env, case):
-    pid = approve(xml_env.sessions, "apply", xml_env.plan, power_mode=False)[-1]
+    pid = approve(xml_env.sessions, "apply", xml_env.plan)[-1]
     if case == "missing":
         give, words = [], "No preview id"
     elif case == "unknown":
@@ -172,12 +172,6 @@ def test_apply_xml_refusals_write_nothing(xml_env, case):
     assert True not in xml_env.sessions.log and xml_env.sessions.db.added == []
     assert not (xml_env.root / "proposals").exists() and not (xml_env.root / "state").exists()
     assert log_lines() == [] and not used(pid)
-
-
-def test_xml_and_power_mode_together_are_refused_before_anything(xml_env):
-    pid = approve(xml_env.sessions, "apply", xml_env.plan)[-1]
-    assert "pick one" in refused(run("apply", xml_env.plan, "--apply", "--xml", "--power-mode", "--preview-id", pid))
-    assert xml_env.sessions.log == [] and not (xml_env.root / "proposals").exists()
 
 
 def test_db_mode_is_unchanged_and_writes_no_xml(xml_env, monkeypatch):
@@ -195,7 +189,7 @@ def test_one_preview_id_serves_one_write_in_either_mode(xml_env):
     flags = xml_flags(xml_env.sessions, "apply", xml_env.plan)
     pid = flags[flags.index("--preview-id") + 1]
     assert run("apply", xml_env.plan, *flags).exit_code == 0
-    assert "already used" in refused(run("apply", xml_env.plan, "--apply", "--power-mode", "--preview-id", pid))
+    assert "already used" in refused(run("apply", xml_env.plan, "--apply", "--preview-id", pid))
     assert "already used" in refused(run("apply", xml_env.plan, *flags))
     assert xml_env.sessions.db.added == []
 
@@ -332,19 +326,16 @@ def _options(cmd: list[str]) -> list[str]:
 def test_mcp_mode_picks_the_write_path(calls, tool):
     write = (functools.partial(m.dj_apply_write, "p.plan.json") if tool == "apply"
              else functools.partial(m.dj_copy_apply, "a", "b"))  # fmt: skip
-    write(preview_id=PID)  # no mode, no power_mode: the default path, an XML
+    write(preview_id=PID)  # no mode: the default path, master.db
     write(preview_id=PID, mode="xml")
-    write(preview_id=PID, power_mode=True)  # no mode, power_mode: master.db as before
-    write(preview_id=PID, mode="db", power_mode=True)
+    write(preview_id=PID, mode="db")
     flags = [[o for o in _options(cmd) if o in ("--xml", "--power-mode")] for cmd in calls]
-    assert flags == [["--xml"], ["--xml"], ["--power-mode"], ["--power-mode"]]
+    assert flags == [[], ["--xml"], []]
     assert all(_options(cmd)[_options(cmd).index("--preview-id") + 1] == PID for cmd in calls)
 
 
 @pytest.mark.parametrize("tool", ["apply", "copy"])
 @pytest.mark.parametrize("args, words", [
-    ({"mode": "db"}, "power_mode=true"),
-    ({"mode": "xml", "power_mode": True}, "needs no power_mode"),
     ({"mode": "both"}, "mode must be one of"),
     ({"mode": "xml", "preview_id": ""}, "No preview_id"),
 ])  # fmt: skip
@@ -369,6 +360,6 @@ def test_mcp_preview_then_xml_write_end_to_end(xml_env, monkeypatch):
     monkeypatch.setattr(m.subprocess, "run", in_process)
     monkeypatch.setattr(m, "REPO_ROOT", xml_env.root)
     pid = json.loads(m.dj_apply_preview(str(xml_env.plan)))["result"]["preview_id"]
-    done = json.loads(m.dj_apply_write(str(xml_env.plan), preview_id=pid))
+    done = json.loads(m.dj_apply_write(str(xml_env.plan), preview_id=pid, mode="xml"))
     assert done["ok"] is True and done["result"]["xml"] == XML and len(done["result"]["import_steps"]) == 3
     assert (xml_env.root / XML).is_file() and True not in xml_env.sessions.log and used(pid)

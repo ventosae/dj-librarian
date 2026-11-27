@@ -2,7 +2,6 @@
 
 import functools
 import json
-import sys
 from contextlib import contextmanager
 
 import pytest
@@ -38,8 +37,6 @@ def sessions(monkeypatch, db, live_master_db):
         yield s.db
 
     monkeypatch.setattr(safety, "open_db", fake_open_db)
-    # master.db writes are Windows-only (test_platform.py); the gate mechanics run on every runner
-    monkeypatch.setattr(safety, "DB_WRITE_PLATFORMS", (sys.platform,))
     return s
 
 
@@ -57,12 +54,12 @@ def run(*args):
 NO_SUCH_ID = "0" * 12  # the shape of a preview id, never recorded
 
 
-def approve(sessions, *dry_run, power_mode=True):
-    """The flags of a write the DJ said yes to: the dry-run's preview id (R-1102), and
-    --power-mode for master.db (R-205). The dry-run's read session is cleared from the log."""
+def approve(sessions, *dry_run):
+    """The flags of a write the DJ said yes to: the dry-run's preview id (R-1102). The dry-run's
+    read session is cleared from the log."""
     pid = json.loads(run(*dry_run, "--json").output)["preview_id"]
     sessions.log.clear()
-    return ["--apply", *(["--power-mode"] if power_mode else []), "--preview-id", pid]
+    return ["--apply", "--preview-id", pid]
 
 
 def test_tree_dry_run_never_opens_a_write_session(sessions, tree_file):
@@ -151,7 +148,7 @@ def test_apply_rejects_a_pick_the_tool_never_offered(sessions, tmp_path):
     plan["items"][0]["candidates"] = [{"rb_content_id": "2"}]
     path = tmp_path / "p.json"
     path.write_text(json.dumps(plan))
-    result = run("apply", path, "--apply", "--power-mode", "--preview-id", NO_SUCH_ID)
+    result = run("apply", path, "--apply", "--preview-id", NO_SUCH_ID)
     assert result.exit_code == cli.EXIT_ERROR and "not one of the candidates" in result.output
 
 

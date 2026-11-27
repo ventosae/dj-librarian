@@ -1,31 +1,28 @@
-"""dj-build and dj-crate straight into rekordbox: the power-mode writer (W-38, D-32, R-504, R-205).
+"""dj-build and dj-crate straight into rekordbox, on every OS (W-38, D-32, R-504).
 
-    dj library build <proposal> --source db --apply --power-mode --preview-id <id>
-    dj library crate <slug>     --source db --apply --power-mode --preview-id <id>
+    dj library build <proposal> --apply --preview-id <id>
+    dj library crate <slug>     --apply --preview-id <id>
 
-With the engine, power mode on and rekordbox closed, a proposal or a crate the DJ said yes to goes
-into master.db instead of an XML to import. The plan is the XML route's own (`XmlPlan`: the folders,
-the playlists and their tracks the preview showed, smart playlists left MANUAL), so both routes write
-the same thing, and one preview id serves either (one preview, one write).
+With rekordbox closed, a proposal or a crate the DJ said yes to goes into master.db. The plan is the
+one the preview showed (`XmlPlan`: the folders, the playlists and their tracks, smart playlists left
+MANUAL). DJ_POWER_MODE=false is the one off switch; the build must read rekordbox itself (the track
+ids are master.db's).
 
-The chain, in this order, every link the existing one:
-1. power mode on: the engine setting (DJ_POWER_MODE), --power-mode, Windows (`write_gate.require_power_mode`),
-   and a build that reads rekordbox itself (`--source db`: the track ids are master.db's);
-2. the preview id: its shape, then the build's or crate's own gate record (same content, unused, under 24 h);
-3. rekordbox closed (`safety.open_db`'s process check), else "Close rekordbox, then say yes again. Nothing written.";
-4. a verified backup of master.db, masterPlaylists6.xml, -wal and -shm (`safety.backup`);
-5. the write, one session: re-plan against the live master.db with the tree writer (`tree.walk`), which
+The chain, in this order, nothing else:
+1. the preview id: its shape, then the build's or crate's own gate record (same content, unused, under 24 h);
+2. rekordbox not running (`safety.open_db`'s process check: `rekordbox` on a Mac, `rekordbox.exe` on Windows;
+   a check that cannot run refuses), else "Close rekordbox, then say yes again. Nothing written.";
+3. a verified backup of master.db, masterPlaylists6.xml, -wal and -shm (`safety.backup`);
+4. the write, one transaction: re-plan against the live master.db with the tree writer (`tree.walk`), which
    must create exactly the nodes the preview did; every track a live row; then `tree.apply_rows` makes the
    folders and playlists and `add_to_playlist` the memberships in plan order (never track_no); one commit.
-Any failure: rollback, nothing half-written, one line why. The log.md line is the XML route's with
-`master.db` where the file was.
+Any failure: rollback, nothing half-written, one line why. The log.md line names `master.db`.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -34,7 +31,7 @@ from typing import Any, Callable, Iterable, Iterator
 
 import typer
 
-from dj import build_structure, libfolder, library, safety, write_gate
+from dj import build_structure, hostenv, libfolder, library, safety
 from dj import crate as crate_mod
 from dj import tree as tree_mod
 from dj.build_library import DB_READ, source_of
@@ -50,7 +47,6 @@ CHANGED = "rekordbox's tree changed since the preview. Nothing written; preview 
 SOURCE_XML = ("A write into rekordbox needs the build to read rekordbox itself: run the engine analysis "
               "(dj_library_analyze source=\"db\") so library.yaml says source: db, or pass --source db, then preview "
               "again. Nothing written.")  # fmt: skip
-NOT_WINDOWS = "Writes into rekordbox are Windows only for now (Q-35): the XML to import is the route here."
 CHANGED_ON_DISK = "WARNING: changed on disk"  # safety.open_db's note when a source file changed despite the failure
 EXIT_ERROR, EXIT_REKORDBOX_RUNNING = 1, 2
 
@@ -76,14 +72,11 @@ class MaybeWritten(DbWriteError):
 
 
 def route_off(folder: LibraryFolder | str | Path, source: str | None = None) -> str | None:
-    """Why a proposal or crate cannot go into rekordbox from here (one line), or None: the engine
-    setting, Windows, and a build that reads master.db. The call still needs --power-mode."""
-    if sys.platform not in safety.DB_WRITE_PLATFORMS:  # first: a Mac's off setting is not the reason
-        return NOT_WINDOWS
-    try:
-        write_gate.require_power_mode(True)
-    except GateError as exc:
-        return str(exc)
+    """Why a proposal or crate cannot go into rekordbox from here (one line), or None: the off
+    switch (DJ_POWER_MODE=false), and a build that reads master.db. The same on every OS."""
+    off = hostenv.power_mode_refusal()
+    if off:
+        return off
     root = folder.root if isinstance(folder, LibraryFolder) else Path(folder)
     try:
         read = source_of(LibraryFolder(root), source)
@@ -102,7 +95,7 @@ def preview_lines(data: dict[str, Any], command: str) -> list[str]:
     """The preview's text lines for the route: the line and the command, after the XML's."""
     if data.get("blocked") or not data.get("into_rekordbox"):
         return []
-    return [PREVIEW_LINE, f"into rekordbox: {command} --apply --power-mode --preview-id {data['preview_id']} "
+    return [PREVIEW_LINE, f"into rekordbox: {command} --apply --preview-id {data['preview_id']} "
                           "(only after the DJ said yes, rekordbox closed)"]  # fmt: skip
 
 
@@ -161,7 +154,7 @@ def write_plan(db: Any, plan: XmlPlan, lib: Library) -> dict[str, int]:
 
 @contextmanager
 def _session() -> Iterator[Any]:
-    """`safety.open_db(write=True)`: power mode, Windows, rekordbox closed, verified backup, one commit."""
+    """`safety.open_db(write=True)`: rekordbox closed, verified backup, one commit."""
     try:
         with safety.open_db(write=True) as db:
             yield db
@@ -173,7 +166,7 @@ def _session() -> Iterator[Any]:
             raise MaybeWritten(f"The write stopped after rekordbox's files changed ({_short(exc)}). {warned[0]} "
                                f"The backup is in {backup_dir()}. Open rekordbox and check the tree.") from exc
         if isinstance(exc, (DbWriteError, safety.SafetyError)):
-            raise  # one line already: a refusal in the session, or no backup / not Windows (nothing written)
+            raise  # one line already: a refusal in the session, no backup, or no process check (nothing written)
         raise RolledBack(f"The write stopped ({_short(exc)}). Rolled back: nothing written.") from exc
 
 
@@ -183,7 +176,7 @@ def _short(exc: BaseException) -> str:
 
 
 def backup_dir() -> str:
-    """Where the power-mode backup went, as a whole path: the engine's folder, not the dj-library's backups/."""
+    """Where the write's backup went, as a whole path: the engine's folder, not the dj-library's backups/."""
     return f"{safety.BACKUP_DIR.resolve()}{os.sep}"
 
 
@@ -302,7 +295,7 @@ def crate(root: str | Path, ref: str, preview_id: str, *, today: date | None = N
 
 
 def run_cli(as_json: bool, call: Callable[[], DbResult]) -> None:
-    """`dj library build|crate --apply --power-mode`: one JSON object or the text lines; a refusal is
+    """`dj library build|crate --apply`: one JSON object or the text lines; a refusal is
     one `REFUSED` line (exit 1), rekordbox running one `STOP` line (exit 2), an error one `ERROR` line."""
     try:
         result = call()

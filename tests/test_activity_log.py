@@ -172,11 +172,10 @@ def test_db_command_dry_run_adds_no_line_the_write_adds_one_a_refusal_none(name,
     rb.db = job.db
     pid = dry_run_id(job.dry)
     assert run(*job.dry).exit_code == 0 and repo_lines() == []  # dry-runs (json and text)
-    refused(run(*job.dry, *gated(pid)))  # no --power-mode
-    refused(run(*job.dry, *gated(None, "--power-mode")))  # no preview id
-    refused(run(*job.dry, *gated("0" * 12, "--power-mode")))  # an unknown id
+    refused(run(*job.dry, *gated(None)))  # no preview id
+    refused(run(*job.dry, *gated("0" * 12)))  # an unknown id
     assert repo_lines() == []
-    result = run(*job.dry, *gated(pid, "--power-mode"))
+    result = run(*job.dry, *gated(pid))
     assert result.exit_code == 0, result.output
     (line,) = repo_lines()
     assert LINE.match(line) and f"log.md: {line}" in result.stdout
@@ -186,23 +185,23 @@ def test_db_command_dry_run_adds_no_line_the_write_adds_one_a_refusal_none(name,
         "copy": " copy jazzy to jazz_base/2.1_jazzy -> 2 added, 0 skipped; ",
     }[name]
     assert expected in line, line
-    refused(run(*job.dry, *gated(pid, "--power-mode")))  # the used id: refused, no second line
+    refused(run(*job.dry, *gated(pid)))  # the used id: refused, no second line
     assert len(repo_lines()) == 1
 
 
 def test_a_write_with_nothing_to_do_adds_no_line(rb, tmp_path, db):  # noqa: F811
     job = db_job("copy", tmp_path, db)
     rb.db = job.db
-    assert run(*job.dry, *gated(dry_run_id(job.dry), "--power-mode")).exit_code == 0
+    assert run(*job.dry, *gated(dry_run_id(job.dry))).exit_code == 0
     again = dry_run_id(job.dry)  # everything is in the target now
-    result = run(*job.dry, *gated(again, "--power-mode"))
+    result = run(*job.dry, *gated(again))
     assert "Nothing to add" in result.stdout and len(repo_lines()) == 1
 
 
 def test_apply_json_carries_the_line(rb, tmp_path, db):  # noqa: F811
     job = db_job("apply", tmp_path, db)
     rb.db = job.db
-    data = json.loads(run(*job.dry, *gated(dry_run_id(job.dry), "--power-mode"), "--json").stdout)
+    data = json.loads(run(*job.dry, *gated(dry_run_id(job.dry)), "--json").stdout)
     assert data["applied"] is True and data["log"] == repo_lines()[0]
 
 
@@ -353,7 +352,7 @@ def test_dj_apply_with_every_yes_already_in_the_crate_logs_0_added(rb, tmp_path,
     job = db_job("apply", tmp_path, db)
     rb.db = job.db
     job.change()  # the yes track is in the crate already
-    result = run(*job.dry, *gated(dry_run_id(job.dry), "--power-mode"))
+    result = run(*job.dry, *gated(dry_run_id(job.dry)))
     assert result.exit_code == 0, result.output
     (line,) = repo_lines()
     assert " apply funk_base/funk_crate -> 0 added, 1 no, 0 pending; " in line and job.db.added == []
@@ -368,7 +367,7 @@ def test_dj_apply_logs_the_commit_when_the_report_after_it_fails(rb, tmp_path, d
         raise OSError("disk full")
 
     monkeypatch.setattr(cli.intake, "record", broken)
-    result = run(*job.dry, *gated(pid, "--power-mode"))
+    result = run(*job.dry, *gated(pid))
     assert result.exit_code != 0 and job.db.added == ["1"]
     (line,) = repo_lines()
     assert line.endswith(" apply funk_base/funk_crate, stopped by an error -> 1 added")
@@ -527,7 +526,7 @@ def test_push_apply_says_what_it_wrote_before_an_error(tmp_path):
 def test_a_command_logs_into_the_set_up_library_folder(rb, tmp_path, db, library):  # noqa: F811
     job = db_job("copy", tmp_path, db)
     rb.db = job.db
-    assert run(*job.dry, *gated(dry_run_id(job.dry), "--power-mode")).exit_code == 0
+    assert run(*job.dry, *gated(dry_run_id(job.dry))).exit_code == 0
     (line,) = log_lines(library)
     assert " copy jazzy to jazz_base/2.1_jazzy -> 2 added" in line and repo_lines() == []
 

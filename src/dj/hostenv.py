@@ -20,8 +20,8 @@ Host-given values come as environment variables from the extension's settings fo
     DJ_LIBRARY             the dj-library folder
     SPOTIFY_CLIENT_ID      the DJ's own Spotify app (secret: never printed or logged)
     SPOTIFY_CLIENT_SECRET
-    DJ_POWER_MODE          "true" / "false": false refuses every master.db write; in the
-                           extension an unset value refuses too (fails closed)
+    DJ_POWER_MODE          "false" refuses every master.db write: the one off switch. Unset or
+                           "true": writes are on, in a clone and in the extension alike
     DJ_ENGINE              "mcpb" in the extension
 
 An empty value, or one with an unsubstituted `${...}` in it, counts as unset: a host may pass
@@ -56,14 +56,8 @@ _TRUE = ("true", "1", "yes", "on")
 _FALSE = ("false", "0", "no", "off")
 
 POWER_MODE_OFF = (
-    "power mode is off in the engine settings, so master.db writes are refused. Write an XML to "
-    "import instead, or turn on Power mode (Windows) in the engine settings. Nothing written."
-)
-# The extension started without a Power mode value (a host that did not fill it in): off.
-POWER_MODE_UNSET = (
-    "power mode is off: the engine settings passed no Power mode (Windows) value, so master.db "
-    "writes are refused. Write an XML to import instead, or turn on Power mode (Windows) in the "
-    "engine settings. Nothing written."
+    "Writes into rekordbox are switched off in the engine settings (DJ_POWER_MODE=false). Set it to "
+    "true, or remove it, to write. Nothing written."
 )
 NO_LIBRARY = (
     "No dj-library folder is set: choose it in the engine settings (dj-library folder), then try again."
@@ -109,20 +103,14 @@ def power_mode_setting() -> bool | None:
 
 
 def power_mode_refusal() -> str | None:
-    """Why the host's settings refuse a master.db write (one line), or None when they leave it to
-    the call. DJ_POWER_MODE false (or not true/false) refuses. In the extension an unset value
-    (empty, or an unsubstituted `${...}`) refuses too: its settings form defaults to off, so a
-    value that did not arrive fails closed. True, or unset in a clone, leaves today's rule (the
-    explicit flag, Windows only, a preview id). The setting never turns power mode on."""
+    """Why the settings refuse a master.db write (one line), or None. DJ_POWER_MODE=false is the
+    one off switch (a value that is neither true nor false refuses too, naming the setting).
+    Unset, empty or true: writes are on, on every OS, in a clone and in the extension alike."""
     try:
         setting = power_mode_setting()
     except HostSettingError as exc:
         return str(exc)
-    if setting is False:
-        return POWER_MODE_OFF
-    if setting is None and bundle_mode():
-        return POWER_MODE_UNSET
-    return None
+    return POWER_MODE_OFF if setting is False else None
 
 
 # -- the library folder ------------------------------------------------------------------------

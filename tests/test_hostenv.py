@@ -104,27 +104,19 @@ def test_a_power_mode_that_is_neither_true_nor_false_is_refused_in_one_line(monk
     assert hostenv.power_mode_refusal() == text
 
 
-def test_power_mode_off_names_the_engine_settings_in_one_line():
-    assert hostenv.POWER_MODE_OFF.startswith("power mode is off in the engine settings")
-    assert hostenv.POWER_MODE_UNSET.startswith("power mode is off")
-    assert "engine settings" in hostenv.POWER_MODE_UNSET
-    assert "\n" not in hostenv.POWER_MODE_OFF + hostenv.POWER_MODE_UNSET
-
-
-@pytest.mark.parametrize(("raw", "refusal"), [
-    (None, "unset"), ("", "unset"), ("   ", "unset"), ("${user_config.power_mode}", "unset"),
-    ("false", "off"), ("0", "off"), ("true", None), ("1", None),
+@pytest.mark.parametrize(("raw", "off"), [
+    (None, False), ("", False), ("   ", False), ("${user_config.power_mode}", False),
+    ("false", True), ("0", True), ("true", False), ("1", False),
 ])
-def test_the_bundle_fails_closed_when_no_power_mode_value_arrived(bundle, monkeypatch, raw, refusal):
-    """The extension's form defaults Power mode to off: a value that did not reach the engine (a
-    host that left it empty or did not fill in `${user_config.power_mode}`) refuses like off.
-    True still only lifts the settings' veto: the call's own flag stays needed (write_gate)."""
+def test_in_the_bundle_too_only_false_switches_writes_off(bundle, monkeypatch, raw, off):
+    """DJ_POWER_MODE=false is the one off switch: a value that did not reach the engine (empty, or
+    an unfilled `${user_config.power_mode}`) leaves writes on, in the bundle as in a clone."""
     if raw is None:
         monkeypatch.delenv("DJ_POWER_MODE", raising=False)
     else:
         monkeypatch.setenv("DJ_POWER_MODE", raw)
-    expected = {"unset": hostenv.POWER_MODE_UNSET, "off": hostenv.POWER_MODE_OFF, None: None}[refusal]
-    assert hostenv.power_mode_refusal() == expected
+    assert hostenv.power_mode_refusal() == (hostenv.POWER_MODE_OFF if off else None)
+    assert len(hostenv.POWER_MODE_OFF.splitlines()) == 1 and "DJ_POWER_MODE=false" in hostenv.POWER_MODE_OFF
 
 
 @pytest.mark.parametrize(("raw", "expected"), [

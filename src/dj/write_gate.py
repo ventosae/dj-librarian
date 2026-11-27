@@ -1,6 +1,6 @@
-"""The preview gate for the dj CLI's write commands (R-1102) and power mode (R-205).
+"""The preview gate for the dj CLI's write commands (R-1102).
 
-Stdlib only (+ `dj.gate`, `dj.hostenv`, `dj.safety`, which import no engine package at module level).
+Stdlib only (+ `dj.gate`, `dj.hostenv`, which import no engine package at module level).
 
     changes = [...]                              # what the write would do, as plain JSON values
     pid = record("copy", args, changes)          # the dry-run: prints "Preview id: <pid>"
@@ -30,24 +30,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from dj import hostenv, safety
+from dj import hostenv
 from dj.gate import Gate, GateError, require_id
 
 STATE_DIR = hostenv.state_root() / "state"
 
-POWER_MODE_REFUSAL = (
-    "master.db writes are power mode (Windows only): add --power-mode. The default is an XML to "
-    "import instead: --xml for inbox adds and copies (dj apply, dj copy), dj library build for new "
-    "folders and playlists"
-)
-
 __all__ = [
-    "POWER_MODE_REFUSAL",
     "STATE_DIR",
     "GateError",
     "Recorded",
@@ -59,7 +51,6 @@ __all__ = [
     "precheck",
     "record",
     "require_id",
-    "require_power_mode",
 ]
 
 
@@ -134,26 +125,6 @@ def consume(preview_id: str, written: str | None = None) -> str | None:
     except (GateError, OSError) as exc:
         return f"Preview {preview_id} could not be marked used ({exc}). Do not use it again."
     return None
-
-
-def require_power_mode(power_mode: bool) -> None:
-    """R-205: a master.db write needs --power-mode, and Windows. GateError (one line) otherwise.
-    The engine settings come first: DJ_POWER_MODE false refuses whatever the flag says, and so
-    does an unset value in the desktop extension (it fails closed); true, or unset in a clone,
-    leaves this rule as it was (the setting never turns power mode on).
-
-    Runs before the preview id is looked at and before any read, process check or backup."""
-    refusal = hostenv.power_mode_refusal()
-    if refusal:
-        raise GateError(refusal)
-    if not power_mode:
-        raise GateError(POWER_MODE_REFUSAL)
-    if sys.platform not in safety.DB_WRITE_PLATFORMS:
-        raise GateError(
-            f"master.db writes are power mode, Windows only; this is {sys.platform}. Write an XML to "
-            "import instead: --xml for inbox adds and copies (dj apply, dj copy), dj library build for "
-            "new folders and playlists. Nothing written."
-        )
 
 
 def path_arg(path: str | Path) -> str:
