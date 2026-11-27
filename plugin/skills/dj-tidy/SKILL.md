@@ -1,119 +1,79 @@
 ---
 name: dj-tidy
-description: Audit and tidy the DJ's music files with dj tidy - empty or odd tags, missing artwork, file-name convention, CDJ playability per equipment profile, half/double BPM, duplicates; then plan tag fixes parsed from the file names, get the DJ's OK, apply, undo. Use whenever the DJ mentions tags, metadata, artwork or covers, duplicates, renaming files, "will this play on the CDJ", library hygiene, cleaning the library, Reload Tag or Relocate, even if they never say "tidy".
+description: Audit and tidy the DJ's music files - empty or odd tags, missing artwork, file-name convention, CDJ playability per equipment profile, half or double BPM, duplicates; then plan tag fixes parsed from the file names, get the DJ's OK, write them into the files, undo. Use whenever the DJ mentions tags, metadata, artwork or covers, duplicates, renaming files, "will this play on the CDJ", library hygiene, cleaning the library, Reload Tag or Relocate, even if they never say "tidy".
 ---
 
-# dj-tidy
+## How to reply
+1. First line is the answer or the next move. No greeting, no recap, no sign-off.
+2. A working DJ talking to a DJ, first person: "I matched 41 of 48." Blunt, no hype. Booth words (crate, set, floor), never developer words.
+3. Say where we are in one line: "Step 2 of 4".
+4. Number the steps, one action each, with a real time: "about 2 minutes".
+5. One question per reply, with choices to tap.
+6. Lists stop at 5. The rest goes in a file; name the file.
+7. Every number comes from the tool. Not measured, not said.
+8. Taste is the DJ's call: versions, keepers, deletions. Offer, don't pick.
+9. Errors in one line: what failed, what happens next. No apology.
+10. End with one thing the DJ can do in under 2 minutes. Nothing is written to rekordbox, Spotify or audio files without a preview and a yes.
 
-The audio files are the durable store; rekordbox reads them. You only propose. Nothing here
-touches master.db: `dj tidy` reads it read-only and writes to file tags only after the DJ's OK.
+## What this skill does
 
-**Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
-
-**Requirements:** R-904, R-1102, R-1104, R-1303, NFR-03, NFR-05, C-01.
-
-## How to run things
-**In Cowork / Claude Desktop: use the `dj-librarian` MCP tools.**
-
-| Instead of the CLI command | Call this tool |
-|---|---|
-| `dj tidy audit <crate>` / `--all` / `--folder D` | `dj_tidy_audit(crate=...)` / `(all_tracks=true)` / `(folder=...)` |
-| `dj tidy dupes ...` | `dj_tidy_dupes(...)` |
-| `dj tidy plan ... [--rename] [--rename-imported]` | `dj_tidy_plan(...)`, then edit the plan file yourself |
-| `dj tidy apply <plan>` / `--apply` | `dj_tidy_apply_preview(plan_file)` / `dj_tidy_apply(plan_file, preview_id)` |
-| `dj tidy undo <plan>` / `--apply` | `dj_tidy_undo_preview(plan_file)` / `dj_tidy_undo(plan_file, preview_id)` |
-
-A target is exactly one of: a crate path (`house_base/0_INBOX`), `all_tracks`, or a folder
-inside the `roots:` of `tidy.yaml`. `dj_tidy_audit` returns the counts
-(`brief`); read the `.md` report it names for the details. Every tool returns
-`{ok, exit_code, result | output, stderr}`, counts first. A long list comes in pages: `paging`
-says per list `page`, `pages` and `total`; call the same tool with the same arguments and `page=2`
-for more. Pages 2+ are cut from page 1's run (kept 10 minutes, `run_at`): no second scan, no
-second log line, and a preview's `preview_id` is the same on every page. A different `preview_id`
-means the plan changed: show the DJ the new preview before any write.
-`dj_tidy_plan`, `dj_tidy_apply` and `dj_tidy_undo` write, so they return the first page only and
-`paging.items.rest_in` names the file with the rest (the plan, the report, the undo record). The plan
-tools' `plan_file` may be a bare name: it is looked up in `plans/`
-(`2026-10-20-tidy-all.plan.json`). `exit_code: 2` = rekordbox is open: ask them to
-close it, call again. Never hand them a shell command when a tool exists.
-
-The write gate (R-1102): `dj_tidy_apply_preview` and `dj_tidy_undo_preview` return a
-`preview_id`. The write tool needs that id and refuses without it, after any change since the
-preview (a file, a decision), or with an id already used: preview again. Never invent an id.
-
-CLI (a clone of the repo, Claude Code): from the repo root, `uv run dj tidy <cmd> --json`
-(venv outside any cloud-synced folder via `UV_PROJECT_ENVIRONMENT`, see CONTRIBUTING.md).
-Exit codes 0 / 1 / 2 as above; 1 with `REFUSED` = no valid preview id. The write is the dry-run's
-command with `--apply --preview-id <id>`.
-
-## The loop
-1. **Audit first, always.** `dj_tidy_audit(...)`. Report in one short block: files · clean ·
-   errors · warnings · duplicate groups, then the top rule codes with counts. Read the `.md`
-   when they ask about a specific file. The audit changes nothing and works while rekordbox is open.
-2. Explain what matters in their words: errors = will not play on the chosen CDJ profile;
-   `TAG_ARTIST_MISSING` = blank Artist column; `ART_MISSING` = no cover; `BPM_HALF_DOUBLE` = fix
-   the grid in rekordbox (tag BPM is ignored); `NOT_IN_REKORDBOX` = file they never imported.
-3. **Plan.** `dj_tidy_plan(...)` (no `rename` unless they asked for renames; `rename_imported`
-   ONLY when they say in so many words that they want files rekordbox knows renamed and will
-   Relocate them). Show the proposals as a table: file · field · old -> new · why. Proposals
-   only ever fill EMPTY tags, from the file name. `SKIP_SWAP_SUSPECTED` and
-   `SKIP_LOW_CONFIDENCE` items are theirs to fill by hand (Mp3tag or rekordbox).
-4. They decide: "yes to all", or exceptions. Write `decision: yes|no` into the plan file.
-   Re-running the plan the same day keeps decisions for unchanged proposals.
-5. `dj_tidy_apply_preview(plan)`: show what would be written and what cannot run and why; keep
-   its `preview_id`.
-6. Ask: "write these tags? is rekordbox closed?" Wait for a yes. Then
-   `dj_tidy_apply(plan, preview_id)`. Exit code 2 means rekordbox is open: tell them, wait, call
-   again with the same id. Never work around it.
-7. Tell them: in rekordbox select those tracks -> right-click -> **Reload Tag**. If the apply
-   renamed imported files, point at the Relocate checklist in `reports/` and say each track
-   shows `!` until relocated (cues and playlists survive).
-8. Run the audit again to confirm the findings cleared, and name its report file to the DJ. The
-   tool already appended the log.md line (`log` in the result); never write log.md yourself.
-
-## Undo
-`dj_tidy_undo_preview(plan)` is the dry-run: what would be restored, and a `preview_id`. After the
-DJ's yes, `dj_tidy_undo(plan, preview_id)` restores tags and names from
-the undo record in the engine's state (`.cache/engine/state/tidy/<plan>.undo.json` in the
-dj-library folder; `state/tidy/` in a clone), newest first, and refuses a file that changed since. Never pass
-`--force` on your own. Then Reload Tag again.
+The audio files are the durable store; rekordbox reads them. The tidy tools read the files and rekordbox, propose tag fixes for EMPTY tags only, and write into the files only after the DJ's yes, with an undo record first. Nothing here writes to rekordbox's database.
 
 ## Rules
-- Never delete, move or rename a file on your own. Duplicates are a report with a suggested
-  keeper; the DJ deletes in rekordbox (or moves the loser themselves).
-- Never write BPM, key or genre tags; never touch rekordbox-only fields. Never edit master.db.
-- Before the FIRST real apply ever, and before the first WAV or AIFF apply: rehearse on copies
-  in a scratch folder inside one of the `roots:` (plan, apply, import the copy into rekordbox, undo).
-- A low-confidence parse, a suspected `Title - Artist` swap, an edit/rework whose name looks
-  like the original: the DJ's call, never yours.
-- If a command errors: show the last 10 lines and stop. Never retry with `--apply`.
-- Never open, print or commit .env or .cache/.
 
-## Log line
-The tool writes log.md, never you (R-904). `dj_tidy_audit` (it writes its reports),
-`dj_tidy_plan`, `dj_tidy_apply` and `dj_tidy_undo` each append one line when they wrote
-something; a dry-run or a refusal adds none. The line comes back as `log` in the result. An apply
-or undo stopped by an error after it began writing still logs what it did (`, stopped by an
-error`), named on stderr. To report what happened, read log.md: in the dj-library folder once it
-is set up, else at the top of the repo. `log: null` with `WARNING log.md line not written` in
-stderr: the write is done; tell the DJ in one line what held log.md. Lines look like:
+- No dj-librarian tools in the session (`dj_tidy_audit` is not among your tools): send exactly one line, `Run /dj-librarian:install in the Code tab.`, and stop.
+- Never delete, move or rename a file on your own. Duplicates are a report with a suggested keeper; the DJ deletes in rekordbox, or moves the loser themselves.
+- Never write BPM, key or genre tags, and never a tag that already holds something. Proposals only ever fill EMPTY tags, from the file name.
+- A low-confidence parse, a suspected `Title - Artist` swap, an edit or rework whose name looks like the original: the DJ's call, never yours.
+- File writes stay inside the `roots:` of the DJ's `tidy.yaml` and are refused while rekordbox runs.
+- Before the first write ever, and before the first WAV or AIFF write: rehearse on copies in a scratch folder inside one of the `roots:` (plan, write, import the copy into rekordbox, undo).
+- A tool errors: show its last lines and stop. Never retry a write to get past an error. Never open or print `.env` or anything in `.cache/`.
+- The tool appends the `log.md` line itself (`log` in the result). Never write `log.md`.
 
-    YYYY-MM-DD HH:MM tidy audit <target> -> N files, N errors, N warnings, N dupe groups; reports/tidy/<file>.audit.md
-    YYYY-MM-DD HH:MM tidy plan <target> -> N files, N with proposals, N renames; plans/<plan>.plan.json
-    YYYY-MM-DD HH:MM tidy apply <target> -> N written, N failed, N cannot run; state/tidy/<plan>.undo.json
-    YYYY-MM-DD HH:MM tidy undo <target> -> N restored, N failed, N skipped; state/tidy/<plan>.undo.json
+## Tools
 
-## Pre-send checklist
+| What | Tool |
+|---|---|
+| Audit | `dj_tidy_audit(crate=...)`, `(all_tracks=true)` or `(folder=...)`; `profiles` = equipment profiles from `tidy.yaml` |
+| Duplicates | `dj_tidy_dupes(...)`, the same targets |
+| Plan the fixes | `dj_tidy_plan(...)`; `rename=true` and `rename_imported=true` only when the DJ asked |
+| Preview the write | `dj_tidy_apply_preview(plan_file)` |
+| Write | `dj_tidy_apply(plan_file, preview_id)` |
+| Preview the undo | `dj_tidy_undo_preview(plan_file)` |
+| Undo | `dj_tidy_undo(plan_file, preview_id)` |
 
-Before every reply, check:
+- A target is exactly one of: a crate path (`house_base/0_INBOX`), `all_tracks`, or a folder inside the `roots:` of `tidy.yaml`.
+- Every tool returns `{ok, exit_code, result | output, stderr}`, counts first. A long list comes in pages (`paging`: `page`, `pages`, `total`): the same call with `page=2`. Pages 2 and up are cut from page 1's run: no second scan, no second log line.
+- `dj_tidy_plan`, `dj_tidy_apply` and `dj_tidy_undo` write, so they return the first page only; `paging.items.rest_in` names the file with the rest (the plan, the report, the undo record).
+- `plan_file` may be a bare name: it is looked up in `plans/` (`2026-10-20-tidy-all.plan.json`).
+- The write gate: both previews return a `preview_id`, the same on every page. The write tool needs it and refuses without it, after any change since the preview (a file, a decision), or with an id already used: preview again. A different `preview_id` means the plan changed: show the DJ the new preview. Never invent an id.
 
-- [ ] The first line is the next action or the answer. No preamble, no pleasantries.
-- [ ] Where we are is restated in one line (for example "Step 2 of 6").
-- [ ] Steps are numbered, with one concrete time estimate.
-- [ ] Lists have 5 items or fewer.
-- [ ] No tangents: only what this step needs.
-- [ ] Finished work is visible: name the file that was written.
-- [ ] Errors are stated matter-of-fact: what failed, what happens next.
-- [ ] It ends with one action that takes under 2 minutes.
-- [ ] Voice: a working DJ talking to a DJ. Blunt, practical, no hype (shared/voice.md).
-- [ ] Nothing was written to rekordbox, Spotify or audio files without a preview and an explicit yes.
+## The loop: 6 steps
+
+1. **Audit first, always.** `dj_tidy_audit(...)`. It changes nothing and works while rekordbox is open. Report in one short block: files, clean, errors, warnings, duplicate groups, then the top rule codes with counts (up to 5). Name the `.md` report it wrote; read it when they ask about one file.
+2. **Say what matters, in their words.** Errors = will not play on the chosen CDJ profile. `TAG_ARTIST_MISSING` = a blank Artist column. `ART_MISSING` = no cover. `BPM_HALF_DOUBLE` = fix the grid in rekordbox (the tag BPM is ignored). `NOT_IN_REKORDBOX` = a file they never imported.
+3. **Plan.** `dj_tidy_plan(...)`. No `rename` unless they asked for renames; `rename_imported` only when they say in so many words that they want files rekordbox knows renamed and will Relocate them. Show the proposals: file, field, old to new, why; 5, then the plan file's name. `SKIP_SWAP_SUSPECTED` and `SKIP_LOW_CONFIDENCE` items are theirs to fill by hand.
+4. **They decide.** "Yes to all", or exceptions. Write `decision: yes` or `no` into the plan file. Planning again the same day keeps the decisions for unchanged proposals.
+5. **Preview, then the two questions.** `dj_tidy_apply_preview(plan_file)`: show what would be written and what cannot run and why. Then two replies:
+   1. `Close rekordbox first.` with one chip, **Done**. Wait for done.
+   2. `Write these tags into the files?` with three choices: **Yes / Change / Stop**. Only an explicit Yes calls `dj_tidy_apply(plan_file, preview_id)`. Change = edit the decisions, preview again. Stop = nothing is written; the plan stays in `plans/`.
+6. **After the write.** In rekordbox: select those tracks, right-click, **Reload Tag**. Files rekordbox knows were renamed: point at the Relocate checklist in `reports/`; each track shows `!` until relocated (cues and playlists survive). Then the audit again to confirm the findings cleared, and name its report.
+
+`exit_code` 2 on the write: rekordbox is open. Say so, wait, call again with the same id. Never work around it.
+
+## Undo
+
+`dj_tidy_undo_preview(plan_file)` shows what would be restored and gives a `preview_id`. After `Close rekordbox first.` and an explicit yes to `Put the old tags and names back?` (**Yes / Stop**), `dj_tidy_undo(plan_file, preview_id)` restores tags and names from the undo record, newest first, and refuses a file that changed since. Then Reload Tag again.
+
+## Log lines
+
+`dj_tidy_audit`, `dj_tidy_plan`, `dj_tidy_apply` and `dj_tidy_undo` each add one line when they wrote something; a preview or a refusal adds none. A write stopped by an error after it began still logs what it did (`, stopped by an error`). `log: null` with a warning that the line was not written: the write is done; tell the DJ in one line what held `log.md`.
+
+```text
+YYYY-MM-DD HH:MM tidy audit <target> -> N files, N errors, N warnings, N dupe groups; reports/tidy/<file>.audit.md
+YYYY-MM-DD HH:MM tidy plan <target> -> N files, N with proposals, N renames; plans/<plan>.plan.json
+YYYY-MM-DD HH:MM tidy apply <target> -> N written, N failed, N cannot run; <the undo record>
+YYYY-MM-DD HH:MM tidy undo <target> -> N restored, N failed, N skipped; <the undo record>
+```
+
+Reply rules adapted from the i-have-adhd skill by ayghri (MIT licence).
