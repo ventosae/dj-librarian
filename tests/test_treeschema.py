@@ -444,7 +444,7 @@ def test_diff_notes():
     rows = {r.path: r for r in diff(PROPOSAL, CURRENT)}
     assert "exists as playlist, wanted folder" in rows[("techno_base",)].note
     assert "My Tag is dark" in rows[("new_base", "dark")].note
-    assert "XML cannot carry" in rows[("new_base", "fast")].note
+    assert rows[("new_base", "fast")].note.startswith("make it in rekordbox by hand")
     assert "bpm_range" in rows[("new_base", "fast")].note
     assert rows[("house_base",)].note == "exists"
 

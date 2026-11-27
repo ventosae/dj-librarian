@@ -50,8 +50,8 @@ def test_preview_tools_never_pass_apply(calls):
 
 
 def test_write_tools_pass_apply(calls):
-    m.dj_copy_apply("a", "b", preview_id=PID, power_mode=True)
-    assert args(calls) == ["copy", "--apply", "--power-mode", "--preview-id", PID, "--json", "--", "a", "b"]
+    m.dj_copy_apply("a", "b", preview_id=PID)
+    assert args(calls) == ["copy", "--apply", "--preview-id", PID, "--json", "--", "a", "b"]
     m.dj_push_apply("p", preview_id=PID, name="n", include_ambiguous=True)
     assert args(calls) == ["push", "--apply", "--preview-id", PID, "--name", "n", "--include-ambiguous", "--json",
                            "--", "p"]
@@ -66,7 +66,7 @@ def test_file_arguments_must_be_inside_the_repo(calls, tmp_path, monkeypatch):
 
     assert json.loads(m.dj_tree_preview("bases.yaml"))["ok"] is True
     for bad in (str(outside), "../evil.yaml", "secret.env", "missing.yaml"):
-        answer = json.loads(m.dj_tree_apply(file=bad, preview_id=PID, power_mode=True))
+        answer = json.loads(m.dj_tree_apply(file=bad, preview_id=PID))
         assert answer["ok"] is False and "error" in answer
     assert len(calls) == 1  # only the good one ran
 
@@ -74,7 +74,7 @@ def test_file_arguments_must_be_inside_the_repo(calls, tmp_path, monkeypatch):
 def test_exit_code_2_tells_the_agent_to_wait_not_to_work_around(monkeypatch):
     monkeypatch.setattr(m.subprocess, "run", lambda cmd, **k: SimpleNamespace(
         returncode=2, stdout="", stderr="[x] WARNING - Rekordbox is running!\nSTOP rekordbox.exe is running."))
-    answer = json.loads(m.dj_copy_apply("a", "b", preview_id=PID, power_mode=True))
+    answer = json.loads(m.dj_copy_apply("a", "b", preview_id=PID))
     assert (answer["ok"], answer["exit_code"]) == (False, 2)
     assert "close it" in answer["hint"] and answer["stderr"] == ["STOP rekordbox.exe is running."]
 
@@ -119,16 +119,16 @@ def test_tool_list_and_which_ones_are_read_only():
         "dj_copy_apply", "dj_push_apply", "dj_build_apply",
         "dj_tidy_audit", "dj_tidy_dupes", "dj_tidy_plan", "dj_tidy_apply_preview", "dj_tidy_apply",
         "dj_tidy_undo_preview", "dj_tidy_undo",
-        "dj_library_inspect", "dj_library_analyze", "dj_structure_preview", "dj_structure_write",
+        "dj_library_inspect", "dj_library_analyze", "dj_library_report", "dj_structure_preview", "dj_structure_write",
         "dj_crate_preview", "dj_crate_write", "dj_barber_next", "dj_barber_record", "dj_wishlist_shop",
-        "dj_backup",
+        "dj_backup", "dj_query", "dj_note", "dj_match_tracks",
     }
     writers = {n for n, t in tools.items() if not t.annotations.read_only_hint}
     assert writers == {"dj_plan", "dj_tree_apply", "dj_apply_write", "dj_copy_apply", "dj_push_apply",
                        "dj_build_apply", "dj_tidy_audit", "dj_tidy_plan", "dj_tidy_apply", "dj_tidy_undo",
-                       "dj_library_analyze",
+                       "dj_library_analyze", "dj_library_report",
                        "dj_structure_preview", "dj_structure_write", "dj_crate_write", "dj_barber_next",
-                       "dj_barber_record", "dj_wishlist_shop", "dj_backup"}
+                       "dj_barber_record", "dj_wishlist_shop", "dj_backup", "dj_note", "dj_match_tracks"}
     assert not any(t.annotations.destructive_hint for t in tools.values())
     assert "file" in tools["dj_tree_apply"].input_schema["properties"]  # schema survives @guarded
 

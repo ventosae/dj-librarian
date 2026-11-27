@@ -13,15 +13,12 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
-import textwrap
 from datetime import date
 from pathlib import Path
 
 import pytest
 import xml_fixtures as fx
-import yaml
 from typer.testing import CliRunner
 
 from dj import cli, safety
@@ -35,16 +32,15 @@ from dj.analysis.common import (
     parse_day,
     pct,
     provenance_line,
-    resolve_xml,
     write_json,
 )
-from dj.libfolder import LibraryFolder, LibraryFolderError, import_export, scaffold
+from dj.libfolder import LibraryFolder, import_export, scaffold
 from dj.model import Library, LibraryError, Track
 from dj.readers.xml import read_xml
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 REPO = Path(__file__).resolve().parents[1]
-SKILL = REPO / "plugin" / "skills" / "dj-profile"
-SCRIPT = SKILL / "scripts" / "profile.py"
 DAY = date(2026, 10, 20)
 EXPORT = "exports/2026-10-20-collection.xml"
 PROVENANCE = f"> Measured by code: dj.analysis.profile from {EXPORT}, 2026-10-20."
@@ -561,23 +557,13 @@ def test_run_never_writes_habits_md(folder):
     assert habits.read_bytes() == b"# Who you are as a DJ\n\nThe DJ's own edit.\n"
 
 
-def test_run_reads_an_xml_outside_the_folder_by_name_only(folder, tmp_path):
-    (tmp_path / "elsewhere").mkdir()
-    outside = fx.write_xml(tmp_path / "elsewhere" / "my export.xml")
-    result = profile.run(folder, xml=outside, today=DAY)
-    assert result["source"] == "my export.xml"
-    text = (folder / "profile" / "stats.md").read_text(encoding="utf-8")
-    assert "> Measured by code: dj.analysis.profile from my export.xml, 2026-10-20." in text
-    assert str(tmp_path) not in text
-
-
 def test_run_needs_an_export_or_a_folder(tmp_path):
     root = tmp_path / "dj-library"
     scaffold(root, device="windows", today=DAY)
     with pytest.raises(LibraryError, match="No export"):
         profile.run(root, today=DAY)
     with pytest.raises(LibraryError, match="does not exist"):
-        profile.run(tmp_path / "missing", xml=fx.SAMPLE_XML, today=DAY)
+        profile.run(tmp_path / "missing", today=DAY)
     assert not (root / "profile" / "stats.md").exists()
 
 
@@ -601,14 +587,6 @@ def test_run_with_a_relative_library_gives_folder_relative_paths(folder, tmp_pat
     assert not (folder / "dj-library").exists()
 
 
-def test_script_with_a_relative_library(folder, tmp_path):
-    done = run_script("--library", "dj-library", "--today", "2026-10-20", cwd=tmp_path)
-    assert done.returncode == 0, done.stderr
-    data = json.loads(done.stdout)
-    assert data["source"] == EXPORT and data["written"] == ["profile/stats.md", "profile/facts.json"]
-    assert (folder / "profile" / "stats.md").read_text(encoding="utf-8").split("\n")[2] == PROVENANCE
-
-
 def test_cli_with_a_relative_library(folder, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     args = ["library", "profile", "--library", "dj-library", "--today", "2026-10-20", "--json"]
@@ -627,52 +605,6 @@ def empty_export(path: Path) -> Path:
     return path
 
 
-def test_a_relative_xml_is_looked_up_in_the_library_folder_first(folder, tmp_path, monkeypatch):
-    other = tmp_path / "other"
-    empty_export(other / EXPORT)  # same relative name in the current folder, 0 tracks
-    monkeypatch.chdir(other)
-    result = profile.run(folder, xml=EXPORT, today=DAY)
-    assert result["source"] == EXPORT and result["headline"][0]["value"] == "24 tracks"
-    text = (folder / "profile" / "stats.md").read_text(encoding="utf-8")
-    assert text.split("\n")[2] == PROVENANCE and "| Tracks | 24 |" in text
-
-
-def test_a_relative_xml_not_in_the_library_folder_is_read_from_the_current_folder(folder, tmp_path, monkeypatch):
-    other = tmp_path / "other"
-    empty_export(other / "good.xml")
-    monkeypatch.chdir(other)
-    result = profile.run(folder, xml="good.xml", today=DAY)
-    # The file that was read (outside the folder, 0 tracks) is the file named: by name only.
-    assert result["source"] == "good.xml" and result["headline"][0]["value"] == "0 tracks"
-    assert "| Tracks | 0 |" in (folder / "profile" / "stats.md").read_text(encoding="utf-8")
-
-
-def test_a_relative_xml_found_nowhere_is_an_error_before_writing(folder, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    before = snapshot(folder)
-    with pytest.raises(LibraryFolderError, match="file not found"):
-        profile.run(folder, xml="exports/missing.xml", today=DAY)
-    assert snapshot(folder) == before
-
-
-def test_script_with_a_relative_xml_from_another_folder(folder, tmp_path):
-    other = tmp_path / "other"
-    empty_export(other / EXPORT)
-    done = run_script("--library", str(folder), "--xml", EXPORT, "--today", "2026-10-20", cwd=other)
-    assert done.returncode == 0, done.stderr
-    data = json.loads(done.stdout)
-    assert data["source"] == EXPORT and data["headline"][0]["value"] == "24 tracks"
-
-
-def test_resolve_xml(folder, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    assert resolve_xml(folder, EXPORT) == (folder / EXPORT).resolve()
-    assert resolve_xml(folder, "collection.xml") == (tmp_path / "collection.xml").resolve()
-    assert resolve_xml(folder, tmp_path / "collection.xml") == (tmp_path / "collection.xml").resolve()
-    with pytest.raises(LibraryFolderError, match="not found"):
-        resolve_xml(folder, "nope.xml")
-
-
 def plain_folder(tmp_path: Path) -> Path:
     """A folder the DJ owns, not a dj-library: a photo and their own log.md."""
     plain = tmp_path / "Music"
@@ -686,7 +618,7 @@ def test_run_refuses_a_folder_that_is_not_a_dj_library(tmp_path):
     plain = plain_folder(tmp_path)
     before = snapshot(plain)
     with pytest.raises(NotALibraryFolder, match="dj-start"):
-        profile.run(plain, xml=fx.SAMPLE_XML, today=DAY)
+        profile.run(plain, today=DAY)
     with pytest.raises(NotALibraryFolder):
         profile.write(plain, profile.facts(read_xml(fx.SAMPLE_XML), today=DAY), source="x.xml", today=DAY)
     assert snapshot(plain) == before
@@ -697,10 +629,10 @@ def test_run_refuses_an_invalid_library_yaml(folder):
     (folder / "library.yaml").write_text("schema_version: 99\ndevice: toaster\n", encoding="utf-8")
     before = snapshot(folder)
     with pytest.raises(NotALibraryFolder, match="library.yaml is not valid"):
-        profile.run(folder, xml=fx.SAMPLE_XML, today=DAY)
+        profile.run(folder, today=DAY)
     (folder / "library.yaml").write_text("{not: yaml", encoding="utf-8")
     with pytest.raises(NotALibraryFolder, match="library.yaml"):
-        profile.run(folder, xml=fx.SAMPLE_XML, today=DAY)
+        profile.run(folder, today=DAY)
     after = snapshot(folder)
     assert {k: v for k, v in after.items() if k != "library.yaml"} == {
         k: v for k, v in before.items() if k != "library.yaml"
@@ -712,7 +644,7 @@ def test_run_refuses_the_home_folder(folder, monkeypatch):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: folder / "inside"))
     before = snapshot(folder)
     with pytest.raises(NotALibraryFolder, match="home folder"):
-        profile.run(folder, xml=fx.SAMPLE_XML, today=DAY)
+        profile.run(folder, today=DAY)
     assert snapshot(folder) == before
 
 
@@ -728,20 +660,10 @@ def test_library_folder_resolves_and_accepts_a_dj_library(folder, tmp_path, monk
     assert library_folder(LibraryFolder(folder)).root == folder.resolve()
 
 
-def test_script_refuses_a_plain_folder_with_exit_2(tmp_path):
-    plain = plain_folder(tmp_path)
-    before = snapshot(plain)
-    done = run_script("--library", str(plain), "--xml", str(fx.SAMPLE_XML), cwd=tmp_path)
-    assert done.returncode == 2, done.stdout + done.stderr
-    data = json.loads(done.stdout)
-    assert data["ok"] is False and "dj-start" in data["refused"]
-    assert snapshot(plain) == before
-
-
 def test_cli_refuses_a_plain_folder(tmp_path):
     plain = plain_folder(tmp_path)
     before = snapshot(plain)
-    args = ["library", "profile", "--library", str(plain), "--xml", str(fx.SAMPLE_XML)]
+    args = ["library", "profile", "--library", str(plain)]
     result = runner.invoke(cli.app, args)
     assert result.exit_code == 1 and "ERROR" in result.stderr and "dj-start" in result.stderr
     assert snapshot(plain) == before
@@ -844,59 +766,6 @@ def _env() -> dict[str, str]:
     return dict(os.environ, PYTHONPATH=os.pathsep.join(paths), PYTHONUTF8="1")
 
 
-def run_script(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd, capture_output=True, text=True,
-                          encoding="utf-8", timeout=120, env=_env())  # fmt: skip
-
-
-def test_script_by_subprocess(folder, tmp_path, measured):
-    done = run_script("--library", str(folder), "--today", "2026-10-20", cwd=tmp_path)
-    assert done.returncode == 0, done.stderr
-    lines = [line for line in done.stdout.splitlines() if line.strip()]
-    assert len(lines) == 1  # one JSON object
-    data = json.loads(lines[0])
-    assert data == {"ok": True, "written": ["profile/stats.md", "profile/facts.json"],
-                    "headline": measured["headline"], "source": EXPORT}  # fmt: skip
-    assert (folder / "profile" / "stats.md").read_text(encoding="utf-8").split("\n")[2] == PROVENANCE
-
-
-def test_script_runs_with_engine_packages_blocked(folder, tmp_path):
-    code = textwrap.dedent(f"""
-        import json, runpy, sys
-        for name in {ENGINE!r}:
-            sys.modules[name] = None
-        sys.argv = [{str(SCRIPT)!r}, "--library", {str(folder)!r}, "--today", "2026-10-20"]
-        try:
-            runpy.run_path({str(SCRIPT)!r}, run_name="__main__")
-        except SystemExit as exc:
-            code = exc.code
-        loaded = [m for m in ("dj.readers.db", "dj.library", "dj.spotify", "dj.tidy", "dj.match")
-                  if m in sys.modules]
-        print(json.dumps(loaded), file=sys.stderr)
-        sys.exit(code)
-    """)
-    done = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True,
-                          encoding="utf-8", timeout=120, env=_env())  # fmt: skip
-    assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout)["ok"] is True
-    assert json.loads(done.stderr.strip().splitlines()[-1]) == []
-
-
-@pytest.mark.parametrize(
-    ("args", "fragment"),
-    [((), "--library"), (("--today", "20/10/2026"), "YYYY-MM-DD"), ((), "No export")],
-    ids=["no-library", "bad-today", "no-export"],
-)
-def test_script_errors_exit_1_with_one_json_object(tmp_path, args, fragment):
-    root = tmp_path / "dj-library"
-    scaffold(root, device="windows", today=DAY)
-    argv = list(args) if fragment == "--library" else ["--library", str(root), *args]
-    done = run_script(*argv, cwd=tmp_path)
-    assert done.returncode == 1
-    data = json.loads(done.stdout)
-    assert data["ok"] is False and fragment in data["error"]
-
-
 # -- the CLI (engine door) ------------------------------------------------------------------------------
 
 
@@ -915,13 +784,6 @@ def test_cli_profile_defaults_to_the_configured_library(folder, monkeypatch):
     assert result.stdout.splitlines()[:3] == ["wrote profile/stats.md", "wrote profile/facts.json", f"source: {EXPORT}"]
     assert "Collection: 24 tracks (2.3 hours, 0.62 GB)" in result.stdout
     assert (folder / "profile" / "facts.json").is_file()
-
-
-def test_cli_profile_reads_an_xml_option(folder, tmp_path):
-    other = fx.write_xml(tmp_path / "other.xml")
-    result = runner.invoke(cli.app, ["library", "profile", "--library", str(folder), "--xml", str(other), "--json"])
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout)["source"] == "other.xml"
 
 
 def test_cli_profile_errors_exit_1(tmp_path):
@@ -954,58 +816,7 @@ Before every reply, check:
 """
 
 
-@pytest.fixture(scope="module")
-def skill_text() -> str:
-    return (SKILL / "SKILL.md").read_text(encoding="utf-8").replace("\r\n", "\n")
-
-
-def test_skill_frontmatter_and_header(skill_text):
-    m = re.match(r"\A---\n(.*?)\n---\n(.*)\Z", skill_text, re.DOTALL)
-    assert m
-    meta, body = yaml.safe_load(m.group(1)), m.group(2)
-    assert meta["name"] == "dj-profile" and meta["description"].strip()
-    top = body.split("\n## ", 1)[0]
-    assert ("**Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by "
-            "[shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file "
-            "before each reply.") in top  # fmt: skip
-    assert "**Requirements:** R-301, R-302, R-311, R-312, R-341." in top
-
-
-def test_skill_names_the_patterns_it_reads_first(skill_text):
-    part = sections(skill_text)["Patterns I read first"]
-    for pattern in ("Formats and bitrates", "Eras", "date-added timeline", "Fields used", "Duplicates"):
-        assert pattern in part
-    assert "Nothing is suggested before these five are read." in part
-
-
-def test_skill_runs_both_doors_and_owns_habits_md(skill_text):
-    assert "scripts/profile.py --library" in skill_text and "dj library profile" in skill_text
-    habits = sections(skill_text)["Then write profile/habits.md (R-312)"]
-    assert "# Who you are as a DJ\n\n> Words by Claude, from profile/stats.md and profile/facts.json." in habits
-    template = re.search(r"```markdown\n(.*?)```", habits, re.DOTALL).group(1)
-    paragraphs = [p for p in template.split("\n\n")[2:] if p.strip()]
-    assert len(paragraphs) == 4
-    assert "taste/vocabulary.md" in habits and "one page" in habits and "R-302" in habits
-
-
-def test_skill_says_analysis_never_writes_outside(skill_text):
-    assert "rekordbox, Spotify or audio files" in sections(skill_text)["What this skill never does (R-341)"]
-
-
-def test_skill_ends_with_the_canonical_checklist(skill_text):
-    heads = list(re.finditer(r"^## ", skill_text, re.MULTILINE))
-    assert skill_text[heads[-1].start():].rstrip("\n") == CHECKLIST.rstrip("\n")
-
-
-def test_skill_lists_have_five_items_or_fewer(skill_text):
-    body = skill_text.split("## Pre-send checklist")[0]
-    run = 0
-    for line in body.split("\n"):
-        run = run + 1 if LIST_ITEM.match(line) else 0
-        assert run <= 5
-
-
 def test_common_module_names():
-    names = ("norm_key", "dup_key", "provenance_line", "md_table", "write_json", "pct", "library_folder", "resolve_xml")
+    names = ("norm_key", "dup_key", "provenance_line", "md_table", "write_json", "pct", "library_folder")
     for name in names:
         assert callable(getattr(common, name))

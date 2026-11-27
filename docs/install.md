@@ -1,89 +1,55 @@
 # Install
 
-Install comes first (D-30). Upload the plugin zip (Door 1), then type `/dj-librarian:install` in Claude Code (Door 2, route 1): it installs the engine and makes your dj-library folder. Then say `/dj-librarian:dj-start` in a Cowork task: the first session reads rekordbox directly, no export. Without the install, the first session works from an XML export you make in rekordbox (Door 1, below). No terminal of your own either way.
+One route, on a Mac or a Windows PC, about 10 minutes. You click; you never type in a terminal.
 
-## Door 1 — the plugin (Mac or Windows, 5 minutes)
+What you need: the Claude desktop app, signed in to a plan that has Cowork, and rekordbox 7 on the same computer (rekordbox 6 is untested).
 
-What you need: the Claude desktop app, signed in to a plan that has Cowork. rekordbox 6 or 7.
+## The steps
 
-1. Get `dj-librarian-plugin-<version>.zip`: download it from `dist/` in the repo on GitHub (open the file, then **Download raw file**), or take it from a GitHub release. Don't unzip it. The light `dj-librarian-plugin-<version>-no-engine.zip` is the same without the install command, for Door 1 only.
-2. Claude desktop app → **Customize → Plugins → Add → Upload plugin** → pick the zip. Turn the plugin on if it isn't.
-3. Start a Cowork task **on this computer** (not a cloud task: the folder you connect must be on your machine).
-4. Type **/dj-librarian:dj-start**. With the engine installed the first session is four steps and needs no export; without it, six steps, the XML export among them. The A6 card (`docs/handout/dj-librarian-a6.pdf`) has them.
+1. **Get the zip.** Download `dj-librarian-plugin-<version>.zip` from `dist/` in the repo on GitHub (open the file, then **Download raw file**), or take it from a GitHub release. Don't unzip it.
+2. **Upload it.** Claude desktop app → **Customize → Plugins → Add → Upload plugin** → pick the zip. Turn the plugin on if it isn't.
+3. **Install the engine.** Open the **Code** tab, type **`/dj-librarian:install`** and click **Allow** on each step. It finds or installs uv, copies the engine to `dj-librarian` in your home folder, installs what it needs, checks it with `dj status`, asks once which folder should be your dj-library (`Music/dj-library` in your home folder is the offer), backs up your rekordbox database into that folder's `backups/`, and adds the engine to Claude Desktop's config (a backup of the config first; no other entry changes).
+4. **Restart Claude Desktop.** In **Customize → Connectors → dj-librarian**, leave every write tool on **Ask every time** ([permissions.md](permissions.md) has the list).
+5. **Start.** Open a Cowork task **on this computer** (not a cloud task) and type **`/dj-librarian:dj-start`**. It reads your collection straight from rekordbox and, about 5 minutes later, opens the report. The A6 card (`docs/handout/dj-librarian-a6.pdf`) has the steps.
 
-Analysis runs on a copy of your rekordbox XML export, inside Cowork. rekordbox is never touched; a structure you choose arrives as an XML you import yourself.
+A step fails: the command stops and shows one line. Send that line to whoever gave you the plugin.
 
-Updating: upload the new zip the same way; it replaces the old one. Your `dj-library/` folder is untouched.
+No dj-librarian tools in a session? One line: run `/dj-librarian:install` in the Code tab.
 
-The light zip, `dj-librarian-plugin-<version>-no-engine.zip`, is Door 1 only: the same skills, no install command. Take it when the report and the XML builds are all you want.
+## How it writes
 
-## Door 2 — the engine (about 5 minutes, you click Allow)
+Nothing is written to rekordbox without a preview and your yes. Then: close rekordbox, say yes, and the write goes straight into rekordbox's database, after a verified backup, in one transaction that is rolled back on any error. While rekordbox is open, or when the check for it cannot run, the write is refused. Open rekordbox again and the new folders and playlists are there. It only adds: nothing that exists is deleted, renamed, moved or reordered.
 
-Needed for: live master.db reads (My Tags, play counts), `dj tidy` on your audio files (audit and plan on both; writing tags on Windows only in v0.1), the Spotify inbox and the shopping list, Windows power mode.
+To turn rekordbox writes off, set `DJ_POWER_MODE=false` in the engine's entry in Claude Desktop's config.
 
-The engine runs on your computer. Pick the first route that works for you.
+## Update
 
-### 1. The install command (first choice)
+Upload the new zip the same way (it replaces the old one), then run `/dj-librarian:install` again: it backs up the old engine folder to `dj-librarian.bak-<date>` and copies the new one. On Windows, turn dj-librarian off in **Customize → Connectors** first, and on again after the restart. Your dj-library folder is untouched.
 
-The plugin zip carries the engine's source. Claude Code installs it; you type one line and click **Allow** on each step.
+## Uninstall
 
-1. Claude desktop app → **Code** tab → type **`/dj-librarian:install`**.
-2. Click **Allow** on each step (9 of them): it finds or installs uv, copies the engine to `dj-librarian` in your home folder, installs what it needs, checks it with `dj status`, asks once which folder should be your dj-library (it makes it; `Music/dj-library` in your home folder is the offer), backs up your rekordbox database into that folder's `backups/` (a verified copy with `RESTORE.md`; analysis files and artwork stay with rekordbox's own File > Library > Backup Library), and adds the engine to Claude Desktop's config (a backup of the config first; no other entry changes).
-3. Restart Claude Desktop. In **Customize → Connectors → dj-librarian**, leave every write tool on **Ask every time** (the list is below).
-4. In a Cowork task, say **/dj-librarian:dj-start**: the first session reads your collection straight from rekordbox (`dj_status`, then the analysis from master.db) and ends with the same report. Later, **set me up** checks the engine.
+In the Code tab, run `/dj-librarian:install` and say **uninstall**. It takes the dj-librarian entry out of Claude Desktop's config, after a backup of the config. It deletes no folder: the engine folder and your dj-library stay until you delete them yourself. Remove the plugin under **Customize → Plugins**.
 
-A step fails: the command stops and shows one line. Send that line to whoever gave you the plugin. To take the engine out again: `/dj-librarian:uninstall` (the config entry goes, the folder stays). Unverified on a Mac until it has run there once (Q-32).
+## Backup
 
-### 2. The desktop extension (second choice)
+The install takes the first backup, and every write into rekordbox takes one before it starts. For one more, say **back up my library**: a verified copy of rekordbox's database lands in `backups/rekordbox-<date>/` in your dj-library folder, with a `RESTORE.md` that has the steps back for your computer. Nothing is copied when nothing changed, and no backup is ever deleted. Analysis files and artwork are not in it: rekordbox's own **File → Library → Backup Library** covers those.
 
-1. Get `dj-librarian-engine-<version>.mcpb` (from the GitHub release, or from whoever is testing with you). Don't unzip it.
-2. Claude desktop app → **Settings → Extensions** → drag the `.mcpb` file onto that page → **Install**.
-3. Fill the form it shows: **dj-library folder** (the one with `library.yaml`), **Spotify client ID** and **Spotify client secret** (optional), **Power mode (Windows)** (leave it off).
-4. Set every write tool to **Ask every time**, open a new Cowork task and say **set me up**.
+## Spotify keys
 
-Unverified (Q-31): the app's host has to bring Python for this engine type. It is the same engine with the same tools: install one route only, or every tool shows twice.
+You need Spotify Premium and your own Spotify app; say **connect Spotify** and the dj-spotify skill walks you through it, about 8 minutes. The two keys go in a file named `.env` in the engine folder (`dj-librarian` in your home folder), never in the dj-library folder and never in the chat.
 
-### 3. By hand (third choice)
+## Where things live
 
-From a clone of the repo with uv, as a developer would: [README.md](../README.md#install) and [CONTRIBUTING.md](../CONTRIBUTING.md).
-
-### Permissions: every write tool on Ask every time
-
-In the dj-librarian tool permissions, set each of these to **Ask every time**. Read tools can stay on Allow. Claude Code takes them as an `ask` list in its settings; the block to paste and every tool's group are in [permissions.md](permissions.md).
-
-| Write tool | Writes to |
+| Folder | What is in it |
 |---|---|
-| `dj_structure_write` | `proposals/<slug>.xml`, a rekordbox XML you import |
-| `dj_crate_write` | `proposals/crate-<slug>.xml`, a rekordbox XML you import |
-| `dj_tree_apply` | rekordbox master.db (power mode, Windows) |
-| `dj_apply_write` | an XML you import, or master.db in power mode |
-| `dj_copy_apply` | an XML you import, or master.db in power mode |
-| `dj_push_apply` | Spotify (a private playlist, adds only) |
-| `dj_build_apply` | Spotify (a private playlist, adds only) |
-| `dj_tidy_apply` | your audio files' tags and names (undo record first) |
-| `dj_tidy_undo` | your audio files' tags and names (restores them) |
+| your dj-library folder | Your files, plain text you own: the report, profile, structure, taste, proposals, crates, the wishlist, the catalog (`catalog/catalog.db`, `catalog/tracks.csv`) and `backups/`. |
+| `dj-librarian` in your home folder | The engine: its code, preview records, the Spotify login, caches. An update replaces the code after a backup copy. |
 
-### Spotify keys
+## Status
 
-You need Spotify Premium and your own Spotify app; say **connect Spotify** and the dj-spotify skill walks you through it, about 8 minutes. Never paste the keys into the chat. With the install command, the keys go in a `.env` file in the engine folder (`dj-librarian` in your home folder, never the dj-library folder, which may be synced and which Cowork reads); with the desktop extension, in its settings form (**Spotify client ID**, **Spotify client secret**).
-
-### Where the engine keeps its state
-
-With the install command: in the engine folder (`dj-librarian` in your home folder): preview records, build and push state, the Spotify login token, caches, reports and the master.db backups taken before a power-mode write. A new version is copied over it after a backup copy (`dj-librarian.bak-<date>`), so nothing is lost.
-
-With the desktop extension: in your dj-library folder, under `.cache/engine/` (preview records, build and push state, caches, master.db backups), reports in `reports/` there; the Spotify login token stays in `.dj-librarian/.cache/` in your home folder, never in the dj-library folder (it may be synced, and Cowork reads it). An update of the extension never touches these. With no usable library folder set, it keeps its state in `.dj-librarian` in your home folder until you pick one.
-
-### Updating the engine
-
-Install command: upload the new plugin zip (Door 1), then run `/dj-librarian:install` again; it backs up the old engine folder first. Desktop extension: drag the new `.mcpb` onto Settings → Extensions; it replaces the old one. Your dj-library folder stays either way.
-
-## Status of each route
-
-| Route | Mac | Windows |
+| | Mac | Windows |
 |---|---|---|
-| Door 1, the plugin zip in Cowork | verified on a Linux VM with the DJ's folder; first real Mac session pending | verified |
-| Door 2, `/dj-librarian:install` | unverified (Q-32) | the same setup as the maintainer's daily one; the command itself not yet run on a fresh PC |
-| Door 2, the `.mcpb` in Settings → Extensions | unverified (Q-31) | unverified (Q-31) |
-| The engine's code (master.db reads, process check) | ported; no live Mac run yet | in daily use from a clone |
-
-Q-32 stays open until the install command has run on a Mac. Q-31 stays open until the `.mcpb` has run once in the Claude desktop app on Windows, on a Mac, and inside a Cowork session.
+| `/dj-librarian:install` | not yet run on a Mac | the same setup as the maintainer's daily one; the command itself not yet run on a fresh PC |
+| Reading rekordbox | ported; no live Mac run yet | in daily use |
+| Writing into rekordbox | the same code path; no live Mac write yet | in use on the maintainer's library |
+| `dj tidy` writing audio files | not yet: it audits and plans only | yes |

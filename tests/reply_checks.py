@@ -1,25 +1,12 @@
-"""The mechanical part of the pre-send checklist, for spot checks on DJ-facing text.
-
-One checklist covers both checks R-1003 names: the pre-send block at the end of
-plugin/shared/adhd.md. Its Voice line points to plugin/shared/voice.md; the part of the voice a
-regex can see is the Avoid column of its word table. Everything else on the checklist (first
-person, numbers from the tool, no tangents) is a reviewer's read.
-
-Used by tests/test_skills.py (W-19) on the style guide's own example, and for R-1003's spot check
-on 3 real outputs: the dj-report HTML (W-17; `report_sections` turns it into the plain text of
-each section, the shape `text_problems` reads), and since W-30b the generated MD file
-docs/samples/profile/stats.md and the six replies of docs/samples/chat-session-1.md
-(`session_replies` reads them out, `step_reply_problems` checks each one).
-"""
+"""Spot checks on DJ-facing text the engine writes: no pleasantry first, lists of 5 at most, no
+avoided word. Used by test_barber, test_identity and test_report."""
 
 from __future__ import annotations
 
 import re
-from functools import cache
 from html.parser import HTMLParser
-from pathlib import Path
 
-VOICE = Path(__file__).resolve().parents[1] / "plugin" / "shared" / "voice.md"
+AVOIDED = ('amazing', 'journey', 'seamless', 'simply', 'unfortunately')  # the word table of the old voice.md (D-36)
 
 PREAMBLE = re.compile(
     r"^(hi|hello|hey|great|sure|certainly|of course|absolutely|thanks|thank you|happy to)\b",
@@ -39,17 +26,8 @@ HEADING = re.compile(r"^\s*#{1,6} ")
 LEAD = re.compile(r"^(?:Step|Question) \d+ of \d+ · ")
 
 
-@cache
 def avoided_words() -> tuple[str, ...]:
-    """The Avoid column of the word table in voice.md, lower case."""
-    text = VOICE.read_text(encoding="utf-8").replace("\r\n", "\n")
-    m = re.search(
-        r"^## Words we use / words we avoid\n(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL
-    )
-    if not m:
-        raise ValueError("voice.md has no '## Words we use / words we avoid' section")
-    rows = [line for line in m.group(1).split("\n") if line.startswith("|")][2:]
-    return tuple(row.strip("|").split("|")[1].strip().lower() for row in rows)
+    return AVOIDED
 
 
 def text_problems(text: str) -> list[str]:
@@ -70,37 +48,6 @@ def text_problems(text: str) -> list[str]:
     for word in avoided_words():
         if re.search(rf"\b{re.escape(word)}\b", text, re.IGNORECASE):
             problems.append(f"voice: uses the avoided word '{word}'")
-    return problems
-
-
-def reply_problems(reply: str) -> list[str]:
-    """`text_problems` plus the checks that only a chat reply has to pass."""
-    problems = text_problems(reply)
-    if problems == ["empty text"]:
-        return problems
-    lines = [line for line in reply.strip().split("\n") if line.strip()]
-    if not STATE.search(reply):
-        problems.append("rule 5: no 'Step N of M' (or 'Question N of M')")
-    if not FILE_NAMED.search(reply):
-        problems.append("rule 7: no file named")
-    if not TIME.search(lines[-1]):
-        problems.append("rules 3/6: last line has no concrete time estimate")
-    return problems
-
-
-def step_reply_problems(reply: str) -> list[str]:
-    """`text_problems` plus the shape every reply of a step-by-step skill has (dj-start, Rules):
-    the lead line starts with the step counter ("Step 2 of 6 · ") and holds one concrete time
-    estimate. For the replies of a session, where `reply_problems` is too strict (a hello names
-    no file; an export card ends on its last numbered step, not on a time)."""
-    problems = text_problems(reply)
-    if problems == ["empty text"]:
-        return problems
-    lead = reply.strip().split("\n")[0]
-    if not LEAD.match(lead):
-        problems.append("rule 5: the lead line does not start with 'Step N of M · '")
-    if len(TIME.findall(lead)) != 1:
-        problems.append("rule 6: the lead line holds no time estimate, or more than one")
     return problems
 
 

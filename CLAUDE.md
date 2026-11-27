@@ -11,8 +11,8 @@ Read before changing anything: `docs/requirements.md` (numbered R-ids; authorita
    - `dj tidy` renames audio files within their own folder only on the DJ's explicit request, after an undo record is written, with a Relocate list for rekordbox.
    - Tools that write or append the DJ's own text files in the library folder (analysis, `dj_plan`, `dj_tidy_plan`, audit reports, barber answers, the shopping list, the dj-build preview yaml) need no preview id. The write-gate hook matches only `_apply`, `_write` and `_undo` tools.
 2. Dry-run is the default. Real writes only with `--apply`, and only after a preview the user said yes to. Silence is not a yes.
-3. Before any master.db write: rekordbox closed (process check), verified backup of `master.db` + `masterPlaylists6.xml` + `-wal`/`-shm`, one commit at the end, rollback on any exception.
-4. Default write path is rekordbox XML the user imports. Direct master.db writes are Windows power mode behind an explicit flag.
+3. Before any master.db write: rekordbox closed (process check; if the check cannot run, refuse), verified backup of `master.db` + `masterPlaylists6.xml` + `-wal`/`-shm`, one commit at the end, rollback on any exception.
+4. One write path on every OS: straight into master.db, through the chain of rule 3 with a preview id first (one preview, one write). No XML is read or written. `DJ_POWER_MODE=false` is the only off switch (D-33, D-34).
 5. Idempotent: same name at the same level exists → `SKIP`.
 6. Secrets live in `.env` (gitignored). Never print, log or commit them. Tokens go only to `https://api.spotify.com/v1/...`.
 7. Nothing personal in the repo: no library paths, playlists, inbox data, names of real users. Config ships as `examples/*.example.yaml`; a user's own files live in their `dj-library/` folder.
@@ -42,7 +42,7 @@ Read before changing anything: `docs/requirements.md` (numbered R-ids; authorita
 
 - `uv run pytest`. `tests/conftest.py` blocks the real master.db and all sockets. No test opens a real DB or audio file outside `tmp_path`.
 - `tests/test_contract.py` pins the pyrekordbox signatures the fakes assume: run after any pyrekordbox upgrade, before any write.
-- Anything that writes to rekordbox, Spotify or audio files has tests, including the XML writer.
+- Anything that writes to rekordbox, Spotify or audio files has tests. Keep tests few: the ones a brief names, plus the write chain (D-33).
 - CI runs the suite on Windows, macOS and Ubuntu, plus `claude plugin validate ./plugin --strict`, `ruff`, and a secret scan.
 
 ## Environment
@@ -56,7 +56,7 @@ Read before changing anything: `docs/requirements.md` (numbered R-ids; authorita
 ## Conventions
 
 - One branch and one PR per change. Conventional commit titles (`feat:`, `fix:`, `docs:`, `chore:`, `test:`). Squash merge.
-- Semver; `pyproject.version` = `plugin/.claude-plugin/plugin.json` version. `CHANGELOG.md` (Keep a Changelog).
+- Semver; `pyproject.toml` is the one version source, `scripts/bump_version.py` writes the rest. `CHANGELOG.md` (Keep a Changelog).
 - Size: a module ≤ 600 lines, tests ≤ 1.5× the code they test, a PR ≤ +2,000 lines, unless the prompt says why.
 - Never push, tag, publish or make the repo public without the owner's explicit yes in the conversation.
 - Commit only when asked. Check `git status` for personal files before every commit.
@@ -65,11 +65,10 @@ Read before changing anything: `docs/requirements.md` (numbered R-ids; authorita
 
 ```
 .claude-plugin/marketplace.json   self-hosted marketplace → ./plugin
-plugin/                           the Claude plugin: .claude-plugin/plugin.json, skills/ (install, uninstall among them), shared/, hooks/;
-                                  the zip adds engine/, the one copy of the core (scripts/build_plugin_zip.py, D-29)
-mcpb/                             manifest.json of the standalone engine bundle (scripts/build_mcpb.py → dist/dj-librarian-engine-<v>.mcpb)
+plugin/                           the Claude plugin: .claude-plugin/plugin.json, seven skills (dj-start, dj-crate, dj-build, dj-barber,
+                                  dj-tidy, dj-spotify, install), hooks/; the zip adds engine/, the engine source (scripts/build_plugin_zip.py)
 src/dj/                           core: safety, library, tree, rules, match, spotify, push, build, analyze,
-                                  playlist_copy, intake, tidy/, cli, mcp_server (+ readers/, analysis/, writers/ as they land)
+                                  playlist_copy, intake, tidy/, cli, mcp_server, db_write, write_plan, catalog (+ readers/, analysis/)
 tests/                            pytest; mocked db; synthetic audio and XML fixtures
 examples/                         .env.example, links/tidy/bases/tree .example.yaml
 templates/project/                Cowork Project instructions template for a DJ

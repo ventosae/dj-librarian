@@ -1,7 +1,6 @@
 """Style Barber: a short question session that sharpens the DJ's taste profile (R-701, R-703).
 
-Door 1 core: stdlib + PyYAML only (contract section 0), so the skill script runs it in Cowork's
-sandbox. It reads the latest export and writes text: dated lines in `taste/*.md` through
+It reads the library from a master.db snapshot (`dj.build_library`) and writes text: dated lines in `taste/*.md` through
 `dj.taste_files` (appended, never rewritten, R-332), its own state in `.cache/barber.json` and
 one `log.md` line per answer that added a line (R-904). Nothing goes to rekordbox, master.db,
 Spotify or audio files.
@@ -87,15 +86,13 @@ from typing import Any, Iterable, Sequence
 from dj.analysis import taste as taste_analysis
 from dj.analysis.common import library_folder
 from dj.analysis.common import provenance_line as measured_line
+from dj.build_library import read_for_build
 from dj.libfolder import (
     LibraryFolder,
-    LibraryFolderError,
     append_log,
-    latest_export,
     write_text,
 )
 from dj.model import Library, LibraryError, PlaylistNode, Track, id_sort_key
-from dj.readers.xml import read_xml
 from dj.taste_files import (
     Entry,
     Vetoes,
@@ -879,27 +876,19 @@ def known_keys(folder: LibraryFolder) -> set[str]:
     return keys
 
 
-def _source_of(folder: LibraryFolder, path: Path) -> str:
-    try:
-        return folder.relative(path)
-    except LibraryFolderError:
-        return path.name
-
-
 def start(folder: LibraryFolder | str | Path, *, today: date | None = None) -> tuple[Session, bool]:
     """(today's session, resumed?). Resumes `.cache/barber.json` when it is today's; else plans
-    a new session from the latest export and saves it."""
+    a new session from the library (a master.db snapshot, `dj.build_library`) and saves it."""
     folder = _folder(folder)
     day = today or date.today()
     session = load_session(folder, today=day)
     if session is not None:
         return session, True
-    export = latest_export(folder.root)
-    lib = read_xml(export)
+    lib, source = read_for_build(folder)
     facts = taste_analysis.facts(lib, today=day)
     session = plan_session(
         lib, facts, today=day, skip=known_keys(folder), vetoes=read_vetoes(folder.taste / "vetoes.md"),
-        source=_source_of(folder, export),
+        source=source,
     )  # fmt: skip
     save_session(folder, session)
     return session, False

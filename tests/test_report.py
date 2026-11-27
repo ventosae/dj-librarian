@@ -9,11 +9,7 @@ from __future__ import annotations
 
 import html
 import json
-import os
 import re
-import subprocess
-import sys
-import textwrap
 from datetime import date, datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -28,10 +24,11 @@ from dj import cli, libfolder, report
 from dj.analysis import common, run_all
 from dj.analysis import proposals as P
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 DAY = date(2026, 10, 20)
 REPORT = "reports/2026-10-20-library.html"
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "plugin" / "skills" / "dj-report" / "scripts" / "report.py"
 SECTIONS = ("who", "structure", "proposals", "next")
 PARTS = ["name", "principle", "tree", "lands", "cost", "trigger"]
 HOSTILE = "<script>alert(\"x\")</script> & 'q' http://evil.example"
@@ -392,43 +389,6 @@ def test_a_facts_file_in_another_shape_is_left_out_not_a_crash(folder, name, cha
         assert text_problems(text) == []
 
 
-def test_broken_json_and_a_broken_graph_are_left_out(folder):
-    (folder / "profile" / "facts.json").write_text("{not json", encoding="utf-8")
-    graph = folder / "structure" / "graph.json"
-    data = json.loads(graph.read_text(encoding="utf-8"))
-    data["nodes"][0]["tracks"] = "lots"
-    graph.write_text(json.dumps(data), encoding="utf-8")
-    page = report.render(folder, today=DAY).read_text(encoding="utf-8")
-    assert 'class="wall' not in page and parsed(page).stats == 0  # W-31: the hero sleeve still shows
-    assert "Left out, does not read: profile/facts.json, structure/graph.json." in page
-    done = run_script("render", "--library", str(folder), "--today", "2026-10-20", cwd=folder.parent)
-    assert done.returncode == 0 and json.loads(done.stdout)["ok"] is True  # one JSON object, no traceback
-
-
-def test_after_a_rename_render_only_and_the_newest_report_is_the_one_found(folder):
-    """The rename flow of SKILL.md step 5: render only, the -2 file shows the new name, and
-    dj-start (onboarding.folder_state) names that file, not the first of the day."""
-    from dj import onboarding
-
-    path = folder / "structure" / "proposals.yaml"
-    path.write_text(path.read_text(encoding="utf-8").replace("House Bases", "Telepathy Bases"), encoding="utf-8")
-    edited = path.read_bytes()
-    done = runner.invoke(cli.app, ["library", "report", "--library", str(folder), "--today", "2026-10-20",
-                                   "--render-only", "--json"])  # fmt: skip
-    assert done.exit_code == 0, done.output
-    data = json.loads(done.output)
-    assert data["report"] == "reports/2026-10-20-library-2.html" and data["counts"] == {"proposals": 3, "files": 1}
-    assert path.read_bytes() == edited and not list((folder / "structure").glob("proposals.edited-*"))
-    page = (folder / data["report"]).read_text(encoding="utf-8")
-    assert "Build me the Telepathy Bases structure" in page
-    assert onboarding.folder_state(folder)["latest_report"] == data["report"]
-    text = runner.invoke(cli.app, ["library", "report", "--library", str(folder), "--today", "2026-10-20",
-                                   "--render-only"])  # fmt: skip
-    assert text.exit_code == 0
-    assert text.output.startswith("report: reports/2026-10-20-library-3.html (3 proposals from structure/proposals.yaml)")
-    assert onboarding.folder_state(folder)["latest_report"] == "reports/2026-10-20-library-3.html"
-
-
 def test_render_refuses_a_folder_that_is_not_a_library(tmp_path):
     with pytest.raises(common.NotALibraryFolder):
         report.render(tmp_path, today=DAY)
@@ -480,68 +440,6 @@ def test_cli_report_refuses_a_plain_folder(tmp_path):
     done = runner.invoke(cli.app, ["library", "report", "--library", str(tmp_path)])
     assert done.exit_code == 2 and "REFUSED" in done.output
     assert list(tmp_path.iterdir()) == []
-
-
-def run_script(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    env = dict(os.environ, PYTHONUTF8="1")
-    return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd, capture_output=True, text=True,
-                          encoding="utf-8", timeout=120, env=env)  # fmt: skip
-
-
-def test_script_propose_render_and_both(tmp_path):
-    root = make_library(tmp_path / "dj-library")
-    done = run_script("propose", "--library", str(root), "--today", "2026-10-20", cwd=tmp_path)
-    out = json.loads(done.stdout)
-    assert done.returncode == 0 and out["ok"] is True and out["written"] == ["structure/proposals.yaml"]
-    assert not (root / "reports" / "2026-10-20-library.html").exists()
-    done = run_script("render", "--library", str(root), "--today", "2026-10-20", cwd=tmp_path)
-    assert done.returncode == 0 and json.loads(done.stdout)["report"] == REPORT
-    done = run_script("--library", str(root), "--today", "2026-10-20", cwd=tmp_path)
-    out = json.loads(done.stdout)
-    assert done.returncode == 0 and out["report"] == "reports/2026-10-20-library-2.html"
-    assert out["counts"] == {"proposals": 3, "files": 2}
-    log = (root / "log.md").read_text(encoding="utf-8").splitlines()
-    assert [line.split(" ", 3)[2] for line in log[-3:]] == ["proposals", "report", "report"]
-
-
-def test_script_refuses_and_errors(tmp_path):
-    plain = tmp_path / "plain"
-    plain.mkdir()
-    done = run_script("--library", str(plain), cwd=tmp_path)
-    assert done.returncode == 2 and "library.yaml" in json.loads(done.stdout)["refused"]
-    assert list(plain.iterdir()) == []
-    empty = tmp_path / "dj-library"
-    libfolder.scaffold(empty, device="mac", today=DAY)
-    done = run_script("--library", str(empty), cwd=tmp_path)  # scaffolded, no export yet
-    assert done.returncode == 1 and "export" in json.loads(done.stdout)["error"].lower()
-    done = run_script("--library", str(empty), "--today", "soon", cwd=tmp_path)
-    assert done.returncode == 1 and json.loads(done.stdout)["ok"] is False
-    done = run_script("draw", "--library", str(empty), cwd=tmp_path)
-    assert done.returncode == 1 and json.loads(done.stdout)["error"].startswith("usage:")
-    done = run_script(cwd=tmp_path)
-    assert done.returncode == 1 and "--library" in json.loads(done.stdout)["error"]
-
-
-def test_script_runs_without_engine_packages(tmp_path):
-    root = make_library(tmp_path / "dj-library")
-    code = textwrap.dedent(f"""
-        import runpy, sys
-        for name in ("pyrekordbox", "rapidfuzz", "httpx", "typer", "mcp"):
-            sys.modules[name] = None
-        sys.argv = ["report.py", "--library", {str(root)!r}, "--today", "2026-10-20"]
-        runpy.run_path({str(SCRIPT)!r}, run_name="__main__")
-    """)
-    env = dict(os.environ, PYTHONUTF8="1")
-    done = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True,
-                          encoding="utf-8", timeout=120, env=env)  # fmt: skip
-    assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout)["report"] == REPORT
-
-
-def test_the_script_is_thin():
-    text = SCRIPT.read_text(encoding="utf-8")
-    for logic in ("read_xml", "append_log", "write_text", "import yaml", "<section"):
-        assert logic not in text, logic
 
 
 def test_proposals_file_is_valid_yaml_for_the_build_step(analysed):

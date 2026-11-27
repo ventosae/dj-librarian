@@ -12,11 +12,11 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-import xml_fixtures as fx
 
-from dj import activity_log, libfolder, onboarding
-from dj.analysis import identity, profile, structure, taste
+from dj import activity_log, libfolder
 from dj.analysis import proposals as proposals_mod
+
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
 
 DAY = date(2026, 10, 20)
 
@@ -62,25 +62,6 @@ def test_five_consecutive_writes_with_today_share_one_date_and_carry_the_wall_cl
     ]  # fmt: skip
 
 
-def test_the_first_contact_chain_with_today_logs_one_date_at_the_wall_clock(tmp_path, monkeypatch):
-    """dj-start init, profile, structure, taste, identity, proposals: every log line the same way."""
-    root = tmp_path / "dj-library"
-    root.mkdir()
-    xml = fx.write_xml(root / "collection.xml")
-    pin_clock(monkeypatch, datetime(2026, 10, 21, 13, 20))
-    onboarding.init(root, device="mac", xml=xml, today=DAY)
-    profile.run(root, today=DAY)
-    structure.run(root, today=DAY)
-    taste.run(root, today=DAY)
-    identity.run(root, today=DAY)
-    proposals_mod.run(root, today=DAY)
-    lines = log_lines(root)
-    assert len(lines) >= 6
-    assert {line[:16] for line in lines} == {"2026-10-20 13:20"}, lines
-    assert [line.split(" ")[2] for line in lines][:6] == ["start", "profile", "structure", "taste", "identity",
-                                                          "proposals"]  # fmt: skip
-
-
 def test_without_today_the_date_is_the_local_date(tmp_path, monkeypatch):
     root = tmp_path / "dj-library"
     libfolder.scaffold(root, device="mac", today=DAY)
@@ -103,9 +84,8 @@ def test_activity_log_passes_today_through(tmp_path, monkeypatch):
     assert logged.warning is None and logged.line.startswith("2026-10-20 08:01 tree -> 2 created")
 
 
-@pytest.mark.parametrize("module", ["crate", "build_structure"])
-def test_no_writer_formats_its_own_log_time(module):
-    """The by-hand fallback lines in crate and build use the same clock."""
-    text = (Path(__file__).resolve().parents[1] / "src" / "dj" / f"{module}.py").read_text(encoding="utf-8")
+def test_no_writer_formats_its_own_log_time():
+    """The by-hand fallback line of the crate and build write (dj.db_write) uses the same clock."""
+    text = (Path(__file__).resolve().parents[1] / "src" / "dj" / "db_write.py").read_text(encoding="utf-8")
     assert "log_clock(today, now)" in text
     assert "strftime('%Y-%m-%d %H:%M')} crate" not in text and "strftime('%Y-%m-%d %H:%M')} build" not in text

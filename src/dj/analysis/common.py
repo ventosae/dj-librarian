@@ -12,7 +12,6 @@
 - `parse_day(text)`: a `--today YYYY-MM-DD` argument.
 - `library_folder(root)`: the folder an analysis may write into, resolved and checked: a
   scaffolded dj-library (valid library.yaml), never a drive root or the home folder.
-- `resolve_xml(root, xml)`: a `--xml` argument as the one file that is read and named.
 """
 
 from __future__ import annotations
@@ -211,19 +210,3 @@ def library_folder(root: str | Path | LibraryFolder) -> LibraryFolder:
             "Run dj-start on the folder first. Nothing was written."
         )
     return folder
-
-
-def resolve_xml(root: str | Path, xml: str | Path) -> Path:
-    """A `--xml` argument as one absolute path, the file that is both read and named in the
-    provenance line. A relative path is looked up in the library folder first, then in the
-    current folder (as dj-start does). Not found in either -> LibraryFolderError."""
-    given = Path(xml).expanduser()
-    path = given
-    if not given.is_absolute():
-        in_library = Path(root) / given
-        path = in_library if in_library.is_file() else Path.cwd() / given
-    if not path.is_file():
-        raise LibraryFolderError(
-            f"{given.as_posix()}: file not found in the library folder or the current folder."
-        )
-    return path.resolve()

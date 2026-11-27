@@ -14,7 +14,7 @@ What master.db does not give this reader is `DB_NOTES`:
 - Play history (DjmdHistory) is not read yet; the model has no history field (R-204 open part).
 
 Streamed rows (Spotify, Beatport Streaming, ...: `library.row_service`, Q-34) are counted in
-`Library.streaming` and left out of the tracks and the playlists, as the XML reader does.
+`Library.streaming` and left out of the tracks and the playlists.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterator
 
 from dj import safety
 from dj.library import row_service, to_track_info
@@ -263,20 +263,6 @@ def read_db(master_db: str | Path | None = None, *, read_at: str | None = None) 
         roots=roots,
         streaming=streamed,
     )
-
-
-def tracks_by_id(db: Any, ids: Iterable[str]) -> dict[str, Track]:
-    """The rows of `ids` that rekordbox has not soft-deleted, as Tracks (`to_track`: location,
-    BPM, key ...), for an XML the DJ imports (`dj apply --xml`, `dj copy --xml`). Reads the
-    content rows as `read_db` does; an id the library lacks is left out."""
-    wanted = {str(i) for i in ids}
-    out: dict[str, Track] = {}
-    if not wanted:
-        return out
-    for content in db.get_content().all():
-        if alive(content) and str(content.ID) in wanted:
-            out[str(content.ID)] = to_track(content)
-    return out
 
 
 @contextmanager

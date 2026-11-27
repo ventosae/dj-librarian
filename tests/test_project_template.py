@@ -1,12 +1,10 @@
 """The optional Cowork Project template, templates/project/instructions.md (R-107, C-04, D-16).
 
-R-107 acceptance: the template exists (voice, ADHD rules, safety, folder conventions) and the flow
-works without it. "Works without it" is checked here as: nothing in the plugin (skills, shared/,
-config, hooks) and no core code depends on the template; a Markdown line in the plugin may mention
-it only to say the template is optional (not negated), and nothing else in the plugin mentions it
-at all. The voice and the rules stay
-in the plugin (`plugin/shared/voice.md`, `plugin/shared/adhd.md`, W-19); the template points there
-and does not copy the pre-send checklist.
+R-107 acceptance: the template exists (voice, reply rules, safety, folder conventions) and the flow
+works without it. "Works without it" is checked here as: nothing in the plugin (skills, config,
+hooks) and no core code depends on the template; a Markdown line in the plugin may mention it only
+to say the template is optional (not negated), and nothing else in the plugin mentions it at all.
+The reply rules are the block every SKILL.md starts with (tests/test_skills.py).
 """
 
 from __future__ import annotations
@@ -16,43 +14,19 @@ from pathlib import Path
 
 import pytest
 
-from dj.libfolder import DIRS, FILES
-
 REPO = Path(__file__).resolve().parents[1]
 TEMPLATE = REPO / "templates" / "project" / "instructions.md"
 README = REPO / "README.md"
 REQUIREMENTS = REPO / "docs" / "requirements.md"
 PLUGIN = REPO / "plugin"
 SRC = REPO / "src"
-ADHD = PLUGIN / "shared" / "adhd.md"
-VOICE = PLUGIN / "shared" / "voice.md"
 
 MAX_LINES = 120
-
-# R-901, spelled out so a change to DIRS/FILES cannot quietly drop an entry from the template.
-R901_DIRS = (
-    "exports", "profile", "structure", "taste", "crates", "reports", "proposals", "wishlist",
-)  # fmt: skip
-R901_FILES = ("README.md", "library.yaml", "links.yaml", "log.md")
-
-# R-1002, in this order (the same titles as plugin/shared/adhd.md).
-RULES = (
-    "lead with the next action",
-    "number steps",
-    "end with one action under 2 minutes",
-    "no tangents",
-    "restate state",
-    "concrete time estimates",
-    "make finished work visible",
-    "matter-of-fact errors",
-    "cap lists at 5",
-    "no preamble or pleasantries",
-)
 
 ATTRIBUTION = "Rules adapted from the i-have-adhd skill by ayghri (MIT licence)."
 START = "Say hi. The dj-start skill takes it from there."
 
-# The Avoid column of voice.md's word table at W-19; voice.md's own table is added when present.
+# Words the voice avoids.
 AVOIDED = ("amazing", "journey", "seamless", "simply", "unfortunately")
 
 # A line that talks about the template (not `UV_PROJECT_ENVIRONMENT` and the like).
@@ -136,66 +110,23 @@ def test_template_says_it_is_optional(text):
 # -- who you talk to: the voice in our own words, pointing to the plugin (R-1001, C-08)
 
 
-def test_voice_section_is_short_and_points_to_voice_md(sections):
-    body = sections["Who you talk to"]
-    lines = [line for line in body.split("\n") if line.strip()]
-    assert 1 <= len(lines) <= 5
-    assert "working DJ" in body
-    assert "shared/voice.md" in body
-
-
 def test_no_book_text(text):
-    # C-08: the voice is style only. The template does not name the book, so nothing from it can
-    # creep in; the one line that names it lives in plugin/shared/voice.md.
+    # C-08: the voice is style only. The template does not name the book.
     assert "Fresh" not in text
     assert "how to be a dj" not in text.lower()
 
 
 def test_template_avoids_the_voice_words(text):
-    words = set(AVOIDED)
-    if VOICE.is_file():  # plugin/shared/voice.md (W-19): its own Avoid column
-        for row in re.findall(r"^\|([^|\n]*)\|([^|\n]*)\|\s*$", _text(VOICE), re.MULTILINE):
-            word = row[1].strip().lower()
-            if word and word != "avoid" and not set(word) <= {"-", ":"}:
-                words.add(word)
     lower = text.lower()
-    assert [w for w in sorted(words) if re.search(rf"\b{re.escape(w)}\b", lower)] == []
+    assert [w for w in AVOIDED if re.search(rf"\b{re.escape(w)}\b", lower)] == []
 
 
-# -- reply rules: the 10 rules of R-1002, one line each, with the attribution (C-09)
-
-
-def test_reply_rules_ten_in_order_one_line_each(sections):
-    body = sections["Reply rules"]
-    lines = body.split("\n")
-    numbered = [(i, m) for i, line in enumerate(lines) if (m := re.match(r"^(\d+)\. (.+)$", line))]
-    assert [int(m.group(1)) for _, m in numbered] == list(range(1, 11))
-    for (i, m), rule in zip(numbered, RULES):
-        title = re.match(r"\*\*(.+?)\.?\*\* (\S.*)$", m.group(2))
-        assert title, f"rule {m.group(1)}: expected '**Title.** how-to'"
-        assert title.group(1).lower() == rule, f"rule {m.group(1)} must be '{rule}'"
-        assert len(title.group(2)) > 15, f"rule {m.group(1)} needs a line of how-to"
-        after = lines[i + 1] if i + 1 < len(lines) else ""
-        assert after == "" or re.match(r"^\d+\. ", after), f"rule {m.group(1)} is one line"
-
-
-def test_reply_rules_titles_match_adhd_md(sections):
-    ours = re.findall(r"^\d+\. \*\*(.+?)\.?\*\*", sections["Reply rules"], re.MULTILINE)
-    assert [t.lower() for t in ours] == list(RULES)
-    if ADHD.is_file():  # plugin/shared/adhd.md (W-19) is the canonical wording
-        theirs = re.findall(r"^\d+\. \*\*(.+?)\.?\*\*", _text(ADHD), re.MULTILINE)
-        assert [t.lower() for t in theirs] == [t.lower() for t in ours]
+# -- reply rules: the attribution stays (C-09)
 
 
 def test_reply_rules_attribution(text, sections):
     assert ATTRIBUTION in text.split("\n")
     assert ATTRIBUTION in sections["Reply rules"]
-
-
-def test_checklist_is_referenced_not_copied(text, sections):
-    assert "shared/adhd.md" in sections["Reply rules"]
-    assert "Pre-send checklist" not in text
-    assert "- [ ]" not in text
 
 
 # -- safety (C-01, C-02, hard rules 1, 2, 4, 6)
@@ -209,10 +140,7 @@ def test_checklist_is_referenced_not_copied(text, sections):
         "dry-run by default",
         "preview, then an explicit yes",
         "is not a yes",
-        "the default write path is a rekordbox xml the dj imports",
         "never open or print `.env`",
-        # W-34: the engine extension takes the keys in its settings form; `.env` is a clone's
-        "the dj's spotify keys live in the engine's settings form (in a clone: `.env`)",
         "never ask for or repeat them",
     ],
 )
@@ -253,21 +181,7 @@ def test_safety_exception_is_only_dj_tidy_and_says_all_it_writes(sections):
     assert re.findall(widening, after) == []
 
 
-# -- folder conventions: every R-901 entry, one line each; library as code; tool-written log
-
-
-def test_r901_spelled_out_matches_the_scaffold():
-    assert set(R901_DIRS) == set(DIRS)
-    assert set(R901_FILES) <= set(FILES)
-
-
-def test_folder_conventions_list_every_r901_entry(sections):
-    body = sections["Folder conventions"]
-    entries = [f"{d}/" for d in R901_DIRS] + list(R901_FILES) + [".gitignore"]
-    for entry in entries:
-        lines = [line for line in body.split("\n") if line.startswith(f"- `{entry}`")]
-        assert len(lines) == 1, f"{entry}: expected exactly one line"
-        assert len(lines[0]) > len(f"- `{entry}`: ") + 10, f"{entry}: say what it holds"
+# -- folder conventions: library as code; tool-written log
 
 
 def test_folder_conventions_library_as_code_and_tool_log(sections):
@@ -311,7 +225,7 @@ def _says_template_is_optional(line: str) -> bool:
 def _template_mentions(root: Path) -> list[str]:
     """Lines under `root` that could make the template a prerequisite.
 
-    Markdown (skills, shared/voice.md, shared/adhd.md, ...) may mention it only on a line that says
+    Markdown (skills and the files beside them) may mention it only on a line that says
     the template is optional; any other text file (config, hooks, scripts) must not mention it.
     """
     found = []

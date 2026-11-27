@@ -18,11 +18,13 @@ import xml_fixtures as fx
 import yaml
 
 from dj import libfolder, safety, treeschema
-from dj.analysis import common, profile, structure, taste
+from dj.analysis import profile, structure, taste
 from dj.analysis import proposals as P
 from dj.model import Library, PlaylistNode, Track
 from dj.readers.db import read_db
 from dj.readers.xml import read_xml
+
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
 
 DAY = date(2026, 10, 20)
 EXPORT = "exports/2026-10-20-collection.xml"
@@ -574,10 +576,3 @@ def test_run_writes_the_file_and_one_log_line(folder, monkeypatch):
     assert (folder / "log.md").read_text(encoding="utf-8").endswith(result["log"] + "\n")
     assert json.loads(json.dumps(result)) == result
 
-
-def test_run_refuses_a_folder_that_is_not_a_library(tmp_path):
-    plain = tmp_path / "plain"
-    plain.mkdir()
-    with pytest.raises(common.NotALibraryFolder):
-        P.run(plain, xml=fx.SAMPLE_XML, today=DAY)
-    assert list(plain.iterdir()) == []

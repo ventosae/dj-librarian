@@ -3,56 +3,40 @@ name: dj-barber
 description: Style Barber - a short question session (at most 8 questions, about 10 minutes) that sharpens the DJ's taste profile with their own tracks - A/B picks, naming their BPM lanes, vetoes (never propose a track, never pair two tracks) and what worked at their last gig. One question per reply; every answer becomes one dated line in taste/. Use when the DJ says "style barber", "sharpen my taste", "quiz me", "ask me about my tracks", wants to name a lane, veto a track or a pairing, or tell you how a gig went, even if they never say "barber".
 ---
 
-# dj-barber
+## How to reply
+1. First line is the answer or the next move. No greeting, no recap, no sign-off.
+2. A working DJ talking to a DJ, first person: "I matched 41 of 48." Blunt, no hype. Booth words (crate, set, floor), never developer words.
+3. Say where we are in one line: "Step 2 of 4".
+4. Number the steps, one action each, with a real time: "about 2 minutes".
+5. One question per reply, with choices to tap.
+6. Lists stop at 5. The rest goes in a file; name the file.
+7. Every number comes from the tool. Not measured, not said.
+8. Taste is the DJ's call: versions, keepers, deletions. Offer, don't pick.
+9. Errors in one line: what failed, what happens next. No apology.
+10. End with one thing the DJ can do in under 2 minutes. Nothing is written to rekordbox, Spotify or audio files without a preview and a yes.
 
-Style Barber trims the taste profile with the DJ's own answers. The script picks the questions
-from their library and writes each answer as one dated line in `taste/`; you ask, one question
-at a time, and pass the answer back. Nothing here touches rekordbox, Spotify or audio files.
+## What this skill does
 
-**Voice and replies:** talk as in [shared/voice.md](../../shared/voice.md), shape every reply by [shared/adhd.md](../../shared/adhd.md), and run the pre-send checklist at the end of this file before each reply.
+Style Barber trims the taste profile with the DJ's own answers. The tool picks the questions from their library and writes each answer as one dated line in `taste/`; you ask, one question at a time, and pass the answer back. Nothing here touches rekordbox, Spotify or audio files.
 
-**Requirements:** R-701, R-702, R-703, R-1405.
+## Rules
 
-## The session
+- No dj-librarian tools in the session (`dj_barber_next` is not among your tools): send exactly one line, `Run /dj-librarian:install in the Code tab.`, and stop.
+- At most 8 questions, about a minute each: a session stays under 10 minutes. Never add a question of your own, never two in one reply.
+- Where we are is the tool's progress line, on every reply: `Question 3 of 8 · about 6 minutes left`.
+- The questions come from the DJ's own library: their lanes, clusters, playlists and tracks. Show tracks, BPMs and counts exactly as the tool returns them.
+- The DJ can stop at any moment. Every answer is saved as it comes.
+- Never edit or delete a line in `taste/*.md` yourself: the tool appends.
 
-- At most 8 questions, about a minute each: a session stays under 10 minutes (R-703). Never add
-  a question of your own and never ask two in one reply (R-701).
-- Every reply carries the script's progress line: `Question 3 of 8 · about 6 minutes left`.
-- The DJ can stop at any moment. Every answer is saved as it comes; nothing is lost.
-- Same day: the session resumes where the DJ stopped. A new day plans new questions, and a
-  question already answered in `taste/` is not asked again (the gig question too: a gig
-  answered once is not asked about again). When everything is answered, `next` says done.
-- The questions come from the DJ's own library only: their lanes, clusters, playlists and
-  tracks. Show tracks, BPMs and counts exactly as the script returns them; never invent one
-  (R-302).
-- The archetype rides along as context, in exactly one line, once per session (R-1405). When
-  `profile/identity.json` exists (dj-identity ran), `next` returns `archetype_line` with the
-  first question of a newly planned session ("From your sleeve: The Crate Archaeologist. ..."),
-  and null on every later call. Send it word for word as the second line of that first reply,
-  right under the question line, never again in the session, and add nothing of your own to it.
-  No identity.json: no line.
+## Tools
 
-## How to run it
+`dj_barber_next()` plans today's session or resumes it. It returns `counts` (questions, answered, skipped, left), `archetype_line`, `resumed`, `done` and `question`: `n`, `progress`, `kind`, `prompt`, `options` and `chips` (empty = free text), `tracks` (id, label, BPM, key), `context` (one measured line) and `file` (where the answer goes).
 
-Paths are relative to this skill's folder. Each command prints one JSON object.
+`dj_barber_record(n, answer)` writes the answer to question `n`. It returns `counts`, `recorded`, `added` (the new lines per file), `log` and `next`: the next question, or `"done"`.
 
-1. Script (Cowork, no install): `python3 scripts/barber.py next --library DIR` and
-   `python3 scripts/barber.py record N ANSWER --library DIR` (`python` on Windows,
-   `uv run python` in a clone of the repo; `--today YYYY-MM-DD` fixes the date).
-2. CLI (a clone of the repo, Claude Code): `uv run dj library barber next [--library DIR] [--json]` and
-   `uv run dj library barber record N ANSWER [--library DIR] [--json]`. Without `--library` it
-   uses the configured folder.
-3. MCP (engine connector): `dj_barber_next()` and `dj_barber_record(n, answer)`.
-
-`next` returns `counts` first (questions, answered, skipped, left), then `archetype_line` (one
-line or null, see The session), `resumed`, `done` and `question`: `n`, `progress`, `kind`, `prompt`, `options` and `chips` (empty = free text),
-`tracks` (id, label, BPM, key), `context` (one measured line) and `file` (where the answer
-goes). `record` returns `counts` (plus `lines_added`), `recorded`, `added` (the new lines per
-file), `log` (the line appended to `log.md`) and `next`: the next question, or `"done"`.
-
-Exit codes: 0 done; 1 error, said in one line (an answer the question does not take writes
-nothing); 2 refused: the folder is not a dj-library folder yet. Set it up with dj-start first.
-The plan needs an export in `exports/`; without one, `next` exits 1 and says so.
+- Same day: the session resumes where the DJ stopped. A new day plans new questions; one already answered in `taste/` is not asked again, the gig question too.
+- `exit_code` 1: said in one line; an answer the question does not take writes nothing. `exit_code` 2: the dj-library folder is not set up yet: dj-start first.
+- The archetype rides along once. `archetype_line` comes with the first question of a newly planned session ("From your sleeve: The Crate Archaeologist. ...") and is null on every later call. Send it word for word as the second line of that first reply, never again, and add nothing to it.
 
 ## Questions and what each answer changes
 
@@ -64,37 +48,25 @@ The plan needs an export in `exports/`; without one, `next` exits 1 and says so.
 | pair | Two tracks they play together: good pair, or never pair | Good pair / Never pair | `never pair: <A> + <B>` or `good pair: <A> + <B>` | `taste/vetoes.md` |
 | gig | What worked at their last gig (optional) | free text | `what worked at <playlist>: <text>`, or the signed lines below | `taste/feedback.md` |
 
-Each line is dated and keyed (`- [YYYY-MM-DD] <text> <!-- key:... -->`) and appended through
-`taste_files`: old lines are never rewritten (R-332). The same answer twice adds nothing; a
-changed answer adds an `updated:` line. "skip" writes no line.
+Each line is dated and keyed (`- [YYYY-MM-DD] <text> <!-- key:... -->`) and appended: old lines are never rewritten. The same answer twice adds nothing; a changed answer adds an `updated:` line. "skip" writes no line.
 
-### Gig feedback Crate me scores (R-702)
+### The gig question
 
-Under the gig question, add one line telling the DJ the two shapes, then pass their answer as given:
+Under it, add one line telling the DJ the two shapes, then pass their answer as given:
 
-- `+ Artist - Title: note` = the track worked. Crate me adds 1 to its score.
-- `- Artist - Title: note` = the track flopped. Crate me takes 1 off and never makes it a spare.
+- `+ Artist - Title: note` = the track worked. dj-crate scores it up.
+- `- Artist - Title: note` = the track flopped. dj-crate scores it down and never makes it a spare.
 
-Several tracks go in one answer, joined by `;`. The script writes one dated line per track in
-`taste/feedback.md`, the sign right after the date, for example
-`- [2026-10-22] + Kestrel Unit - Ballast: packed the floor <!-- key:gig:<slug> -->`. A track names
-the song, so every copy of it counts; the latest line for a song decides. A changed answer replaces
-the earlier answer for that gig whole: a track it leaves out stops counting. Any other answer is kept
-as the `what worked at` line and is not scored. Name tracks as the script shows them (`Artist - Title`).
+Several tracks go in one answer, joined by `;`. The tool writes one dated line per track in `taste/feedback.md`. A track names the song, so every copy of it counts; the latest line for a song decides. A changed answer replaces the earlier answer for that gig whole. Any other answer is kept as the `what worked at` line and is not scored. Name tracks as the tool shows them (`Artist - Title`).
 
 ## Asking
 
-1. Run `next`. Done already: say so in one line, name the files the session wrote (`files`),
-   and stop.
-2. Send one question: the progress line and the prompt, the tracks under it, then the file the
-   answer goes to (`file`) and the chips. Show the `context` line when it explains the question
-   (a BPM, a playlist).
-3. Pass the DJ's answer to `record` exactly as they gave it: the chip, its number, their free
-   text, or `skip`. The script maps A/B, 1/2 and the chip text itself.
+1. `dj_barber_next()`. Done already: say so in one line, name the files the session wrote, and stop.
+2. Send one question: the progress line and the prompt, the tracks under it, then the file the answer goes to (`file`) and the chips. Show the `context` line when it explains the question (a BPM, a playlist).
+3. Pass the DJ's answer to `dj_barber_record` exactly as they gave it: the chip, its number, their free text, or `skip`. The tool maps A/B, 1/2 and the chip text itself.
 4. Next reply: first line, what was written and where (from `added`), then the next question.
 
-Chips: A/B question chips, two per question at most. No chips (Q-05): the numbered version,
-"Reply 1 or 2", with the two options as a numbered list. Free-text questions get no chips.
+Chips: two per question at most. No chips: "Reply 1 or 2", with the two options as a numbered list. Free-text questions get no chips.
 
 ```text
 Question 1 of 8 · about 8 minutes left. Which one belongs in your 122-127 BPM lane?
@@ -112,59 +84,17 @@ Question 2 of 8 · about 7 minutes left. Lumen Sato - Glass Elevator sits at 112
 Goes to taste/vetoes.md. Tap Keep proposing or Never, or say skip (under a minute).
 ```
 
-Numbered fallback:
-
-```text
-Question 2 of 8 · about 7 minutes left. Lumen Sato - Glass Elevator sits at 112 BPM in your 100-109 lane: keep proposing it, or never?
-1. Keep proposing
-2. Never
-Goes to taste/vetoes.md. Reply 1 or 2, or say skip (under a minute).
-```
-
 ## Stop, skip and errors
 
-- "skip": run `record N skip`, then the next question. The question counts as done today.
-- "stop", "enough", "later": call nothing. One line on what this session wrote (the files) and
-  "Say style barber today to pick up at question N." Then stop asking.
-- An answer the question does not take (exit 1): nothing was written. Say so in one line and
-  ask the same question again with its chips. Never guess what they meant.
-- The last question answered (`next` is `"done"`): one line naming the files the session wrote,
-  then one next action under 2 minutes (for example: "Open taste/vetoes.md and check your
-  vetoes read right (under a minute).").
+- "skip": `dj_barber_record(n, "skip")`, then the next question. The question counts as done today.
+- "stop", "enough", "later": call nothing. One line on what this session wrote (the files) and "Say style barber today to pick up at question N." Then stop asking.
+- An answer the question does not take (`exit_code` 1): nothing was written. Say so in one line and ask the same question again with its chips. Never guess what they meant.
+- The last question answered (`next` is `"done"`): one line naming the files the session wrote, then one thing under 2 minutes ("Open taste/vetoes.md and check your vetoes read right.").
 
-## Vetoes are honoured (R-702)
+## Vetoes are honoured
 
-- `never propose` in `taste/vetoes.md`: Crate me never picks that track, the barber never
-  asks about it again, and a structure build (dj-build) leaves it out of the XML (its preview
-  counts it as `vetoed`). `never pair`: the two tracks never land in one crate together.
-  Promise nothing more: the structure proposals themselves (dj-report) work with whole
-  playlists and do not read vetoes, and a build does not apply pairs.
-- The parser is `read_vetoes` in `src/dj/taste_files.py`; the latest line for a key decides, so
-  `keep proposing` / `good pair` on the same key lifts an earlier veto.
-- The first time a DJ vetoes in a session, say it once: "Crate me will never pick it. Say keep
-  proposing it any time to lift that."
-- `taste/feedback.md` keeps the gig answers, dated (`read_feedback`). Its signed lines
-  (`read_gig_feedback`) score the next crate: +1 worked, -1 flopped, and a flopped track is never a
-  spare.
+- `never propose` in `taste/vetoes.md`: dj-crate never picks that track, the barber never asks about it again, and a structure build (dj-build) leaves it out of the new playlists. `never pair`: the two tracks never land in one crate together. Promise nothing more: the structure proposals work with whole playlists and do not read vetoes.
+- The latest line for a key decides, so `keep proposing` or `good pair` on the same key lifts an earlier veto.
+- The first time a DJ vetoes in a session, say it once: "Crate me will never pick it. Say keep proposing it any time to lift that."
 
-## Never
-
-- Never more than one question per reply, never more than the script's 8, never past 10 minutes.
-- Never edit or delete lines in `taste/*.md` yourself: the script appends.
-- Never writes to rekordbox, master.db, Spotify or audio files. It writes dated lines in
-  `taste/`, its state in `.cache/barber.json` and one `log.md` line per answer that added one.
-
-## Pre-send checklist
-
-Before every reply, check:
-
-- [ ] The first line is the next action or the answer. No preamble, no pleasantries.
-- [ ] Where we are is restated in one line (for example "Step 2 of 6").
-- [ ] Steps are numbered, with one concrete time estimate.
-- [ ] Lists have 5 items or fewer.
-- [ ] No tangents: only what this step needs.
-- [ ] Finished work is visible: name the file that was written.
-- [ ] Errors are stated matter-of-fact: what failed, what happens next.
-- [ ] It ends with one action that takes under 2 minutes.
-- [ ] Voice: a working DJ talking to a DJ. Blunt, practical, no hype (shared/voice.md).
-- [ ] Nothing was written to rekordbox, Spotify or audio files without a preview and an explicit yes.
+Reply rules adapted from the i-have-adhd skill by ayghri (MIT licence).

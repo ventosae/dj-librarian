@@ -40,9 +40,19 @@ def merge(s, **kw):
     return installer.merge_desktop_config(s["config"], s["uv"], s["folder"], s["library"], today=DAY, **kw)
 
 
-def ours(s):
+def ours(s, platform: str = sys.platform):
     return {"command": str(s["uv"]), "args": ["run", "--directory", str(s["folder"]), "--no-sync", "dj-mcp"],
-            "env": {"UV_PROJECT_ENVIRONMENT": str(s["folder"] / ".venv"), "DJ_LIBRARY": str(s["library"].resolve())}}  # fmt: skip
+            "env": {"UV_PROJECT_ENVIRONMENT": str(s["folder"] / ".venv"),
+                    "DJ_LIBRARY": str(s["library"].resolve())}}  # fmt: skip
+
+
+@pytest.mark.parametrize("platform", ["win32", "darwin"])
+def test_the_entry_is_the_same_on_every_os_and_sets_no_power_mode(setup, platform):
+    """Writes into rekordbox are on on a Mac and on Windows: the install writes no DJ_POWER_MODE."""
+    result = merge(setup, platform=platform)
+    entry = json.loads(setup["config"].read_text(encoding="utf-8"))["mcpServers"]["dj-librarian"]
+    assert "DJ_POWER_MODE" not in entry["env"] and result["entry"] == entry
+    assert entry == ours(setup, platform) | {"command": entry["command"]}  # Windows may add uv's .exe
 
 
 def test_no_file_yet_gets_one_with_only_our_entry(setup):

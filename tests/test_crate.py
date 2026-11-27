@@ -11,38 +11,32 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import random
 import re
-import sys
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
 import xml_fixtures as fx
 import yaml
-from pyrekordbox.rbxml import RekordboxXml
-from reply_checks import text_problems
-from test_door1_imports import run_blocked
 from typer.testing import CliRunner
 
-from dj import build_structure as bs
 from dj import cli, crate, libfolder, safety
 from dj import mcp_server as m
 from dj.analysis import taste as taste_analysis
-from dj.gate import Gate, GateError
+from dj.gate import Gate
 from dj.libfolder import LibraryFolder
 from dj.model import Library
 from dj.readers.xml import read_xml
 from dj.taste_files import Vetoes
-from dj.writers.rekordbox_xml import BuildError, plan_lists, plan_xml, render
+from dj.write_plan import plan_tree
+
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
 
 DAY = date(2026, 10, 20)
 NOW = datetime(2026, 10, 20, 14, 5)
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "plugin" / "skills" / "dj-crate" / "scripts" / "crate.py"
-SKILL = REPO / "plugin" / "skills" / "dj-crate" / "SKILL.md"
 runner = CliRunner()
 
 GENRES = (("Deep House", 116, 122, "Quiet Hours"), ("House", 120, 126, "Glass Floor"),
@@ -418,7 +412,7 @@ def test_my_tags_score_where_the_library_has_them_and_the_xml_says_it_has_none(l
     assert len(tagged & {p.id for p in result.picks}) > len(tagged & {p.id for p in untagged_run.picks})
     assert any("My Tag vocal" in p.reason for p in result.picks) and not result.warnings
     plain = crate.select(lib, spec_of(size=30, my_tags=["Vocal"]), facts)
-    assert any("My Tags are not in the XML export" in w for w in plain.warnings)
+    assert any("No track in the library carries a My Tag" in w for w in plain.warnings)
 
 
 def test_tracks_without_a_file_or_a_bpm_are_never_candidates(lib, facts):
@@ -438,25 +432,6 @@ def test_select_reads_the_taste_facts_as_files_or_as_measured(lib, facts):
 
 
 # -- the XML writer for explicit lists -----------------------------------------------------
-
-
-def test_plan_lists_makes_each_folder_once_and_keeps_the_order(lib, tmp_path):
-    plan = plan_lists([(("Crates", "Sat"), ["105", "101", "105", "103"]), (("Crates", "Sat spares"), ["110"])], lib)
-    assert [n.name for n in plan.nodes] == ["Crates"]
-    assert [n.name for n in plan.nodes[0].children] == ["Sat", "Sat spares"]
-    assert plan.playlist_tracks() == {"Crates/Sat": ["105", "101", "103"], "Crates/Sat spares": ["110"]}
-    path = tmp_path / "x.xml"
-    path.write_text(render(plan, product_version="0.1.0"), encoding="utf-8")
-    rb = RekordboxXml(path)
-    assert rb.get_playlist("Crates", "Sat").get_tracks() == [105, 101, 103] and rb.num_tracks == 4
-    for bad, fragment in (([(("Sat",), ["999"])], "track 999 is not in the library"),
-                          ([(("Sat",), []), (("Sat",), [])], "given twice"),
-                          ([(("Sat",), []), (("Sat", "x"), [])], "is a playlist and a folder"),
-                          ([(("", "x"), [])], "non-empty")):  # fmt: skip
-        with pytest.raises(BuildError, match=fragment):
-            plan_lists(bad, lib)
-    nowhere = Library(source="xml", tracks={"1": replace(lib.tracks["101"], id="1", location="")})
-    assert plan_lists([(("Sat",), ["1"])], nowhere).unplaced == ("1",)
 
 
 # -- preview (writes only the gate record) -------------------------------------------------
@@ -532,136 +507,7 @@ def no_writes(monkeypatch):
         monkeypatch.setattr(safety, name, boom)
 
 
-@pytest.mark.parametrize("pid", ["", "   ", None, "--apply", "0123456789AB"])
-def test_apply_without_a_preview_id_is_refused_before_anything(folder, pid, monkeypatch, no_writes):
-    crate.preview(folder, "sat", now=NOW)
-    before = _snapshot(folder.root)
-    monkeypatch.setattr(crate, "spec_path", lambda *a, **k: pytest.fail("read before refusing"))
-    with pytest.raises(GateError, match="preview id"):
-        crate.apply(folder, "sat", pid, today=DAY, now=NOW)
-    assert _snapshot(folder.root) == before
-
-
-def test_apply_with_a_wrong_id_is_refused(folder, no_writes):
-    crate.preview(folder, "sat", now=NOW)
-    before = _snapshot(folder.root)
-    with pytest.raises(GateError, match="No preview with id 0123456789ab"):
-        crate.apply(folder, "sat", "0123456789ab", today=DAY, now=NOW)
-    assert _snapshot(folder.root) == before
-
-
-def test_apply_with_the_id_of_another_crate_is_refused(folder, no_writes):
-    write_spec(folder, "other", name="Other")
-    pid = crate.preview(folder, "other", now=NOW).preview_id
-    with pytest.raises(GateError, match="not .*sat"):
-        crate.apply(folder, "sat", pid, today=DAY, now=NOW)
-
-
-def test_apply_after_the_spec_changed_is_refused(folder, no_writes):
-    pid = crate.preview(folder, "sat", now=NOW).preview_id
-    write_spec(folder, brief="rooftop, but darker")
-    before = _snapshot(folder.root)
-    with pytest.raises(GateError, match="changed since preview"):
-        crate.apply(folder, "sat", pid, today=DAY, now=NOW)
-    assert _snapshot(folder.root) == before
-
-
-def test_apply_after_the_vetoes_changed_is_refused(folder, no_writes):
-    p = crate.preview(folder, "sat", now=NOW)
-    _vetoes_md(folder, [f"- [2026-10-21] never propose: x <!-- key:veto:{p.picks[3].id} -->"])
-    with pytest.raises(GateError, match="changed since preview"):
-        crate.apply(folder, "sat", p.preview_id, today=DAY, now=NOW)
-
-
-def test_a_used_id_is_refused_and_the_preview_says_already_written(folder):
-    pid = crate.preview(folder, "sat", now=NOW).preview_id
-    crate.apply(folder, "sat", pid, today=DAY, now=NOW)
-    before = _snapshot(folder.root)
-    with pytest.raises(GateError, match="already used"):
-        crate.apply(folder, "sat", pid, today=DAY, now=NOW)
-    assert _snapshot(folder.root) == before
-    again = crate.preview(folder, "sat", now=NOW)
-    assert again.preview_id is None and again.blocked.startswith("Already written on 2026-10-20")
-    assert "proposals/crate-sat.xml" in again.blocked
-
-
-def test_apply_refuses_a_broken_library_yaml_before_writing(folder, no_writes):
-    pid = crate.preview(folder, "sat", now=NOW).preview_id
-    folder.library_yaml.write_text("device: toaster\n", encoding="utf-8")
-    with pytest.raises(crate.CrateError, match="library.yaml"):
-        crate.apply(folder, "sat", pid, today=DAY, now=NOW)
-
-
 # -- apply writes (R-603) ------------------------------------------------------------------
-
-
-def test_apply_writes_the_xml_the_crate_record_and_one_log_line(folder):
-    p = crate.preview(folder, "sat", today=DAY, now=NOW)
-    log_before = folder.log.read_text(encoding="utf-8")
-    r = crate.apply(folder, "sat", p.preview_id, today=DAY, now=NOW)
-    assert (r.xml_file, r.md_file) == ("proposals/crate-sat.xml", "crates/sat.md")
-    assert folder.log.read_text(encoding="utf-8") == log_before + r.log_line + "\n"  # one line (R-904)
-    assert r.log_line == "2026-10-20 14:05 crate sat -> 50 picks, 10 spares; proposals/crate-sat.xml"
-    assert r.counts == {"picks": 50, "spares": 10} and r.warnings == ()
-    record = json.loads((folder.cache / "previews" / f"{p.preview_id}.json").read_text(encoding="utf-8"))
-    assert datetime.fromisoformat(record["used"]) == NOW.astimezone(timezone.utc)
-    assert record["written"] == "proposals/crate-sat.xml"
-
-    rb = RekordboxXml(r.xml_path)  # rekordbox's own reader sees the crate (R-603, R-502)
-    assert [n.name for n in rb.get_playlist().get_playlists()] == ["Crates"]
-    assert [n.name for n in rb.get_playlist("Crates").get_playlists()] == ["Saturday", "Saturday spares"]
-    assert rb.get_playlist("Crates", "Saturday").get_tracks() == [int(x.id) for x in p.picks]
-    assert rb.get_playlist("Crates", "Saturday spares").get_tracks() == [int(x.id) for x in p.spares]
-    assert rb.num_tracks == 60
-    built, source = read_xml(r.xml_path), read_xml(libfolder.latest_export(folder.root))
-    for tid in built.tracks:
-        assert built.tracks[tid].location == source.tracks[tid].location  # by location, as exported
-
-    assert len(r.import_steps) == 3 and "proposals/crate-sat.xml" in r.import_steps[0]
-    assert "File > Preferences" in r.import_steps[0] and "Crates into Playlists" in r.import_steps[2]
-
-
-def test_the_crate_record_holds_the_full_lists_and_passes_the_checklist(folder):
-    p = crate.preview(folder, "sat", today=DAY, now=NOW)
-    r = crate.apply(folder, "sat", p.preview_id, today=DAY, now=NOW)
-    text = r.md_path.read_text(encoding="utf-8")
-    lines = text.splitlines()
-    assert lines[0] == "# Crate: Saturday"
-    assert lines[2] == ("> Measured by code: dj.crate from crates/sat.spec.yaml and "
-                        "exports/2026-10-20-collection.xml, 2026-10-20.")  # fmt: skip
-    summary = text.split("## Summary\n\n")[1].split("\n\n")[0].splitlines()
-    assert 1 <= len(summary) <= 5 and all(line.startswith("- ") for line in summary)
-    assert "50 picks and 10 spares for: rooftop, sunset into the night" in summary[0]
-    picks = text.split("## Picks\n\n")[1].split("\n\n")[0].splitlines()[2:]
-    spares = text.split("## Spares\n\n")[1].strip().splitlines()[2:]
-    assert len(picks) == 50 and len(spares) == 10  # the full lists: they are the crate record
-    for row, pick in zip(picks, p.picks):
-        assert row.startswith("| ") and pick.track in row and pick.reason in row
-    assert all(any(f"| {t} |" in row for t in crate.TIERS) for row in spares)
-    assert text_problems(text) == []
-
-
-def test_an_existing_crates_folder_is_used_as_spelled(tmp_path):
-    spec = big_spec([fx._folder("crates", [fx._pl("Friday", [101, 102])])])
-    folder = _make_library(tmp_path, spec=spec, device="mac")
-    write_spec(folder)
-    p = crate.preview(folder, "sat", now=NOW)
-    assert p.playlists == ("crates/Saturday", "crates/Saturday spares")
-    r = crate.apply(folder, "sat", p.preview_id, today=DAY, now=NOW)
-    assert "rekordbox menu > Preferences" in r.import_steps[0]
-    assert "crates/Saturday into crates; crates/Saturday spares into crates" in r.import_steps[2]
-    assert [n.name for n in RekordboxXml(r.xml_path).get_playlist().get_playlists()] == ["crates"]
-
-
-@pytest.mark.parametrize("taken", ["saturday", "Saturday spares"])
-def test_a_playlist_of_that_name_in_crates_blocks_the_crate(tmp_path, taken):
-    folder = _make_library(tmp_path, spec=big_spec([fx._folder("Crates", [fx._pl(taken, [101])])]))
-    write_spec(folder)
-    p = crate.preview(folder, "sat", now=NOW)
-    assert p.preview_id is None and f"Crates/{taken} exists in rekordbox already" in p.blocked
-    assert "crates/sat.spec.yaml" in p.blocked and not folder.cache.exists()
-    with pytest.raises(crate.CrateError, match="exists in rekordbox already"):
-        crate.apply(folder, "sat", "0123456789ab", today=DAY, now=NOW)
 
 
 def test_a_top_level_playlist_named_crates_blocks_the_crate(tmp_path):
@@ -673,50 +519,6 @@ def test_a_top_level_playlist_named_crates_blocks_the_crate(tmp_path):
 
 def _write(folder: LibraryFolder, slug: str = "sat"):
     return crate.apply(folder, slug, crate.preview(folder, slug, now=NOW).preview_id, today=DAY, now=NOW)
-
-
-def test_a_second_crate_before_a_new_export_goes_into_the_first_ones_folder(folder):
-    first = _write(folder)
-    assert "Crates into Playlists" in first.import_steps[2] and first.warnings == ()
-    write_spec(folder, "fri", name="Friday")
-    p = crate.preview(folder, "fri", now=NOW)
-    assert p.preview_id and p.blocked is None and p.playlists == ("Crates/Friday", "Crates/Friday spares")
-    note = [w for w in p.warnings if "holds a Crates folder too" in w]
-    assert len(note) == 1 and note[0].startswith("proposals/crate-sat.xml (written ")
-    assert "drag the whole Crates folder into Playlists" in note[0]
-    r = crate.apply(folder, "fri", p.preview_id, today=DAY, now=NOW)
-    assert "Crates/Friday into Crates; Crates/Friday spares into Crates" in r.import_steps[2]
-    assert r.warnings == tuple(note)  # on the import card too
-    assert [n.name for n in RekordboxXml(r.xml_path).get_playlist().get_playlists()] == ["Crates"]
-
-
-def test_a_crate_name_written_since_the_export_blocks_a_crate_of_that_name(folder):
-    _write(folder)
-    write_spec(folder, brief="rooftop, but darker")  # the crate, changed but still named Saturday
-    p = crate.preview(folder, "sat", now=NOW)
-    assert p.preview_id is None and p.blocked.startswith("Crates/Saturday is in proposals/crate-sat.xml, written ")
-    assert "after your latest export" in p.blocked and "crates/sat.spec.yaml" in p.blocked
-    write_spec(folder, "other", name="saturday", size=30)  # another slug, the same name
-    assert crate.preview(folder, "other", now=NOW).blocked.startswith("Crates/Saturday is in proposals/crate-sat.xml")
-    before = _snapshot(folder.root)
-    with pytest.raises(crate.CrateError, match="after your latest export"):
-        crate.apply(folder, "sat", "0123456789ab", today=DAY, now=NOW)
-    assert _snapshot(folder.root) == before
-    write_spec(folder, name="Saturday 2", brief="rooftop, but darker")  # renamed, it goes ahead
-    assert crate.preview(folder, "sat", now=NOW).preview_id
-    again = crate.preview(folder, "other", now=NOW)
-    assert again.preview_id is None and "Crates/Saturday is in" in again.blocked
-
-
-def test_a_crate_older_than_the_latest_export_does_not_count(folder):
-    r = _write(folder)
-    old = libfolder.latest_export(folder.root).stat().st_mtime - 60
-    os.utime(r.xml_path, (old, old))  # the DJ exported after it: the export shows it, or it was never imported
-    write_spec(folder, "fri", name="Friday")
-    p = crate.preview(folder, "fri", now=NOW)
-    assert p.blocked is None and not any("holds a Crates folder" in w for w in p.warnings)
-    write_spec(folder, brief="rooftop, but darker")
-    assert crate.preview(folder, "sat", now=NOW).preview_id
 
 
 def test_a_file_in_proposals_that_is_not_a_crate_xml_is_not_a_crate(folder):
@@ -742,135 +544,16 @@ def test_structure_current_tree_counts_as_the_djs_tree(folder):
     assert p.preview_id and any(w.startswith("structure/current-tree.yaml cannot be read") for w in p.warnings)
 
 
-def test_no_spares_no_empty_spares_playlist(tmp_path):
-    full = big_spec()
-    tracks = full["tracks"][:30]
-    small = {"product": full["product"], "tracks": tracks, "tree": [fx._pl("All", [int(t["id"]) for t in tracks])]}
-    folder = _make_library(tmp_path, spec=small)
-    write_spec(folder, size=30)
-    p = crate.preview(folder, "sat", now=NOW)
-    assert (len(p.picks), len(p.spares)) == (30, 0) and p.playlists == ("Crates/Saturday",)
-    assert any(w.startswith("No spares fit (the crate wants 6): no spares playlist.") for w in p.warnings)
-    r = crate.apply(folder, "sat", p.preview_id, today=DAY, now=NOW)
-    rb = RekordboxXml(r.xml_path)
-    assert [n.name for n in rb.get_playlist("Crates").get_playlists()] == ["Saturday"]
-    assert r.counts == {"picks": 30, "spares": 0} and "Crates into Playlists" in r.import_steps[2]
-    assert "playlists Crates/Saturday." in r.md_path.read_text(encoding="utf-8")
-
-
-def test_existing_files_are_never_overwritten(folder):
-    (folder.proposals / "crate-sat.xml").write_text("the DJ's file", encoding="utf-8")
-    (folder.crates / "sat.md").write_text("my notes", encoding="utf-8")
-    p = crate.preview(folder, "sat", now=NOW)
-    r = crate.apply(folder, "sat", p.preview_id, today=DAY, now=NOW)
-    assert (r.xml_file, r.md_file) == ("proposals/crate-sat-2.xml", "crates/sat-2.md")
-    assert (folder.proposals / "crate-sat.xml").read_text(encoding="utf-8") == "the DJ's file"
-    assert (folder.crates / "sat.md").read_text(encoding="utf-8") == "my notes"
-
-
-def test_a_failure_after_the_xml_is_a_warning(folder, monkeypatch):
-    p = crate.preview(folder, "sat", now=NOW)
-
-    def no_md(*a, **k):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(crate, "_write_new", no_md)
-    r = crate.apply(folder, "sat", p.preview_id, today=DAY, now=NOW)
-    assert r.xml_path.is_file() and r.md_path is None and r.md_file == ""
-    assert any("crates/sat.md was not written" in w for w in r.warnings)
-    assert len(_crate_lines(folder)) == 1
-
-
-def test_apply_refuses_when_log_md_cannot_take_the_line(folder, monkeypatch):
-    p = crate.preview(folder, "sat", now=NOW)
-    real_open = open
-
-    def locked(path, mode="r", *a, **k):
-        if Path(path) == folder.log and "a" in mode:
-            raise PermissionError(13, "Permission denied")
-        return real_open(path, mode, *a, **k)
-
-    with monkeypatch.context() as patched:
-        patched.setattr("builtins.open", locked)
-        with pytest.raises(crate.CrateError, match="log.md cannot be written"):
-            crate.apply(folder, "sat", p.preview_id, today=DAY, now=NOW)
-    assert not list(folder.proposals.glob("*.xml")) and not list(folder.crates.glob("*.md"))
-    assert crate.apply(folder, "sat", p.preview_id, today=DAY, now=NOW).xml_path.is_file()  # same id, once free
-
-
-def test_crate_never_opens_master_db(folder, monkeypatch):
-    def boom(*args, **kwargs):
-        raise AssertionError("Crate me touched master.db")
-
-    for name in ("open_db", "_connect", "find_master_db", "backup"):
-        monkeypatch.setattr(safety, name, boom)
-    monkeypatch.setitem(sys.modules, "pyrekordbox", None)
-    monkeypatch.setitem(sys.modules, "dj.readers.db", None)
-    pid = crate.preview(folder, "sat", now=NOW).preview_id
-    assert crate.apply(folder, "sat", pid, today=DAY, now=NOW).xml_path.is_file()
-
-
-def test_crate_runs_in_the_door1_sandbox_with_pyrekordbox_blocked(folder):
-    done = run_blocked(f"""
-        import json
-        from datetime import date
-        from dj import crate
-        p = crate.preview({str(folder.root)!r}, "sat")
-        r = crate.apply({str(folder.root)!r}, "sat", p.preview_id, today=date(2026, 10, 20))
-        assert "dj.readers.db" not in sys.modules and "dj.library" not in sys.modules
-        print(json.dumps(r.to_dict()))
-    """)
-    assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout)["written"] == "proposals/crate-sat.xml"
-
-
 # -- R-702 for dj-build: vetoed tracks stay out of playlists filled from `from` -------------
 
 
-def test_plan_xml_leaves_vetoed_tracks_out_and_lists_them(lib):
+def test_plan_tree_leaves_vetoed_tracks_out_and_lists_them(lib):
     from dj import treeschema
 
     doc = treeschema.parse([{"playlist": "new", "from": ["Gig Rooftop", "House/House A"]}])
-    plan = plan_xml(doc, lib, vetoed={"104", "999"})
+    plan = plan_tree(doc, lib, vetoed={"104", "999"})
     assert "104" not in plan.playlist_tracks()["new"] and plan.vetoed == ("104",)
-    assert "104" in plan_xml(doc, lib).playlist_tracks()["new"]
-
-
-def test_build_leaves_vetoed_tracks_out_of_filled_playlists(tmp_path):
-    from test_build_structure import _make_library as make_build_library
-
-    folder = make_build_library(tmp_path)
-    _vetoes_md(folder, ["- [2026-10-21] never propose: The Velvet Ferrymen - Brass Tide <!-- key:veto:13 -->",
-                        "- [2026-10-21] never propose: Okoro Lane - Sunday Sermon <!-- key:veto:1 -->",
-                        "- [2026-10-22] lifted: Okoro Lane - Sunday Sermon <!-- key:veto:1 -->"])  # fmt: skip
-    p = bs.preview(folder, "lanes", today=DAY, now=NOW)
-    data = p.to_dict(folder)
-    assert data["vetoed"] == 1 and p.vetoed == ("13",)
-    assert p.counts == {"create": 5, "skip": 4, "conflict": 0, "manual": 1, "tracks": 21}
-    assert {"from": "House/1.2_peak", "to": "Lanes/118-124 house", "tracks": 5} in p.lands
-    r = bs.apply(folder, "lanes", p.preview_id, today=DAY, now=NOW)
-    rb = RekordboxXml(r.xml_path)
-    for playlist in ("96-112 funk disco", "118-124 house", "126-132 techno"):
-        tracks = rb.get_playlist("Lanes", playlist).get_tracks()
-        assert 13 not in tracks and tracks
-    assert 1 in rb.get_playlist("Lanes", "96-112 funk disco").get_tracks()  # a lifted veto
-    assert r.log_line.endswith("21 tracks, 1 vetoed; proposals/lanes.xml")
-    cli_out = runner.invoke(cli.app, ["library", "build", "lanes", "--library", str(folder.root)]).stdout
-    assert "1 vetoed track(s) (taste/vetoes.md) stay out of the XML." in cli_out and "BLOCKED Already built" in cli_out
-
-
-def test_build_leaves_every_copy_of_a_vetoed_track_out(tmp_path):
-    from test_build_structure import _make_library as make_build_library
-
-    folder = make_build_library(tmp_path)  # 22 is a second copy (FLAC) of 8, Marlo Venn - Hallway Light
-    _vetoes_md(folder, ["- [2026-10-21] never propose: Marlo Venn - Hallway Light <!-- key:veto:22 -->"])
-    p = bs.preview(folder, "lanes", today=DAY, now=NOW)
-    assert set(p.vetoed) == {"8", "22"} and p.to_dict(folder)["vetoed"] == 2
-    r = bs.apply(folder, "lanes", p.preview_id, today=DAY, now=NOW)
-    rb = RekordboxXml(r.xml_path)
-    assert 8 not in rb.get_playlist("Lanes", "118-124 house").get_tracks()  # from House/1.1_warm_up, which holds 8
-    closing = rb.get_playlist("House", "1.3_closing").get_tracks()  # from the dump, which holds 8 and 22
-    assert closing and 8 not in closing and 22 not in closing
+    assert "104" in plan_tree(doc, lib).playlist_tracks()["new"]
 
 
 # -- CLI -----------------------------------------------------------------------------------
@@ -881,7 +564,7 @@ def _cli(*args):
 
 
 def test_cli_apply_without_preview_id_refuses_before_anything_runs(folder, monkeypatch):
-    for name in ("preview", "apply", "spec_path"):
+    for name in ("preview", "checked", "spec_path"):
         monkeypatch.setattr(crate, name, lambda *a, **k: pytest.fail("ran before refusing"))
     monkeypatch.setattr(libfolder, "configured_root", lambda: pytest.fail("ran before refusing"))
     for extra in ([], ["--preview-id", "  "]):
@@ -900,32 +583,6 @@ def test_cli_preview_text_shows_every_pick_and_the_id(folder):
         assert text in out
     pid = re.search(r"preview id:\s+([0-9a-f]{12})", out).group(1)
     assert (folder.cache / "previews" / f"{pid}.json").is_file() and not list(folder.proposals.glob("*.xml"))
-
-
-def test_cli_preview_then_apply_json(folder):
-    preview = _cli("sat", "--library", folder.root, "--json")
-    data = json.loads(preview.stdout)
-    assert list(data)[0] == "counts" and data["preview_id"]
-    applied = _cli("crates/sat.spec.yaml", "--library", folder.root, "--today", "2026-10-20", "--apply",
-                   "--preview-id", data["preview_id"], "--json")  # fmt: skip
-    assert applied.exit_code == 0, applied.stderr
-    out = json.loads(applied.stdout)
-    assert (out["written"], out["record"]) == ("proposals/crate-sat.xml", "crates/sat.md")
-    assert out["counts"] == {"picks": 50, "spares": 10} and len(out["import_steps"]) == 3
-
-
-def test_cli_text_apply_prints_the_import_card(folder):
-    pid = crate.preview(folder, "sat").preview_id
-    result = _cli("sat", "--library", folder.root, "--apply", "--preview-id", pid)
-    assert result.exit_code == 0, result.stderr
-    assert "Wrote proposals/crate-sat.xml (50 picks, 10 spares)" in result.stdout
-    assert "Crate record: crates/sat.md" in result.stdout and "  3. Drag the new playlists" in result.stdout
-
-
-def test_cli_apply_with_a_wrong_id_is_refused(folder):
-    result = _cli("sat", "--library", folder.root, "--apply", "--preview-id", "0123456789ab")
-    assert result.exit_code == 1 and result.stderr.startswith("REFUSED No preview with id")
-    assert not list(folder.proposals.glob("*.xml"))
 
 
 @pytest.mark.parametrize(("args", "fragment"), [
@@ -1009,40 +666,3 @@ def test_mcp_crate_tools_annotations():
 
 # -- the skill script and SKILL.md ---------------------------------------------------------
 
-
-def _script(*args: str):
-    done = run_blocked(f"""
-        import runpy
-        sys.argv = [{str(SCRIPT)!r}, *{list(args)!r}]
-        runpy.run_path({str(SCRIPT)!r}, run_name="__main__")
-    """)
-    return done.returncode, json.loads(done.stdout) if done.stdout.strip() else done.stderr
-
-
-def test_script_preview_and_apply_with_engine_packages_blocked(folder):
-    root = str(folder.root)
-    code, data = _script("preview", "sat", "--library", root)
-    assert code == 0 and data["ok"] is True and data["written"] == "Nothing written yet."
-    assert data["counts"]["picks"] == 50 and len(data["spares"]) == 10
-    code, refused = _script("apply", "sat", "--library", root)
-    assert code == 2 and "No preview id" in refused["refused"]
-    code, refused = _script("apply", "sat", "--library", root, "--preview-id", "0123456789ab")
-    assert code == 2 and "No preview with id" in refused["refused"]
-    code, done = _script("apply", "sat", "--library", root, "--preview-id", data["preview_id"], "--today", "2026-10-20")
-    assert code == 0 and done["written"] == "proposals/crate-sat.xml" and done["record"] == "crates/sat.md"
-    assert len(_crate_lines(folder)) == 1
-
-
-def test_script_errors_exit_1(folder):
-    code, data = _script("preview", "nope", "--library", str(folder.root))
-    assert code == 1 and "not found" in data["error"]
-    code, data = _script("frobnicate")
-    assert code == 1 and data["ok"] is False
-
-
-def test_skill_names_its_requirements_the_chips_and_the_gate():
-    text = SKILL.read_text(encoding="utf-8")
-    for needle in ("R-601", "R-602", "R-603", "R-604", "R-702", "**30 / 50 / 70**", "**Write the crate XML?**",
-                   "**Yes / Change / Stop**", "crates/<slug>.spec.yaml", "scripts/crate.py",
-                   "dj_crate_write"):  # fmt: skip
-        assert needle in text, needle

@@ -63,6 +63,7 @@ def entry(uv: str | Path, folder: str | Path, library: str | Path | None = None,
         uv = uv.with_suffix(".exe")
     if not (folder / "pyproject.toml").is_file():
         raise InstallerError(f"{folder} holds no pyproject.toml: copy the engine there first.")
+    # No DJ_POWER_MODE: writes into rekordbox are on on every OS; the DJ sets it to false to switch them off.
     out: dict[str, Any] = {"command": str(uv), "args": ["run", "--directory", str(folder), "--no-sync", "dj-mcp"],
                            "env": {"UV_PROJECT_ENVIRONMENT": str(folder / ".venv")}}  # fmt: skip
     if library is not None:
@@ -125,10 +126,10 @@ def _write(path: Path, data: dict[str, Any]) -> None:
 
 
 def merge_desktop_config(path: str | Path, uv: str | Path, folder: str | Path, library: str | Path | None = None,
-                         *, today: date | None = None) -> dict[str, Any]:  # fmt: skip
+                         *, today: date | None = None, platform: str = sys.platform) -> dict[str, Any]:  # fmt: skip
     """Add or replace mcpServers["dj-librarian"]; every other key stays as it was."""
     path = Path(path)
-    new = entry(uv, folder, library)
+    new = entry(uv, folder, library, platform=platform)
     data = _read(path)
     servers = data.get("mcpServers", {})
     if servers.get(SERVER) == new:

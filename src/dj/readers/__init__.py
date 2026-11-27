@@ -1,5 +1,6 @@
 """Readers that turn a rekordbox source into a `dj.model.Library`.
 
-`dj.readers.xml` and `dj.readers.common` are Door 1 (stdlib only). `dj.readers.db` is Door 2
-(pyrekordbox) and is never imported from here, so importing this package stays light.
+`dj.readers.db` (pyrekordbox, a snapshot copy of master.db) is the one reader every command uses;
+it is never imported from here, so importing this package stays light. `dj.readers.xml` is test
+support only (see its docstring).
 """

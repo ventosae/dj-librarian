@@ -1,12 +1,10 @@
-"""The release workflow (W-32, W-27): .github/workflows/release.yml, scripts/release_notes.py and the
-README's "Try it before the release".
+"""The release workflow: .github/workflows/release.yml and scripts/release_notes.py.
 
-release.yml runs only on a pushed `v*` tag (the owner's, W-29). It runs ci.yml's checks through
+release.yml runs only on a pushed `v*` tag (the owner's). It runs ci.yml's checks through
 `workflow_call`, then checks that the tagged commit is on main, checks the tag against pyproject.toml
-and plugin.json, cuts the version's CHANGELOG.md section, builds the engine bundle and both plugin
-zips and creates a DRAFT GitHub release with the three attached (W-34): dj-librarian-engine-<v>.mcpb,
-dj-librarian-plugin-<v>.zip (the engine's source inside) and dj-librarian-plugin-<v>-no-engine.zip.
-No package index step, nothing public. Nothing here talks to the network.
+and plugin.json, cuts the version's CHANGELOG.md section, builds the plugin zip and creates a DRAFT
+GitHub release with that one file, dj-librarian-plugin-<v>.zip (the plugin plus engine/). No package
+index step, nothing public. Nothing here talks to the network.
 """
 
 from __future__ import annotations
@@ -27,7 +25,6 @@ SCRIPT = REPO / "scripts" / "release_notes.py"
 WORKFLOWS = REPO / ".github" / "workflows"
 RELEASE = WORKFLOWS / "release.yml"
 CI = WORKFLOWS / "ci.yml"
-README = REPO / "README.md"
 
 SAMPLE = """# Changelog
 
@@ -258,22 +255,12 @@ def test_ci_can_be_called_and_still_runs_when_it_did(release):
 def test_release_checks_the_tag_and_the_notes_before_it_builds(draft):
     runs = [str(step.get("run", "")) for step in draft["steps"]]
     check = next(i for i, run in enumerate(runs) if "scripts/release_notes.py --check-tag \"$TAG\"" in run)
-    builds = [i for i, run in enumerate(runs) if "scripts/build_plugin_zip.py" in run or "scripts/build_mcpb.py" in run]
+    builds = [i for i, run in enumerate(runs) if "scripts/build_plugin_zip.py" in run]
     notes = next(i for i, run in enumerate(runs) if re.search(r"release_notes\.py \"\$VERSION\" --out", run))
     create = next(i for i, run in enumerate(runs) if "gh release create" in run)
-    assert len(builds) == 3
+    assert len(builds) == 1 and not any("--no-engine" in run or "mcpb" in run for run in runs)
     assert check < notes < min(builds) and max(builds) < create  # a stub changelog stops the run before a build
     assert draft["env"]["TAG"] == "${{ github.ref_name }}"
-
-
-def test_release_builds_the_engine_and_both_zips(draft):
-    """The standalone engine (Settings -> Extensions), the plugin zip with the engine's source inside (one
-    upload) and the light zip (skills only), all from the tagged commit (W-34, D-28)."""
-    runs = [" ".join(str(step.get("run", "")).split()) for step in draft["steps"]]
-    assert "uv run python scripts/build_mcpb.py" in runs
-    assert "uv run python scripts/build_plugin_zip.py" in runs
-    assert "uv run python scripts/build_plugin_zip.py --no-engine" in runs
-    assert not any("--plugin" in run or "--flat" in run or "--npx" in run for run in runs)
 
 
 def test_release_drafts_only_a_commit_that_is_on_main(draft):
@@ -290,14 +277,13 @@ def test_release_drafts_only_a_commit_that_is_on_main(draft):
     assert on_main == 1 and on_main < check < create
 
 
-def test_release_creates_a_draft_with_the_three_files_and_the_notes(draft):
+def test_release_creates_a_draft_with_the_one_zip_and_the_notes(draft):
     step = next(step for step in draft["steps"] if "gh release create" in str(step.get("run", "")))
     run = " ".join(step["run"].split())
     assert run.startswith('gh release create "$TAG" --draft --verify-tag')
     assert '--notes-file "$RUNNER_TEMP/notes.md"' in run
     files = run.split('--notes-file "$RUNNER_TEMP/notes.md"', 1)[1].split()
-    assert files == ['"dist/dj-librarian-engine-$VERSION.mcpb"', '"dist/dj-librarian-plugin-$VERSION.zip"',
-                     '"dist/dj-librarian-plugin-$VERSION-no-engine.zip"']  # fmt: skip
+    assert files == ['"dist/dj-librarian-plugin-$VERSION.zip"']
     assert step["env"]["GH_TOKEN"] == "${{ secrets.GITHUB_TOKEN }}"
     assert step["env"]["GH_REPO"] == "${{ github.repository }}"
 
@@ -318,92 +304,3 @@ def test_release_pins_actions_the_way_ci_does(release):
         for step in job.get("steps", []):
             if "uses" in step:
                 assert step["uses"] in ci_uses, step["uses"]
-
-
-# -- README: Try it before the release ------------------------------------------------------------
-
-
-def _readme_section(title: str) -> str:
-    text = README.read_text(encoding="utf-8").replace("\r\n", "\n")
-    parts = re.split(r"^## (.+)$", text, flags=re.MULTILINE)
-    sections = {parts[i].strip(): parts[i + 1] for i in range(1, len(parts), 2)}
-    return sections[title]
-
-
-def test_readme_tells_a_tester_how_to_install_the_zip():
-    section = _readme_section("Try it before the release")
-    steps = re.findall(r"^(\d)\. (.+)$", section, re.MULTILINE)
-    assert [n for n, _ in steps] == ["1", "2", "3", "4", "5"]
-    assert "scripts/build_plugin_zip.py" in section and "draft GitHub release" in section
-    assert "dist/dj-librarian-plugin-<version>.zip" in section and "Download raw file" in section  # from GitHub
-    assert "**Customize → Plugins → Add → Upload plugin**" in section
-    assert "Door 1" in section and "reports/<date>-library.html" in section
-    assert "export your collection" in section and "connect a folder" in section
-
-
-def test_readme_sends_the_tester_to_cowork_and_starts_with_start():
-    """Door 1 connects a folder, which only a Cowork task can do; dj-start answers "start", while
-    "set me up" is the engine card's phrase."""
-    section = _readme_section("Try it before the release")
-    steps = dict(re.findall(r"^(\d)\. (.+)$", section, re.MULTILINE))
-    assert 'Cowork task and say "start"' in steps["3"]
-    assert "connect a folder in Cowork" in steps["4"]
-    readme = README.read_text(encoding="utf-8")
-    assert '**dj-start** ("start")' in readme and '**dj-start** ("set me up")' not in readme
-    skill = (REPO / "plugin" / "skills" / "dj-start" / "SKILL.md").read_text(encoding="utf-8")
-    assert '"start"' in skill.split("---", 2)[1]
-
-
-def test_readme_says_the_zip_carries_the_engine_and_links_the_card():
-    """W-35 (D-29): the zip carries the engine's source, /dj-librarian:install installs it, the
-    `.mcpb` is the second route and the light zip is Door 1 only; no clone for the engine."""
-    section = _readme_section("Try it before the release")
-    flat = " ".join(section.split())
-    assert "The engine is not in the zip" not in section and "need a clone" not in section
-    assert "comes in the same zip as source" in flat and "type `/dj-librarian:install`" in flat
-    assert 'then say "set me up" in a Cowork task' in flat and "unverified, Q-31" in flat
-    assert "`dj-librarian-engine-<version>.mcpb`" in flat and "Settings → Extensions" in flat
-    assert "`dj-librarian-plugin-<version>-no-engine.zip`, is Door 1 only" in flat
-    links = re.findall(r"\]\(([^)]+)\)", section)
-    assert "plugin/skills/dj-start/engine.md" in links and "docs/install.md" in links
-    assert (REPO / "plugin" / "skills" / "dj-start" / "engine.md").is_file()
-
-
-def test_readme_install_points_to_install_md_and_keeps_the_clone_for_developers():
-    section = _readme_section("Install")
-    assert section.strip().startswith("DJs: [docs/install.md](docs/install.md) is the one install doc.")
-    assert (REPO / "docs" / "install.md").is_file()
-    dj_part, developers = section.split("### From a clone (developers)")
-    assert "git clone" not in dj_part and "uv " not in dj_part
-    assert "git clone" in developers and "uv sync" in developers
-    for built in ("dist/dj-librarian-engine-<version>.mcpb", "dist/dj-librarian-plugin-<version>.zip",
-                  "dist/dj-librarian-plugin-<version>-no-engine.zip"):  # fmt: skip
-        assert built in developers, built
-    assert "scripts/build_plugin_zip.py --no-engine" in developers
-
-
-def test_readme_drops_the_uv_path_option_and_the_plugin_folder_engine():
-    readme = README.read_text(encoding="utf-8")
-    for gone in ("uv path", "uv_path", "--directory <plugin folder>/..", "/usr/local/bin/uv", ".mcp.json"):
-        assert gone not in readme, gone
-    plugin = _readme_section("Claude plugin")
-    assert "`/dj-librarian:install`" in plugin and "`plugin/engine/`" in plugin and "(Q-31)" in plugin
-    assert "`<dj-library>/.cache/engine/`" in plugin and "vendor/" not in readme and "--plugin" not in readme
-    for env in ("DJ_LIBRARY", "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET", "DJ_POWER_MODE"):
-        assert f"`{env}`" in plugin, env
-
-
-def test_readme_registers_the_clone_engine_in_claude_code_and_claude_desktop():
-    """A developer registers the clone's engine with the install command or by hand; the section the
-    README points to covers both hosts."""
-    plugin = " ".join(_readme_section("Claude plugin").split())
-    assert "[The engine on Windows and macOS](#the-engine-on-windows-and-macos)" in plugin
-    assert "the line for Claude Code and the config entry for Claude Desktop" in plugin
-    text = README.read_text(encoding="utf-8").replace("\r\n", "\n")
-    engine = text.split("### The engine on Windows and macOS", 1)[1].split("\n## ", 1)[0]
-    blocks = re.findall(r"```(\w+)\n(.*?)\n```", engine, re.DOTALL)
-    (line,) = [body for lang, body in blocks if lang == "bash"]
-    assert line == "claude mcp add --scope user dj-librarian -- uv run --directory /path/to/dj-librarian --no-sync dj-mcp"
-    (config,) = [json.loads(body) for lang, body in blocks if lang == "json"]
-    args = config["mcpServers"]["dj-librarian"]["args"]
-    assert line.split(" -- ", 1)[1].split() == [config["mcpServers"]["dj-librarian"]["command"], *args]

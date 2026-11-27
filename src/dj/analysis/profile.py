@@ -68,19 +68,15 @@ from dj.analysis.common import (
     md_table,
     pct,
     provenance_line,
-    resolve_xml,
     write_json,
 )
+from dj.build_library import read_for_build
 from dj.libfolder import (
     LibraryFolder,
-    LibraryFolderError,
     append_log,
-    latest_export,
-    relative,
     write_text,
 )
 from dj.model import TRACK_KINDS, Library, Track, id_sort_key
-from dj.readers.xml import XML_FIELDS_MISSING, read_xml
 
 MODULE = "dj.analysis.profile"
 STATS_MD = "profile/stats.md"
@@ -153,7 +149,11 @@ def _format_of(track: Track) -> str:
 
 
 def _not_carried(lib: Library) -> tuple[str, ...]:
-    missing = set(XML_FIELDS_MISSING) if lib.source == "xml" else set()
+    missing: set[str] = set()
+    if lib.source == "xml":  # test support only (dj.build_library.SOURCES): an export carries no My Tags
+        from dj.readers.xml import XML_FIELDS_MISSING
+
+        missing = set(XML_FIELDS_MISSING)
     return tuple(f for f in EMPTY_FIELDS if f in missing)
 
 
@@ -506,33 +506,20 @@ def write(
     return [stats, data]
 
 
-def _source_name(folder: LibraryFolder, path: Path) -> str:
-    """The export relative to the folder; an XML outside the folder by its file name only, so no
-    absolute path goes into a file in the library folder."""
-    try:
-        return relative(folder.root, path)
-    except LibraryFolderError:
-        return path.name
-
-
-def run(folder: LibraryFolder | str | Path, *, xml: str | Path | None = None, today: date | None = None) -> dict[str, Any]:
-    """Profile the latest export (or `xml`): facts, write, one log line.
-    Returns {"written": [relative paths], "headline": [...], "source": relative export}.
+def run(folder: LibraryFolder | str | Path, *, source: str | None = None, today: date | None = None) -> dict[str, Any]:
+    """Profile the library (a master.db snapshot, `dj.build_library`): facts, write, one log line.
+    Returns {"written": [relative paths], "headline": [...], "source": "master.db"}.
 
     The folder is resolved and checked first (`common.library_folder`): a folder without a
-    valid library.yaml, a drive root or the home folder -> NotALibraryFolder, nothing written.
-    A relative `xml` is looked up in the library folder first, then in the current folder;
-    the one file found is both read and named in the provenance line."""
+    valid library.yaml, a drive root or the home folder -> NotALibraryFolder, nothing written."""
     folder = library_folder(folder)
-    path = resolve_xml(folder.root, xml) if xml else latest_export(folder.root)
-    lib = read_xml(path)
+    lib, label = read_for_build(folder, source)
     measured = facts(lib, today=today)
-    source = _source_name(folder, path)
-    written = write(folder, measured, source=source, today=today)
+    written = write(folder, measured, source=label, today=today)
     counts = {"tracks": measured["size"]["tracks"], "duplicates": measured["duplicates"]["groups"]}
     append_log(folder.root, "profile", counts, STATS_MD, today=today)
     return {
         "written": [folder.relative(p) for p in written],
         "headline": measured["headline"],
-        "source": source,
+        "source": label,
     }

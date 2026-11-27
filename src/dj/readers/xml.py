@@ -1,6 +1,10 @@
 """rekordbox XML export (File > Export Collection in xml format) -> `dj.model.Library`.
 
-Door 1: stdlib `xml.etree.ElementTree` only, so skill scripts can run it without the engine.
+TEST SUPPORT ONLY since 0.2.0: the tests build a Library from an export fixture with it. No CLI
+command, MCP tool or skill reads an export (`dj.build_library.SOURCES`). Later: delete it once the
+suite builds its libraries from the fake db alone.
+
+Stdlib `xml.etree.ElementTree` only.
 Attribute names are those of `pyrekordbox.rbxml` (Track.ATTRIBS; NODE Type 0 = folder,
 1 = playlist; KeyType 0 = TrackID, 1 = Location); a test cross-checks a fixture against
 `pyrekordbox.rbxml.RekordboxXml`.

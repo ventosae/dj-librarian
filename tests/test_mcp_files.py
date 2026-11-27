@@ -136,25 +136,6 @@ def test_a_real_symlink_to_another_type_is_refused(repo):
 # -- library_file --------------------------------------------------------------------------------
 
 
-def test_library_file_looks_in_the_folder_of_the_library_then_of_the_repo(repo):
-    export = write(repo.library / "exports" / "2026-10-20-collection.xml")
-    assert m.library_file("2026-10-20-collection.xml", (".xml",), folder=m.EXPORTS) == str(export.resolve())
-    in_repo = write(repo.root / "exports" / "old.xml")
-    assert m.library_file("old.xml", (".xml",), folder=m.EXPORTS) == str(in_repo.resolve())
-    top = write(repo.library / "2026-10-20-collection.xml")  # an exact path wins
-    assert m.library_file("2026-10-20-collection.xml", (".xml",), folder=m.EXPORTS) == str(top.resolve())
-
-
-def test_library_file_not_found_names_the_folder_and_both_roots(repo):
-    with pytest.raises(m.ToolInputError) as found:
-        m.library_file("missing.xml", (".xml",), folder=m.EXPORTS)
-    text = str(found.value)
-    assert text.startswith("'missing.xml' not found: looked in exports/ and the top of ")
-    assert str(repo.library.resolve()) in text and str(repo.root.resolve()) in text
-    with pytest.raises(m.ToolInputError, match="outside the dj-library folder"):
-        m.library_file("../elsewhere.xml", (".xml",), folder=m.EXPORTS)
-
-
 # -- the tools -----------------------------------------------------------------------------------
 
 
@@ -162,7 +143,7 @@ TOOLS = {  # tool -> (call with a bare name, the folder, the file's name)
     "dj_build_preview": (lambda name: m.dj_build_preview(name), "tracklists", "set.txt"),
     "dj_build_apply": (lambda name: m.dj_build_apply(name, preview_id=PID), "tracklists", "set.txt"),
     "dj_apply_preview": (lambda name: m.dj_apply_preview(name), "plans", "a.plan.json"),
-    "dj_apply_write": (lambda name: m.dj_apply_write(name, preview_id=PID, power_mode=True), "plans", "a.plan.json"),
+    "dj_apply_write": (lambda name: m.dj_apply_write(name, preview_id=PID), "plans", "a.plan.json"),
     "dj_tidy_apply_preview": (lambda name: m.dj_tidy_apply_preview(name), "plans", "t.plan.json"),
     "dj_tidy_apply": (lambda name: m.dj_tidy_apply(name, preview_id=PID), "plans", "t.plan.json"),
     "dj_tidy_undo_preview": (lambda name: m.dj_tidy_undo_preview(name), "plans", "t.plan.json"),
@@ -182,12 +163,6 @@ def test_each_file_tool_resolves_a_bare_name_in_its_folder(repo, calls, tool):
     assert calls[-1][-1] == str(target.resolve())
 
 
-def test_inspect_resolves_a_bare_export_name(repo, calls):
-    export = write(repo.library / "exports" / "2026-10-20-collection.xml")
-    assert json.loads(m.dj_library_inspect("2026-10-20-collection.xml"))["ok"] is True
-    assert calls[-1][-1] == str(export.resolve())
-
-
 def test_each_description_shows_one_example():
     tools = {t.name: " ".join(t.description.split()) for t in asyncio.run(m.server.list_tools())}
     for name in ("dj_build_preview", "dj_build_apply"):
@@ -197,7 +172,6 @@ def test_each_description_shows_one_example():
         assert "a bare name is looked up" in tools[name], name
         example = re.search(r'"([\w.-]+\.plan\.json)" -> plans/([\w.-]+\.plan\.json)', tools[name])
         assert example and example.group(1) == example.group(2), name
-    assert '"2026-10-20-collection.xml" -> exports/2026-10-20-collection.xml' in tools["dj_library_inspect"]
     assert "set.txt -> tracklists/set.txt" in m.server.instructions
 
 
@@ -225,7 +199,7 @@ def test_a_tree_file_comes_from_the_library_folder_first(repo, calls):
     assert tree_arg(calls[-1]) == str(in_repo.resolve())  # the repo, while the library has none
     in_library = write(repo.library / "bases.yaml", "[]")
     assert json.loads(m.dj_tree_preview("bases.yaml"))["ok"] is True
-    assert json.loads(m.dj_tree_apply(preview_id=PID, file="bases.yaml", power_mode=True))["ok"] is True
+    assert json.loads(m.dj_tree_apply(preview_id=PID, file="bases.yaml"))["ok"] is True
     assert tree_arg(calls[-2]) == tree_arg(calls[-1]) == str(in_library.resolve())
 
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 import sys
-from datetime import date
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -18,6 +17,7 @@ from dj import build as build_mod
 from dj import playlist_copy as copy_mod
 from dj import push as push_mod
 from dj import tree as tree_mod
+from dj.commands import catalog as catalog_commands
 from dj.commands.backup import backup as backup_command
 from dj.commands.library import library_app
 from dj.commands.wishlist import wishlist_app
@@ -31,7 +31,6 @@ from dj.tidy import plan as tidy_plan
 from dj.tidy import report as tidy_report
 from dj.tidy import scan as tidy_scan
 from dj.tree import KIND_BY_ATTRIBUTE, alive, children_of
-from dj.writers import adds_xml
 
 # show_locals stays off: a traceback must never print a token or the client secret.
 app = typer.Typer(
@@ -40,25 +39,19 @@ app = typer.Typer(
 app.add_typer(library_app, name="library")
 app.add_typer(wishlist_app, name="wishlist")
 app.command(name="backup")(backup_command)
+library_app.command("query")(catalog_commands.query)  # the track catalog (dj.catalog)
+library_app.command("note")(catalog_commands.note)
+library_app.command("match-tracks")(catalog_commands.match_tracks)
 
 EXIT_ERROR = 1
 EXIT_REKORDBOX_RUNNING = 2
 
-# The write gate (R-1102, R-205): a write needs the id of the dry-run the DJ said yes to; a
-# master.db write also needs --power-mode, on Windows.
+# The write gate (R-1102): a write needs the id of the dry-run the DJ said yes to. A master.db
+# write then runs the one chain on every OS (dj.safety.open_db): rekordbox closed, a verified
+# backup, one transaction. DJ_POWER_MODE=false switches master.db writes off.
 _PREVIEW_ID_OPT = typer.Option(
     None, "--preview-id", help="With --apply: the id the dry-run printed, after the DJ said yes to it."
 )
-_POWER_MODE_OPT = typer.Option(
-    False, "--power-mode",
-    help="With --apply: write master.db directly (Windows only). The default write path is an XML "
-         "you import: dj library build for new folders and playlists, --xml for adds and copies.",
-)  # fmt: skip
-_XML_OPT = typer.Option(
-    False, "--xml",
-    help="With --apply: write proposals/<crate>-adds-<date>.xml for the DJ to import (any OS, no "
-         "--power-mode, master.db is never opened for writing), instead of writing master.db.",
-)  # fmt: skip
 
 
 def _refused(reason: object) -> None:
@@ -75,25 +68,13 @@ def _gate_id(preview_id: str | None) -> None:
         _refused(exc)
 
 
-def _gate_db_write(power_mode: bool, preview_id: str | None) -> None:
-    """Before a master.db write reads anything: --power-mode and Windows first (R-205), then an
-    id with the shape of a preview id (R-1102). Its content is checked once the plan is known."""
-    try:
-        write_gate.require_power_mode(power_mode)
-        write_gate.require_id(preview_id)
-    except GateError as exc:
-        _refused(exc)
-
-
-def _gate_adds_write(xml: bool, power_mode: bool, preview_id: str | None) -> None:
-    """Before `dj apply` / `dj copy --apply` reads anything: --xml (an XML to import, any OS, no
-    write session) or --power-mode (master.db, Windows), never both; then the preview id's shape."""
-    if xml and power_mode:
-        _refused("--xml and --power-mode are two ways to write: pick one. Nothing written.")
-    if xml:
-        _gate_id(preview_id)
-    else:
-        _gate_db_write(power_mode, preview_id)
+def _gate_db_write(preview_id: str | None) -> None:
+    """Before a master.db write reads anything: the off switch (DJ_POWER_MODE=false), then an id
+    with the shape of a preview id (R-1102). Its content is checked once the plan is known."""
+    off = hostenv.power_mode_refusal()
+    if off:
+        _refused(off)
+    _gate_id(preview_id)
 
 
 def _preview_keys(recorded: write_gate.Recorded | None) -> dict[str, Any]:
@@ -103,27 +84,21 @@ def _preview_keys(recorded: write_gate.Recorded | None) -> dict[str, Any]:
 
 def _db_off_keys() -> dict[str, Any]:
     """A master.db dry-run's --json key when the engine settings refuse master.db writes
-    (DJ_POWER_MODE, dj.hostenv; additive, absent otherwise): the preview tool's result then tells
-    the DJ that the power-mode route cannot be written."""
+    (DJ_POWER_MODE=false, dj.hostenv; additive, absent otherwise): the preview tool's result then
+    tells the DJ that this preview cannot be written."""
     off = hostenv.power_mode_refusal()
     return {"master_db_write": off} if off else {}
 
 
-def _to_write(preview_id: str, power_mode: bool = False, xml: bool = False) -> str:
-    """The dry-run's last line: how the write is called, after the DJ's yes. `xml`: the command
-    also writes an XML to import (`dj apply`, `dj copy`), named first. When the engine settings
-    refuse master.db writes, the power-mode route is not offered: the line says why instead."""
-    flags = "--apply --power-mode" if power_mode else "--apply"
-    off = hostenv.power_mode_refusal() if power_mode else None
-    if off and xml:
-        return (f"DRY-RUN. Nothing written. To write, after the DJ's yes: --apply --xml --preview-id {preview_id} "
-                f"(an XML to import, any OS). Not master.db: {off}")
+def _to_write(preview_id: str, db: bool = False) -> str:
+    """The dry-run's last line: how the write is called, after the DJ's yes. `db`: the write goes
+    into master.db (rekordbox closed). When DJ_POWER_MODE=false refuses master.db writes, the line
+    says so."""
+    off = hostenv.power_mode_refusal() if db else None
     if off:
         return f"DRY-RUN. Nothing written. This preview cannot be written: {off}"
-    if xml:
-        return (f"DRY-RUN. Nothing written. To write, after the DJ's yes: --apply --xml --preview-id {preview_id} "
-                f"(an XML to import, any OS), or master.db on Windows: {flags} --preview-id {preview_id}")
-    return f"DRY-RUN. Nothing written. To write, after the DJ's yes: {flags} --preview-id {preview_id}"
+    told = f"DRY-RUN. Nothing written. To write, after the DJ's yes: --apply --preview-id {preview_id}"
+    return told + (" (into rekordbox: close it first)" if db else "")
 
 
 def _used(preview_id: str, written: str) -> None:
@@ -381,16 +356,15 @@ def tree(
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     preview_id: str = _PREVIEW_ID_OPT,
-    power_mode: bool = _POWER_MODE_OPT,
 ) -> None:
     """Create what is missing from tree.yaml. Never changes what exists.
 
-    The dry-run prints a preview id; --apply needs --power-mode and that id (R-205, R-1102)."""
+    The dry-run prints a preview id; --apply needs that id and rekordbox closed (R-1102)."""
     if apply and as_json:
         typer.echo("ERROR --json is for the dry-run; apply without it.", err=True)
         raise typer.Exit(EXIT_ERROR)
     if apply:
-        _gate_db_write(power_mode, preview_id)
+        _gate_db_write(preview_id)
     try:
         file = _config_arg(file)
         nodes = tree_mod.load_tree(file)
@@ -433,7 +407,7 @@ def tree(
         recorded = write_gate.record("tree", gate_args, changes)
         for line in recorded.lines():
             typer.echo(line)
-        typer.echo(_to_write(recorded.preview_id, power_mode=True))
+        typer.echo(_to_write(recorded.preview_id, db=True))
         return
     if not totals[tree_mod.CREATE]:
         typer.echo("Nothing to create. Nothing written.")
@@ -451,7 +425,7 @@ def tree(
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
     except GateError as exc:
         _refused(exc)
-    except safety.SafetyError as exc:  # e.g. not Windows (DB_WRITE_PLATFORMS): one line, nothing written
+    except safety.SafetyError as exc:  # e.g. the process check could not run: one line, nothing written
         _fail(exc)
     _used(preview_id, f"{created} node(s) in master.db")
     typer.echo(f"APPLIED. Created {created} node(s) in one commit. Backup in {safety.backup_folder_text()}.")
@@ -747,28 +721,24 @@ def plan(
 def apply_plan(
     plan_file: Path = typer.Argument(..., help="A plan file from `dj plan`."),
     apply: bool = typer.Option(False, "--apply", help="Really write. Default is a dry-run."),
-    xml: bool = _XML_OPT,
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     preview_id: str = _PREVIEW_ID_OPT,
-    power_mode: bool = _POWER_MODE_OPT,
 ) -> None:
     """Add the `decision: yes` tracks of a plan to its crate. Appends only.
 
     The dry-run reads a snapshot of master.db and prints a preview id. --apply needs that id and
-    one way to write: --xml (an XML the DJ imports, then one drag into the crate; any OS, master.db
-    never opened for writing) or --power-mode (master.db, Windows) (R-205, R-802, R-1102)."""
+    writes master.db: rekordbox closed, a backup first, one commit (R-802, R-1102)."""
     if apply:
-        _gate_adds_write(xml, power_mode, preview_id)
+        _gate_db_write(preview_id)
     paths = intake.default_paths()
     try:
         plan_data = intake.load_plan(plan_file)
         by = intake.decisions(plan_data)
-        with _snapshot() as db:  # R-202; for --xml also the fresh read the gate checks
+        with _snapshot() as db:  # R-202
             crate = library.find_playlist(db, plan_data["crate"])
             adds = intake.to_add(plan_data, library.crate_content_ids(crate))
             # the local file each add puts in the crate, as the library holds it (not the plan's copy)
             local = {t.content_id: t.label for t in library.all_tracks(db)} if adds else {}
-            found = db_reader.tracks_by_id(db, [str(i["pick"]) for i in adds]) if apply and xml else {}
         gate_args = {"plan": write_gate.path_arg(plan_file)}
         changes = _apply_changes(plan_data, adds)
         payload: dict[str, Any] = {
@@ -784,12 +754,7 @@ def apply_plan(
         if not apply:
             recorded = write_gate.record("apply", gate_args, changes)
             payload |= _preview_keys(recorded) | _db_off_keys()
-            lines += recorded.lines() + [_to_write(recorded.preview_id, power_mode=True, xml=True)]
-        elif xml:
-            write_gate.check(preview_id, "apply", gate_args, changes)  # before the XML is written
-            done, more = _apply_as_xml(plan_data, plan_file, adds, found, paths, preview_id)
-            payload |= done
-            lines += more
+            lines += recorded.lines() + [_to_write(recorded.preview_id, db=True)]
         else:
             write_gate.check(preview_id, "apply", gate_args, changes)  # before any backup
             added: list[dict[str, Any]] = []
@@ -817,67 +782,9 @@ def apply_plan(
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
     except GateError as exc:
         _refused(exc)
-    except (*INTAKE_ERRORS, safety.SafetyError, adds_xml.BuildError) as exc:
+    except (*INTAKE_ERRORS, safety.SafetyError) as exc:
         _fail(exc)
     _out(as_json, payload, lines)
-
-
-def _adds_device(paths: intake.Paths) -> str:
-    """The import card's OS: the dj-library folder's device when the inbox loop runs there."""
-    return adds_xml.device_for(paths.root if paths.library else None)
-
-
-def _xml_lines(written: adds_xml.AddsXml) -> list[str]:
-    """What an --xml write prints: the file, then the import card (R-502) ending in the one drag."""
-    lines = [f"WROTE {written.file}: {len(written.track_ids)} track(s) in the playlist "
-             f"'{written.playlist}'. master.db untouched."]
-    if written.unplaced:
-        lines.append(f"{len(written.unplaced)} track(s) have no file location in rekordbox: left out of the XML.")
-    lines += [f"{n}. {step}" for n, step in enumerate(written.import_steps, 1)]
-    return lines
-
-
-def _apply_as_xml(
-    plan_data: dict[str, Any], plan_file: Path, adds: list[dict[str, Any]], found: dict[str, Any],
-    paths: intake.Paths, preview_id: str,
-) -> tuple[dict[str, Any], list[str]]:
-    """`dj apply --apply --xml`, after the gate: proposals/<crate>-adds-<date>.xml (create-only),
-    then the decisions and the report (as a master.db apply records them), then one log.md line.
-    No write session, no backup, no process check: master.db is only read, from a snapshot."""
-    crate = plan_data["crate"]
-    by = intake.decisions(plan_data)
-    for item in adds:  # every pick checked before the file is written, as add_to_crate does
-        if str(item["pick"]) not in found:
-            raise intake.IntakeError(f"pick {item['pick']} is not in the library: {item['spotify']}")
-    written = None
-    if adds:
-        written = adds_xml.write(
-            paths.root, slug=intake.slug(crate), crate=crate, tracks=[found[str(i["pick"])] for i in adds],
-            day=date.today(), device=_adds_device(paths), library=paths.library,
-        )  # fmt: skip
-        _used(preview_id, written.file)
-    placed = set(written.track_ids) if written else set()
-    in_xml = [i for i in adds if str(i["pick"]) in placed]
-    left_out = [i for i in adds if str(i["pick"]) not in placed]  # no file location in rekordbox
-    try:
-        report = intake.record(plan_data, plan_file, [], paths, in_xml=in_xml, left_out=left_out,
-                               xml=written.file if written else None)  # fmt: skip
-    except Exception:  # the XML is written: log it, the error stays the failure
-        if written:
-            for line in _logged(_log(f"apply {crate} as XML, stopped by an error", {"in XML": len(in_xml)},
-                                     written.path)):  # fmt: skip
-                typer.echo(line, err=True)
-        raise
-    line = _log(f"apply {crate} as XML", {"in XML": len(in_xml), "no": len(by["no"]), "pending": len(by["pending"])},
-                written.path if written else report)  # fmt: skip
-    data: dict[str, Any] = {"applied": True, "mode": "xml", "added": 0, "in_xml": len(in_xml), "xml": None,
-                            "report": str(report), "log": line}  # fmt: skip
-    lines = _xml_lines(written) if written else ["Nothing to add. No XML written."]
-    if written:
-        data |= written.to_dict()
-    lines.append(f"report: {report}")
-    lines += _logged(line)
-    return data, lines
 
 
 def _apply_changes(plan_data: dict[str, Any], adds: list[dict[str, Any]]) -> dict[str, Any]:
@@ -900,22 +807,18 @@ def copy_playlist(
     source: str = typer.Argument(..., help="rekordbox playlist to read, e.g. 'warm_up_ideas'."),
     target: str = typer.Argument(..., help="Playlist to append to, e.g. 'house_base/1.1_warm_up'."),
     apply: bool = typer.Option(False, "--apply", help="Really write. Default is a dry-run."),
-    xml: bool = _XML_OPT,
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
     preview_id: str = _PREVIEW_ID_OPT,
-    power_mode: bool = _POWER_MODE_OPT,
 ) -> None:
     """Append the tracks of one rekordbox playlist to another. Adds only, never removes.
 
     The dry-run reads a snapshot of master.db and prints a preview id. --apply needs that id and
-    one way to write: --xml (an XML the DJ imports, then one drag into the target; any OS, master.db
-    never opened for writing) or --power-mode (master.db, Windows) (R-205, R-802, R-1102)."""
+    writes master.db: rekordbox closed, a backup first, one commit (R-802, R-1102)."""
     if apply:
-        _gate_adds_write(xml, power_mode, preview_id)
+        _gate_db_write(preview_id)
     try:
-        with _snapshot() as db:  # R-202; for --xml also the fresh read the gate checks
+        with _snapshot() as db:  # R-202
             planned = copy_mod.plan(db, source, target, allow_missing_target=not apply)
-            found = db_reader.tracks_by_id(db, [r.content_id for r in planned.adds]) if apply and xml else {}
         gate_args = {"source": source, "target": target}
         changes = _copy_changes(planned)
         payload: dict[str, Any] = planned.as_dict() | {"applied": False}
@@ -928,15 +831,7 @@ def copy_playlist(
         if not apply:
             recorded = write_gate.record("copy", gate_args, changes)
             payload |= _preview_keys(recorded) | _db_off_keys()
-            lines += recorded.lines() + [_to_write(recorded.preview_id, power_mode=True, xml=True)]
-        elif xml:
-            write_gate.check(preview_id, "copy", gate_args, changes)  # before the XML is written
-            if not planned.adds:
-                lines.append("Nothing to add. Nothing written.")
-            else:
-                done, more = _copy_as_xml(planned, found, preview_id)
-                payload |= done
-                lines += more
+            lines += recorded.lines() + [_to_write(recorded.preview_id, db=True)]
         else:
             write_gate.check(preview_id, "copy", gate_args, changes)  # before any backup
             if not planned.adds:  # no backup, no write session when there is nothing to add
@@ -966,36 +861,9 @@ def copy_playlist(
         raise typer.Exit(EXIT_REKORDBOX_RUNNING)
     except GateError as exc:
         _refused(exc)
-    except (copy_mod.CopyError, library.LibraryError, safety.SafetyError, db_reader.LibraryError,
-            adds_xml.BuildError) as exc:  # fmt: skip
+    except (copy_mod.CopyError, library.LibraryError, safety.SafetyError, db_reader.LibraryError) as exc:
         _fail(exc)
     _out(as_json, payload, lines)
-
-
-def _copy_as_xml(planned: copy_mod.Plan, found: dict[str, Any], preview_id: str) -> tuple[dict[str, Any], list[str]]:
-    """`dj copy --apply --xml`, after the gate: proposals/<target>-adds-<date>.xml (create-only)
-    with the tracks to add in source order, the report, one log.md line. No write session."""
-    missing = [r.content_id for r in planned.adds if r.content_id not in found]
-    if missing:  # checked before the file is written
-        raise copy_mod.CopyError(f"track {missing[0]} is not in the library any more. Preview again.")
-    paths = intake.default_paths()
-    written = adds_xml.write(
-        paths.root, slug=intake.slug(planned.target), crate=planned.target,
-        tracks=[found[r.content_id] for r in planned.adds], day=date.today(), device=_adds_device(paths),
-        library=paths.library,
-    )  # fmt: skip
-    _used(preview_id, written.file)
-    action = f"copy {planned.source} to {planned.target} as XML"
-    try:
-        report = copy_mod.write_report(planned, extra={"mode": "xml", "xml": written.file,
-                                                       "in_xml": list(written.track_ids)})  # fmt: skip
-    except Exception:  # the XML is written: log it, the error stays the failure
-        for line in _logged(_log(f"{action}, stopped by an error", {"in XML": len(written.track_ids)}, written.path)):
-            typer.echo(line, err=True)
-        raise
-    line = _log(action, {"in XML": len(written.track_ids), "skipped": planned.counts()[copy_mod.SKIP]}, written.path)
-    data = {"applied": True, "mode": "xml", "added": 0, "report": str(report), "log": line} | written.to_dict()
-    return data, _xml_lines(written) + [f"report: {report}", *_logged(line)]
 
 
 def _copy_changes(planned: copy_mod.Plan) -> dict[str, Any]:

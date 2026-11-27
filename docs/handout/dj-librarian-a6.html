@@ -51,34 +51,34 @@
   <div class="pad">
     <svg class="pow" viewBox="0 0 100 100" aria-hidden="true">
       <polygon points="50,2 61,22 84,10 76,33 98,40 78,54 92,76 68,70 64,96 50,78 36,96 32,70 8,76 22,54 2,40 24,33 16,10 39,22" fill="#ffd23f" stroke="#111" stroke-width="3.5" stroke-linejoin="round"/>
-      <text x="50" y="47" text-anchor="middle" font-family="Bangers" font-size="22" fill="#111">3 MOVES</text>
+      <text x="50" y="47" text-anchor="middle" font-family="Bangers" font-size="22" fill="#111">2 MOVES</text>
       <text x="50" y="66" text-anchor="middle" font-family="Bangers" font-size="15" fill="#111">THEN COFFEE</text>
     </svg>
     <h1 class="title">DJ<br>LIBRARIAN</h1>
-    <div class="kicker">Your first session. rekordbox stays untouched — it reads a copy.</div>
+    <div class="kicker">Your first session. Nothing lands in rekordbox without a preview and your yes.</div>
 
     <div class="grid">
-      <div class="panel"><div class="num">1</div><h3>START</h3>
+      <div class="panel"><div class="num">1</div><h3>INSTALL</h3>
+        <p>Claude app → <b>Code</b> tab. Type <b style="white-space:nowrap">/dj-librarian:install</b>. Click <b>Allow</b> on each step, then restart Claude.</p>
+        <span class="time">5 min</span></div>
+      <div class="panel"><div class="num">2</div><h3>START</h3>
         <p>Open a Cowork task. Type <b style="white-space:nowrap">/dj-librarian:dj-start</b>. It asks what they call you in the booth. Tap, type, done.</p>
         <span class="time">under 1 min</span></div>
-      <div class="panel"><div class="num">2</div><h3>EXPORT</h3>
-        <p>In rekordbox: <b>File → Export Collection in xml format</b>. Name it <b>collection.xml</b>, save to Desktop. Say <b>done</b>.</p>
-        <span class="time">2 min</span></div>
-      <div class="panel"><div class="num">3</div><h3>FOLDER</h3>
-        <p>In Cowork: <b>Add folder</b> → a new one called <b>dj-library</b>. Drop <b>collection.xml</b> in it. That folder is yours: plain text, keep it.</p>
-        <span class="time">1 min</span></div>
-      <div class="panel"><div class="num">4</div><h3>COFFEE</h3>
+      <div class="panel"><div class="num">3</div><h3>COFFEE</h3>
         <svg class="vinyl" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="46" fill="#111" stroke="#111" stroke-width="4"/><circle cx="50" cy="50" r="36" fill="none" stroke="#333" stroke-width="1.5"/><circle cx="50" cy="50" r="28" fill="none" stroke="#333" stroke-width="1.5"/><circle cx="50" cy="50" r="15" fill="#ff4f79" stroke="#111" stroke-width="3"/><circle cx="50" cy="50" r="3" fill="#fffdf5"/></svg>
-        <p>It reads the export, measures the library, learns your lanes. No questions. A task list ticks along. rekordbox untouched.</p>
+        <p>It backs up rekordbox, then reads it: measures the library, learns your lanes. No questions. Nothing is changed.</p>
         <span class="time">~5 min</span></div>
-      <div class="panel"><div class="num">5</div><h3>THE REPORT</h3>
+      <div class="panel"><div class="num">4</div><h3>THE REPORT</h3>
         <p>Opens on the side. <b>Your sleeve</b> and archetype. How the library is built. <b>3 ways to rebuild it</b>, each with the words to say.</p>
         <span class="time">5 min to read</span></div>
-      <div class="panel"><div class="num">6</div><h3>PICK ONE</h3>
-        <p>Say <b>“Build me the ___ structure”</b>. You see the tree first. Say <b>yes</b> → you get an XML. <b>You</b> import it in rekordbox. Until then, nothing changed.</p>
-        <span class="time">2 min + import</span></div>
+      <div class="panel"><div class="num">5</div><h3>PICK ONE</h3>
+        <p>Say <b>“Build me the ___ structure”</b>. You see the new tree first: what it adds, where your playlists land. Nothing is written yet.</p>
+        <span class="time">2 min</span></div>
+      <div class="panel"><div class="num">6</div><h3>SAY YES</h3>
+        <p>It says <b>“Close rekordbox first.”</b> Close it, say <b>yes</b>. A backup, then it writes. Open rekordbox: the new tree is there.</p>
+        <span class="time">1 min</span></div>
     </div>
-    <div class="foot"><span>dj-librarian v0.1 · a librarian you talk to</span><span>turn over →</span></div>
+    <div class="foot"><span>dj-librarian v0.2 · a librarian you talk to</span><span>turn over →</span></div>
   </div>
 </section>
 
@@ -89,23 +89,23 @@
     <div class="kicker">It only proposes. You decide. Your call, always.</div>
 
     <div class="say">
-      <div class="row"><div class="bubble">Build me the House Bases structure</div><div class="what">The tree, as an XML to import. Nothing moves until you import.</div></div>
+      <div class="row"><div class="bubble">Build me the House Bases structure</div><div class="what">The new tree, shown first. After your yes it goes straight into rekordbox.</div></div>
       <div class="row"><div class="bubble">Crate me 50 for Saturday</div><div class="what">30 / 50 / 70 tracks from <b>your own</b> library for a night or a vibe, with spares.</div></div>
+      <div class="row"><div class="bubble">Crate me 50, build it with me</div><div class="what">The long way: a seed track, up to 4 questions, your tracks plus what to buy.</div></div>
       <div class="row"><div class="bubble">Style barber</div><div class="what">Ten minutes of A/B picks. Sharpens your taste file so crates get better.</div></div>
-      <div class="row"><div class="bubble">Show my report</div><div class="what">The sleeve, the numbers, the three ways. After a new export it re-reads first.</div></div>
-      <div class="row"><div class="bubble">Set me up</div><div class="what">Code tab → <b style="white-space:nowrap">/dj-librarian:install</b> → Allow. Then say set me up.</div></div>
+      <div class="row"><div class="bubble">Show my report</div><div class="what">The sleeve, the numbers, the three ways to rebuild it.</div></div>
     </div>
 
     <div class="box">
-      <h3>IMPORT THE XML (rekordbox)</h3>
-      <p><b>Preferences → Advanced → Database → rekordbox xml</b>: pick the file in <b>dj-library/proposals/</b>. In the left tree open <b>rekordbox xml</b>, right-click a playlist → <b>Import Playlist</b>.</p>
+      <h3>IT WRITES INTO REKORDBOX</h3>
+      <p><b>Close rekordbox</b>, say <b>yes</b>, open it again. A verified backup comes first; if anything fails, it rolls back. While rekordbox is open, it refuses to write.</p>
     </div>
 
     <div class="box" style="background:#fff;transform:rotate(.5deg)">
       <h3>THE RULES IT LIVES BY</h3>
       <p>Adds only. Never deletes, renames or reorders. Every write: a preview, then it asks. Every number comes from the tool. Taste is yours.</p>
     </div>
-    <div class="foot"><span>Export again whenever the library changed.</span><span>dj-librarian v0.1</span></div>
+    <div class="foot"><span>No tools in the session? Code tab → /dj-librarian:install</span><span>dj-librarian v0.2</span></div>
   </div>
 </section>
 </body>

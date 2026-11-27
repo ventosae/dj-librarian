@@ -14,7 +14,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-import dj
 from dj import libfolder
 from dj.libfolder import (
     DIRS,
@@ -45,7 +44,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 # R-901, spelled out so a change to DIRS/FILES cannot quietly drop an entry.
 R901_DIRS = (
-    "exports", "profile", "structure", "taste", "crates", "reports", "proposals", "wishlist",
+    "profile", "structure", "taste", "crates", "reports", "proposals", "wishlist",
 )  # fmt: skip
 R901_FILES = ("README.md", "library.yaml", "links.yaml", "log.md")
 
@@ -159,13 +158,13 @@ def test_scaffolded_gitignore_covers_every_machine_path_line(lib):
 
 def test_scaffold_adds_only_what_is_missing(tmp_path):
     root = tmp_path / "dj-library"
-    (root / "exports").mkdir(parents=True)
+    (root / "profile").mkdir(parents=True)
     (root / "README.md").write_text("mine\n", encoding="utf-8")
 
     result = scaffold(root, device="mac", today=DAY)
 
-    assert set(result.skipped) == {"exports", "README.md"}
-    assert set(result.created) == (set(DIRS) | set(FILES)) - {"exports", "README.md"}
+    assert set(result.skipped) == {"profile", "README.md"}
+    assert set(result.created) == (set(DIRS) | set(FILES)) - {"profile", "README.md"}
     assert (root / "README.md").read_text(encoding="utf-8") == "mine\n"
 
 
@@ -186,10 +185,10 @@ def test_scaffold_rejects_an_unknown_device(tmp_path):
 def test_scaffold_blocked_by_a_file_creates_nothing(tmp_path):
     root = tmp_path / "dj-library"
     root.mkdir()
-    (root / "exports").write_text("not a folder", encoding="utf-8")
-    with pytest.raises(LibraryFolderError, match="exports"):
+    (root / "profile").write_text("not a folder", encoding="utf-8")
+    with pytest.raises(LibraryFolderError, match="profile"):
         scaffold(root, device="mac", today=DAY)
-    assert [p.name for p in root.iterdir()] == ["exports"]
+    assert [p.name for p in root.iterdir()] == ["profile"]
 
 
 def racing_link(monkeypatch, name: str, text: str = "written by someone else\n") -> None:
@@ -262,8 +261,7 @@ def test_readme_documents_every_folder_and_file(lib):
         assert f"`{name}/`" in text, name
     for name in FILES:
         assert f"`{name}`" in text, name
-    assert "`exports/*.xml`" in text and "`proposals/*.xml`" in text
-    assert "gitignored" in text
+    assert "gitignored" in text and "exports" not in text
 
 
 def test_readme_lists_have_at_most_five_items(lib):
@@ -523,46 +521,6 @@ def test_import_export_keeps_the_version_of_another_product(lib, tmp_path):
     assert load_meta(lib)["rekordbox_version"] is None
 
 
-def test_import_export_refuses_what_is_not_a_rekordbox_export(lib, tmp_path):
-    other = tmp_path / "other.xml"
-    other.write_text("<?xml version='1.0'?><plist><dict/></plist>", encoding="utf-8")
-    with pytest.raises(LibraryFolderError, match="not a rekordbox XML"):
-        import_export(lib, other, today=DAY)
-    broken = tmp_path / "broken.xml"
-    broken.write_text("<DJ_PLAYLISTS><PRODUCT", encoding="utf-8")
-    with pytest.raises(LibraryFolderError, match="not readable XML"):
-        import_export(lib, broken, today=DAY)
-    with pytest.raises(LibraryFolderError, match="not found"):
-        import_export(lib, tmp_path / "missing.xml", today=DAY)
-    assert list((lib / "exports").iterdir()) == []
-
-
-@pytest.mark.parametrize(
-    "cut",
-    [
-        # truncated after PRODUCT, as if copied while rekordbox was still exporting
-        lambda text: text[: text.index("<TRACK") + len('<TRACK TrackID="1" Loc')],
-        lambda text: text[: text.index("</COLLECTION>")],
-        lambda text: text[: text.index("</DJ_PLAYLISTS>")],
-        # broken in the middle
-        lambda text: text.replace("</COLLECTION>", "</COLLECTON>"),
-        lambda text: text + "<TRAILING/>",
-    ],
-)
-def test_import_export_refuses_a_truncated_or_broken_export(lib, tmp_path, cut):
-    src = tmp_path / "half.xml"
-    src.write_text(cut(collection_xml(["file://localhost/C:/Music/1.mp3"])), encoding="utf-8")
-    before = (lib / "library.yaml").read_bytes()
-
-    with pytest.raises(LibraryFolderError, match="Nothing was copied"):
-        import_export(lib, src, today=DAY)
-
-    assert list((lib / "exports").iterdir()) == []
-    assert (lib / "library.yaml").read_bytes() == before
-    with pytest.raises(LibraryFolderError, match="not readable XML"):
-        libfolder.read_product(src)
-
-
 def test_read_product_reads_name_and_version(export_file, tmp_path):
     assert libfolder.read_product(export_file) == ("rekordbox", "7.2.8")
     bare = tmp_path / "bare.xml"
@@ -617,14 +575,6 @@ def test_import_export_needs_a_scaffolded_folder(tmp_path, export_file):
         import_export(tmp_path / "empty", export_file, today=DAY)
 
 
-def test_import_export_refuses_a_broken_library_yaml_before_copying(lib, export_file):
-    text = (lib / "library.yaml").read_text(encoding="utf-8").replace("device: windows", "device: x")
-    (lib / "library.yaml").write_text(text, encoding="utf-8")
-    with pytest.raises(LibraryFolderError, match="Nothing was copied"):
-        import_export(lib, export_file, today=DAY)
-    assert list((lib / "exports").iterdir()) == []
-
-
 def test_latest_export_follows_library_yaml(lib, tmp_path, export_file):
     first = import_export(lib, export_file, today=DAY)
     other = tmp_path / "older.xml"
@@ -632,19 +582,6 @@ def test_latest_export_follows_library_yaml(lib, tmp_path, export_file):
     import_export(lib, other, today=NEXT_DAY)
     update_meta(lib, today=NEXT_DAY, exports={"latest": "exports/2026-10-20-collection.xml"})
     assert latest_export(lib) == first
-
-
-def test_latest_export_falls_back_to_the_newest_dated_file(lib):
-    for name in (
-        "2026-10-19-collection.xml",
-        "2026-10-20-collection-2.xml",
-        "2026-10-20-collection.xml",
-        "zz-other.xml",
-    ):
-        (lib / "exports" / name).write_text("<DJ_PLAYLISTS/>", encoding="utf-8")
-    assert latest_export(lib).name == "2026-10-20-collection-2.xml"
-    update_meta(lib, today=DAY, exports={"latest": "exports/gone.xml"})
-    assert latest_export(lib).name == "2026-10-20-collection-2.xml"
 
 
 @pytest.mark.parametrize(
@@ -659,18 +596,6 @@ def test_latest_export_ignores_a_stored_value_that_is_not_an_export(lib, export_
     (lib / "exports" / "notes.txt").write_text("not an export\n", encoding="utf-8")
     assert load_meta(lib)["exports"]["latest"] == stored
     assert latest_export(lib) == export
-
-
-def test_latest_export_skips_hidden_and_temp_files(lib):
-    (lib / "exports" / "2026-10-19-collection.xml").write_text("<DJ_PLAYLISTS/>", "utf-8")
-    for name in (
-        ".2026-10-21-collection.xml.k3j2.tmp",  # a copy a crash left behind
-        "._2026-10-21-collection.xml",  # macOS AppleDouble file on a FAT/exFAT drive
-        ".2026-10-22-collection.xml",
-        "2026-10-23-collection.XML",
-    ):
-        (lib / "exports" / name).write_text("partial", encoding="utf-8")
-    assert latest_export(lib).name == "2026-10-19-collection.xml"
 
 
 def test_latest_export_without_any_export(lib):
@@ -983,43 +908,3 @@ def assert_no_machine_paths(root: Path, tracked: list[str], tmp_path: Path) -> N
 
 
 # -- Door 1: imports without the engine's packages -----------------------------------------
-
-DOOR1 = r"""
-import sys
-BLOCKED = ("pyrekordbox", "rapidfuzz", "httpx", "typer", "mcp")
-for name in BLOCKED:
-    sys.modules[name] = None
-import dj.libfolder
-import dj.treeschema
-from datetime import date
-from pathlib import Path
-
-root = Path(sys.argv[1])
-dj.libfolder.scaffold(root, device="mac", today=date(2026, 10, 20))
-doc = dj.treeschema.load(sys.argv[2])
-dj.treeschema.dump(doc, root / "structure" / "current-tree.yaml")
-dj.libfolder.append_log(root, "door1", {"nodes": len(list(dj.treeschema.walk(doc)))})
-loaded = sorted(m for m in sys.modules if m.split(".")[0] in BLOCKED and sys.modules[m] is not None)
-assert not loaded, loaded
-heavy = sorted(m for m in ("dj.tree", "dj.rules", "dj.match", "dj.library") if m in sys.modules)
-assert not heavy, heavy
-print("door1 ok")
-"""
-
-
-EXAMPLE_TREE = REPO / "examples" / "tree.example.yaml"
-
-
-def test_door1_imports_without_engine_packages(tmp_path):
-    src = str(Path(dj.__file__).resolve().parents[1])
-    paths = [src, *filter(None, [os.environ.get("PYTHONPATH")])]
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join(paths)}
-    done = subprocess.run(
-        [sys.executable, "-c", DOOR1, str(tmp_path / "lib"), str(EXAMPLE_TREE)],
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert done.returncode == 0, done.stderr
-    assert "door1 ok" in done.stdout
-    assert (tmp_path / "lib" / "structure" / "current-tree.yaml").is_file()

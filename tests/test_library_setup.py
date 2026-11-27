@@ -98,24 +98,9 @@ def test_the_script_round_trip(tmp_path):
     assert refused.returncode == 2 and json.loads(refused.stdout)["reason"] == "not_empty"
 
 
-@pytest.mark.parametrize(("tools", "path"), [
-    (["mcp__dj-librarian__dj_status", "mcp__dj-librarian__dj_pull"], "engine"),
-    (["mcp__plugin_dj-librarian_dj-librarian__dj_status"], "engine"),
-    (["dj_status"], "engine"),
-    (["Read", "Bash", "mcp__other__dj_status_x", "mcp__dj-librarian__dj_pull"], "xml"),
-    ([], "xml"),
-])  # fmt: skip
-def test_dj_start_picks_its_path_from_the_tool_list(tools, path):
-    assert ls.session_path(tools) == path
-
-
 def test_the_handle_goes_into_library_yaml_without_an_export(tmp_path):
     folder = tmp_path / "dj-library"
     ls.prepare(folder, device="mac", today=DAY)
     assert ls.set_handle(folder, "DJ Sample", today=DAY) == "DJ Sample"
     assert ls.set_handle(folder, "skip", today=DAY) == "You"
-    start = REPO / "plugin" / "skills" / "dj-start" / "scripts" / "start.py"
-    done = subprocess.run([sys.executable, str(start), "handle", "--library", str(folder), "--dj-name", "DJ Two"],
-                          capture_output=True, text=True, timeout=60)  # fmt: skip
-    assert done.returncode == 0, done.stdout
-    assert json.loads(done.stdout) == {"dj_name": "DJ Two"} and libfolder.load_meta(folder)["dj_name"] == "DJ Two"
+    assert ls.set_handle(folder, "DJ Two", today=DAY) == "DJ Two" and libfolder.load_meta(folder)["dj_name"] == "DJ Two"

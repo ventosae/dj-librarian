@@ -480,7 +480,7 @@ def diff(
     CREATE   the node is new.
     SKIP     a node with this name (case and outer spaces ignored) and kind exists.
     CONFLICT the name exists as another kind; nothing below it is planned.
-    MANUAL   a new smart playlist: an XML import cannot carry rules, the DJ makes it by hand.
+    MANUAL   a new smart playlist: a build does not write rules, the DJ makes it by hand.
     Nodes that exist only in `current` are not listed: nothing is ever removed.
     """
     rows: list[DiffRow] = []
@@ -521,4 +521,4 @@ def _manual_note(node: TreeNode) -> str:
         what = " AND ".join(f"{k} {v}" for rule in node.rules for k, v in rule.items())
     else:
         what = node.rules_raw or ""
-    return f"make it in rekordbox by hand (XML cannot carry smart rules): {what}"
+    return f"make it in rekordbox by hand: {what}"

@@ -1,4 +1,4 @@
-"""The write gate on every existing write path (R-1102) and power mode for master.db (R-205).
+"""The write gate on every existing write path (R-1102) and the off switch for master.db (DJ_POWER_MODE).
 
 Per CLI write command - `dj tree`, `dj apply`, `dj copy` (master.db), `dj push`, `dj build`
 (Spotify), `dj tidy apply`, `dj tidy undo` (audio files): the dry-run records a preview and returns
@@ -8,7 +8,7 @@ with another command's or other arguments' id, or after the plan changed, is ref
 call and no audio file touched; with the right id it writes once and the id is used up.
 The master.db commands run through the real `safety.open_db` over a fake database, so "no backup"
 and "one commit" are the real protocol. Per MCP write tool: the id is required and checked before
-anything runs, power mode first for the three master.db tools, and the preview tools return it.
+anything runs, the off switch first for the master.db tools, and the preview tools return it.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import functools
 import json
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as NS
 
@@ -39,9 +38,6 @@ from dj.tidy import tags
 
 runner = CliRunner()
 
-POWER_MODE_LINE = ("REFUSED master.db writes are power mode (Windows only): add --power-mode. The default is an XML "
-                   "to import instead: --xml for inbox adds and copies (dj apply, dj copy), dj library build for "
-                   "new folders and playlists")  # fmt: skip
 NO_SUCH_ID = "0" * 12
 
 
@@ -143,8 +139,8 @@ class TxCopyDB(Tx, CopyDB):
 
 @pytest.fixture
 def rb(monkeypatch, tmp_path):
-    """The real safety.open_db over a fake database: the write platform open (the platform rule
-    is test_platform.py's), rekordbox closed, the backup recorded instead of copied."""
+    """The real safety.open_db over a fake database: rekordbox closed, the backup recorded
+    instead of copied."""
     master = tmp_path / "rekordbox" / "master.db"
     master.parent.mkdir()
     master.write_bytes(b"not a database")
@@ -158,7 +154,6 @@ def rb(monkeypatch, tmp_path):
         state.backups.append(path)
         return safety.Backup(timestamp="test")
 
-    monkeypatch.setattr(safety, "DB_WRITE_PLATFORMS", (sys.platform,))
     monkeypatch.setattr(safety, "find_master_db", lambda: master)
     monkeypatch.setattr(safety, "rekordbox_running", lambda: False)
     monkeypatch.setattr(safety, "backup", backup)
@@ -201,35 +196,26 @@ def test_db_dry_run_returns_a_preview_id_and_writes_nothing(job, rb):
     assert text.exit_code == 0, text.output
     lines = text.stdout.splitlines()
     assert f"Preview id: {pid}" in lines
-    assert lines[-1].endswith(f"--apply --power-mode --preview-id {pid}") and lines[-1].startswith("DRY-RUN.")
+    assert f": --apply --preview-id {pid}" in lines[-1] and lines[-1].startswith("DRY-RUN.")
     assert record_path(pid).is_file() and not used(pid)
     assert rb.backups == [] and job.db.commits == 0 and not job.written()
-
-
-def test_db_write_without_power_mode_is_refused_before_anything(job, rb):
-    pid = dry_run_id(job.dry)
-    connects = rb.connects
-    assert refused(run(*job.dry, *gated(pid))) == POWER_MODE_LINE
-    assert refused(run(*job.dry, *gated(None))) == POWER_MODE_LINE  # the flag is checked first
-    assert rb.connects == connects  # refused before master.db was even read
-    assert rb.backups == [] and job.db.commits == 0 and not job.written() and not used(pid)
 
 
 @pytest.mark.parametrize("case", list(REFUSALS))
 def test_db_write_refusals_take_no_backup_and_write_nothing(job, rb, case):
     pid = dry_run_id(job.dry)
     give = bad_id(case, pid, job.kind, job.change)
-    assert REFUSALS[case] in refused(run(*job.dry, *gated(give, "--power-mode")))
+    assert REFUSALS[case] in refused(run(*job.dry, *gated(give)))
     assert rb.backups == [] and job.db.commits == 0 and not job.written()
 
 
 def test_db_write_with_its_preview_id_writes_once_and_uses_the_id_up(job, rb):
     pid = dry_run_id(job.dry)
-    result = run(*job.dry, *gated(pid, "--power-mode"))
+    result = run(*job.dry, *gated(pid))
     assert result.exit_code == 0, result.output
     assert "APPLIED" in result.stdout
     assert len(rb.backups) == 1 and job.db.commits == 1 and job.written() and used(pid)
-    assert "already used" in refused(run(*job.dry, *gated(pid, "--power-mode")))
+    assert "already used" in refused(run(*job.dry, *gated(pid)))
     assert len(rb.backups) == 1 and job.db.commits == 1
 
 
@@ -237,14 +223,14 @@ def test_the_same_plan_after_the_dj_removed_the_rows_writes_again_with_a_new_id(
     """The DJ removed what the write added (in rekordbox): the same plan again gets a fresh id
     that writes once more, as before the gate. The used id stays refused."""
     pid = dry_run_id(job.dry)
-    assert run(*job.dry, *gated(pid, "--power-mode")).exit_code == 0
+    assert run(*job.dry, *gated(pid)).exit_code == 0
     writes = job.writes()
     job.undo()
     again = dry_run_id(job.dry)
     assert again != pid and not used(again)
-    assert "already used" in refused(run(*job.dry, *gated(pid, "--power-mode")))
+    assert "already used" in refused(run(*job.dry, *gated(pid)))
     assert len(rb.backups) == 1 and job.db.commits == 1
-    result = run(*job.dry, *gated(again, "--power-mode"))
+    result = run(*job.dry, *gated(again))
     assert result.exit_code == 0 and "APPLIED" in result.stdout, result.output
     assert len(rb.backups) == 2 and job.db.commits == 2 and job.writes() == 2 * writes and used(again)
 
@@ -260,7 +246,7 @@ def test_a_change_after_the_check_is_caught_inside_the_write_session(job, rb, mo
         return recorded_backup(path, dest)
 
     monkeypatch.setattr(safety, "backup", backup_then_change)
-    result = run(*job.dry, *gated(pid, "--power-mode"))
+    result = run(*job.dry, *gated(pid))
     assert "The plan changed since the preview" in refused(result, quiet=False)  # after the gate: the plan is out
     assert job.db.commits == 0 and job.db.rollbacks >= 1 and not job.written() and not used(pid)
 
@@ -271,7 +257,7 @@ def test_apply_refuses_after_a_decision_changed(rb, tmp_path, db):
     rb.db = job.db
     pid = dry_run_id(job.dry)
     job.plan.write_text(json.dumps(plan_with(("yes", "1"), ("yes", "2"))), encoding="utf-8")
-    assert "The plan changed" in refused(run(*job.dry, *gated(pid, "--power-mode")))
+    assert "The plan changed" in refused(run(*job.dry, *gated(pid)))
     assert rb.backups == [] and job.db.added == [] and not (tmp_path / "state").exists()
 
 
@@ -287,10 +273,10 @@ def test_tree_with_a_conflict_gets_no_preview_id(rb, tmp_path, db):
 def test_nothing_to_write_passes_the_gate_and_leaves_the_id_unused(job, rb):
     """A no-op apply (everything already there) writes nothing, so its id is not used up."""
     pid = dry_run_id(job.dry)
-    assert run(*job.dry, *gated(pid, "--power-mode")).exit_code == 0
+    assert run(*job.dry, *gated(pid)).exit_code == 0
     again = dry_run_id(job.dry)  # the plan is empty now: a new id
     backups = len(rb.backups)
-    result = run(*job.dry, *gated(again, "--power-mode"))
+    result = run(*job.dry, *gated(again))
     assert result.exit_code == 0, result.output
     assert "Nothing to" in result.stdout or "Added 0 track(s)" in result.stdout, result.stdout
     assert len(rb.backups) == backups and job.db.commits == 1 and not used(again)
@@ -570,20 +556,20 @@ def calls(monkeypatch, tmp_path):
 
 
 PID = "0123456789ab"
-DB_TOOLS = {  # apply and copy write master.db in mode "db" (their default is an XML: mode "xml")
-    "dj_tree_apply": lambda pid, **kw: m.dj_tree_apply(preview_id=pid, file="bases.yaml", **kw),
-    "dj_apply_write": lambda pid, **kw: m.dj_apply_write("p.plan.json", preview_id=pid, mode="db", **kw),
-    "dj_copy_apply": lambda pid, **kw: m.dj_copy_apply("a", "b", preview_id=pid, mode="db", **kw),
+DB_TOOLS = {  # the tools that write master.db
+    "dj_tree_apply": lambda pid: m.dj_tree_apply(preview_id=pid, file="bases.yaml"),
+    "dj_apply_write": lambda pid: m.dj_apply_write("p.plan.json", preview_id=pid),
+    "dj_copy_apply": lambda pid: m.dj_copy_apply("a", "b", preview_id=pid),
+    "dj_structure_write": lambda pid: m.dj_structure_write("lanes", preview_id=pid),
+    "dj_crate_write": lambda pid: m.dj_crate_write("saturday", preview_id=pid),
 }
 OTHER_TOOLS = {
     "dj_push_apply": lambda pid: m.dj_push_apply("p", preview_id=pid),
     "dj_build_apply": lambda pid: m.dj_build_apply("set.txt", preview_id=pid),
     "dj_tidy_apply": lambda pid: m.dj_tidy_apply("p.plan.json", preview_id=pid),
     "dj_tidy_undo": lambda pid: m.dj_tidy_undo("p.plan.json", preview_id=pid),
-    "dj_structure_write": lambda pid: m.dj_structure_write("lanes", preview_id=pid),
-    "dj_crate_write": lambda pid: m.dj_crate_write("saturday", preview_id=pid),
 }
-ALL_TOOLS = {**{n: functools.partial(f, power_mode=True) for n, f in DB_TOOLS.items()}, **OTHER_TOOLS}
+ALL_TOOLS = {**DB_TOOLS, **OTHER_TOOLS}
 PREVIEWS = {
     "dj_tree_preview": lambda: m.dj_tree_preview("bases.yaml"),
     "dj_apply_preview": lambda: m.dj_apply_preview("p.plan.json"),
@@ -611,24 +597,13 @@ def test_every_write_tool_refuses_a_missing_or_malformed_preview_id_before_runni
     assert calls == []
 
 
-@pytest.mark.parametrize("tool", sorted(DB_TOOLS))
-def test_master_db_write_tools_need_power_mode_first(calls, tool):
-    for pid in (PID, ""):
-        answer = json.loads(DB_TOOLS[tool](pid))
-        assert answer["ok"] is False and answer["error"] == m.POWER_MODE_REFUSAL
-    assert "XML" in m.POWER_MODE_REFUSAL and "power_mode=true" in m.POWER_MODE_REFUSAL
-    description = " ".join({t.name: t for t in asyncio.run(m.server.list_tools())}[tool].description.split())
-    assert "power_mode=true" in description and "default write path is an XML" in description
-    assert calls == []
-
-
 @pytest.mark.parametrize("tool", sorted(ALL_TOOLS))
 def test_every_write_tool_passes_its_preview_id(calls, tool):
     ALL_TOOLS[tool](PID)
     (cmd,) = calls
     options = cmd[3:cmd.index("--")] if "--" in cmd else cmd[3:]
     assert "--apply" in options and options[options.index("--preview-id") + 1] == PID
-    assert ("--power-mode" in options) is (tool in DB_TOOLS)
+    assert "--power-mode" not in options and "--xml" not in options
 
 
 @pytest.mark.parametrize("tool", sorted(PREVIEWS))
@@ -665,10 +640,10 @@ def test_mcp_preview_then_write_end_to_end(monkeypatch, rb):
     monkeypatch.setattr(m.subprocess, "run", in_process)
     preview = json.loads(m.dj_copy_preview("jazzy", "jazz_base/2.1_jazzy"))
     pid = preview["result"]["preview_id"]
-    wrong = json.loads(m.dj_copy_apply("jazzy", "jazz_base/2.1_jazzy", preview_id=NO_SUCH_ID, power_mode=True))
+    wrong = json.loads(m.dj_copy_apply("jazzy", "jazz_base/2.1_jazzy", preview_id=NO_SUCH_ID))
     assert (wrong["ok"], wrong["exit_code"]) == (False, 1) and wrong["stderr"][0].startswith("REFUSED")
     assert rb.db.added == [] and rb.backups == []
-    done = json.loads(m.dj_copy_apply("jazzy", "jazz_base/2.1_jazzy", preview_id=pid, power_mode=True))
+    done = json.loads(m.dj_copy_apply("jazzy", "jazz_base/2.1_jazzy", preview_id=pid))
     assert done["ok"] is True and done["result"]["added"] == 2 and rb.db.added == ["1", "2"]
     assert len(rb.backups) == 1 and used(pid)
 
@@ -716,17 +691,17 @@ def mcp_pair(name: str, request, tmp_path, tidy_options: list[str]) -> NS:
             file = str(found.file)
             rows: list = []
             return NS(preview=lambda: m.dj_tree_preview(file), state=state,
-                      write=lambda pid: m.dj_tree_apply(preview_id=pid, file=file, power_mode=True),
+                      write=lambda pid: m.dj_tree_apply(preview_id=pid, file=file),
                       change=_undoable(lambda: rows.append(db.seed("playlist", "inbox")),
                                        lambda: db.rows.remove(rows.pop())))  # fmt: skip
         if name == "apply":
             plan = str(found.plan)
             return NS(preview=lambda: m.dj_apply_preview(plan), state=state,
-                      write=lambda pid: m.dj_apply_write(plan, preview_id=pid, power_mode=True),
+                      write=lambda pid: m.dj_apply_write(plan, preview_id=pid),
                       change=_undoable(found.change, db.crate.Songs.pop))  # fmt: skip
         target = ("jazzy", "jazz_base/2.1_jazzy")
         return NS(preview=lambda: m.dj_copy_preview(*target), state=state,
-                  write=lambda pid: m.dj_copy_apply(*target, preview_id=pid, power_mode=True),
+                  write=lambda pid: m.dj_copy_apply(*target, preview_id=pid),
                   change=_undoable(found.change, db.src.Songs.pop))  # fmt: skip
     if name.startswith(("push", "build")):
         spot = request.getfixturevalue("spot")
@@ -794,175 +769,54 @@ def test_mcp_each_preview_id_writes_through_its_write_tool_once(name, request, t
     assert pair.state() == before
 
 
-# -- the engine settings: DJ_POWER_MODE (W-34, D-28) ---------------------------------------------
+# -- the one off switch: DJ_POWER_MODE=false -------------------------------------------------------
 
 
-def test_db_write_with_power_mode_off_in_the_settings_is_refused_before_anything(job, rb, monkeypatch):
-    """The extension's Power mode switch off: every master.db write refuses in one line, before the
-    flag, the preview id, a read, the process check or a backup. The dry-run still previews."""
+def test_db_write_with_dj_power_mode_false_is_refused_before_anything(job, rb, monkeypatch):
+    """DJ_POWER_MODE=false: every master.db write refuses in one line, before the preview id, a
+    read, the process check or a backup. The dry-run still previews, and says so."""
     monkeypatch.setenv("DJ_POWER_MODE", "false")
     pid = dry_run_id(job.dry)
     connects = rb.connects
     line = f"REFUSED {hostenv.POWER_MODE_OFF}"
-    assert refused(run(*job.dry, *gated(pid, "--power-mode"))) == line
-    assert refused(run(*job.dry, *gated(None, "--power-mode"))) == line  # before the preview id
-    assert refused(run(*job.dry, *gated(pid))) == line  # before the flag
+    assert refused(run(*job.dry, *gated(pid))) == line
+    assert refused(run(*job.dry, *gated(None))) == line  # before the preview id
     assert rb.connects == connects and rb.backups == [] and job.db.commits == 0
     assert not job.written() and not used(pid)
+    data = json.loads(run(*job.dry, "--json").stdout)
+    assert data["master_db_write"] == hostenv.POWER_MODE_OFF
 
 
-def test_power_mode_on_in_the_settings_never_turns_power_mode_on_by_itself(job, rb, monkeypatch):
-    monkeypatch.setenv("DJ_POWER_MODE", "true")
+def test_a_dj_power_mode_that_is_neither_true_nor_false_refuses_in_one_line(job, rb, monkeypatch):
+    monkeypatch.setenv("DJ_POWER_MODE", "sometimes")
     pid = dry_run_id(job.dry)
-    assert refused(run(*job.dry, *gated(pid))) == POWER_MODE_LINE  # still needs --power-mode
-    result = run(*job.dry, *gated(pid, "--power-mode"))
+    assert "DJ_POWER_MODE must be true or false" in refused(run(*job.dry, *gated(pid)))
+    assert rb.backups == [] and job.db.commits == 0 and not job.written() and not used(pid)
+
+
+@pytest.mark.parametrize("value", [None, "", "true", "${user_config.power_mode}"])
+def test_unset_or_true_writes_in_a_clone_and_in_the_bundle(job, rb, monkeypatch, tmp_path, value):
+    pid = dry_run_id(job.dry)  # previewed as a clone; the write comes from the bundle
+    home = tmp_path / "home"
+    home.mkdir()
+    for name in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(name, str(home))
+    monkeypatch.setenv("DJ_ENGINE", "mcpb")
+    if value is not None:
+        monkeypatch.setenv("DJ_POWER_MODE", value)
+    assert hostenv.power_mode_refusal() is None
+    monkeypatch.delenv("DJ_ENGINE")  # the gate record sits in the clone's state folder
+    result = run(*job.dry, *gated(pid))
     assert result.exit_code == 0 and "APPLIED" in result.stdout, result.output
     assert len(rb.backups) == 1 and job.db.commits == 1 and used(pid)
 
 
-def test_a_power_mode_setting_that_is_neither_true_nor_false_refuses_in_one_line(job, rb, monkeypatch):
-    monkeypatch.setenv("DJ_POWER_MODE", "sometimes")
-    pid = dry_run_id(job.dry)
-    assert "DJ_POWER_MODE must be true or false" in refused(run(*job.dry, *gated(pid, "--power-mode")))
-    assert rb.backups == [] and job.db.commits == 0 and not job.written() and not used(pid)
-
-
-def test_power_mode_off_leaves_the_xml_route_open(rb, tmp_path, db, monkeypatch):
-    """--xml writes no master.db: the settings switch does not touch it."""
-    job = db_job("apply", tmp_path, db)
-    rb.db = job.db
-    monkeypatch.setenv("DJ_POWER_MODE", "false")
-    monkeypatch.setattr(cli, "_apply_as_xml", lambda *a, **k: ({"applied": True, "xml": "x.xml"}, ["XML written"]))
-    pid = dry_run_id(job.dry)
-    result = run(*job.dry, *gated(pid, "--xml"))
-    assert result.exit_code == 0, result.output
-    assert rb.backups == [] and job.db.commits == 0
-
-
 @pytest.mark.parametrize("tool", sorted(DB_TOOLS))
-def test_master_db_write_tools_refuse_first_when_the_settings_turn_power_mode_off(calls, tool, monkeypatch):
+def test_master_db_write_tools_refuse_first_when_dj_power_mode_is_false(calls, tool, monkeypatch):
     monkeypatch.setenv("DJ_POWER_MODE", "false")
     for pid in (PID, ""):
-        answer = json.loads(DB_TOOLS[tool](pid, power_mode=True))
+        answer = json.loads(DB_TOOLS[tool](pid))
         assert answer["ok"] is False and answer["error"] == hostenv.POWER_MODE_OFF
-    monkeypatch.setenv("DJ_POWER_MODE", "maybe")
-    answer = json.loads(DB_TOOLS[tool](PID, power_mode=True))
-    assert answer["ok"] is False and "DJ_POWER_MODE must be true or false" in answer["error"]
-    assert calls == []
-
-
-@pytest.mark.parametrize("tool", sorted(DB_TOOLS))
-def test_power_mode_on_in_the_settings_still_needs_power_mode_true(calls, tool, monkeypatch):
-    monkeypatch.setenv("DJ_POWER_MODE", "true")
-    assert json.loads(DB_TOOLS[tool](PID))["error"] == m.POWER_MODE_REFUSAL
-    assert json.loads(DB_TOOLS[tool](PID, power_mode=True))["ok"] is True
-    (cmd,) = calls
-    assert "--power-mode" in cmd
-
-
-def test_power_mode_off_leaves_the_xml_writes_and_the_other_write_tools(calls, monkeypatch):
-    monkeypatch.setenv("DJ_POWER_MODE", "false")
-    assert json.loads(m.dj_apply_write("p.plan.json", preview_id=PID, mode="xml"))["ok"] is True
-    assert json.loads(m.dj_copy_apply("a", "b", preview_id=PID))["ok"] is True  # empty mode: the XML
-    for name in ("dj_push_apply", "dj_build_apply", "dj_tidy_apply", "dj_tidy_undo"):
+    for name in sorted(OTHER_TOOLS):  # Spotify and the audio files are not master.db
         assert json.loads(OTHER_TOOLS[name](PID))["ok"] is True, name
-    assert len(calls) == 6 and not any("--power-mode" in cmd for cmd in calls)
-
-
-# -- the desktop extension fails closed: no Power mode value is off (W-34) -----------------------
-
-
-@pytest.fixture
-def bundle_settings(monkeypatch, tmp_path):
-    """Turns this test into the desktop extension (DJ_ENGINE=mcpb, a made-up home folder) with the
-    given DJ_POWER_MODE (None: not passed at all)."""
-    home = tmp_path / "home"
-    home.mkdir()
-
-    def turn_on(power_mode: str | None) -> None:
-        monkeypatch.setenv("HOME", str(home))
-        monkeypatch.setenv("USERPROFILE", str(home))
-        monkeypatch.setenv("DJ_ENGINE", "mcpb")
-        if power_mode is None:
-            monkeypatch.delenv("DJ_POWER_MODE", raising=False)
-        else:
-            monkeypatch.setenv("DJ_POWER_MODE", power_mode)
-
-    return turn_on
-
-
-NO_VALUE = [None, "", "${user_config.power_mode}"]  # not passed, empty, not filled in by the host
-
-
-@pytest.mark.parametrize("value", NO_VALUE)
-def test_db_write_in_the_bundle_without_a_power_mode_value_is_refused_before_anything(job, rb, bundle_settings,
-                                                                                       value):
-    pid = dry_run_id(job.dry)  # previewed as a clone; the write comes from the extension
-    connects = rb.connects
-    bundle_settings(value)
-    line = f"REFUSED {hostenv.POWER_MODE_UNSET}"
-    assert refused(run(*job.dry, *gated(pid, "--power-mode"))) == line
-    assert refused(run(*job.dry, *gated(None, "--power-mode"))) == line  # before the preview id
-    assert rb.connects == connects and rb.backups == [] and job.db.commits == 0
-    assert not job.written() and not used(pid)
-
-
-def test_power_mode_on_in_the_bundle_still_needs_the_flag(job, rb, bundle_settings):
-    pid = dry_run_id(job.dry)
-    bundle_settings("true")
-    assert refused(run(*job.dry, *gated(pid))) == POWER_MODE_LINE
-    assert rb.backups == [] and job.db.commits == 0 and not used(pid)
-
-
-@pytest.mark.parametrize("value", NO_VALUE)
-@pytest.mark.parametrize("tool", sorted(DB_TOOLS))
-def test_master_db_write_tools_in_the_bundle_refuse_without_a_power_mode_value(calls, tool, value, bundle_settings):
-    bundle_settings(value)
-    answer = json.loads(DB_TOOLS[tool](PID, power_mode=True))
-    assert answer["ok"] is False and answer["error"] == hostenv.POWER_MODE_UNSET
-    assert calls == []
-
-
-# -- the dry-run says when the settings refuse the master.db route (W-34) ------------------------
-
-
-def test_a_db_dry_run_with_power_mode_off_does_not_offer_the_power_mode_write(job, rb, monkeypatch):
-    """No yes is asked for a write that cannot happen: the last line drops the --power-mode route
-    and says why; tree, which has no XML route, offers no write at all. The preview is still
-    recorded (the DJ sees the plan); --json carries the reason as `master_db_write`."""
-    monkeypatch.setenv("DJ_POWER_MODE", "false")
-    result = run(*job.dry)
-    assert result.exit_code == 0, result.output
-    lines = result.stdout.splitlines()
-    pid = lines[-2].removeprefix("Preview id: ")
-    assert valid_id(pid) and record_path(pid).is_file()
-    assert lines[-1].startswith("DRY-RUN. Nothing written.") and "--power-mode" not in lines[-1]
-    assert lines[-1].endswith(hostenv.POWER_MODE_OFF)
-    if job.kind == "tree":
-        assert "This preview cannot be written" in lines[-1] and "--apply" not in lines[-1]
-    else:
-        assert f"--apply --xml --preview-id {pid} (an XML to import, any OS). Not master.db:" in lines[-1]
-    data = json.loads(run(*job.dry, "--json").stdout)
-    assert data["master_db_write"] == hostenv.POWER_MODE_OFF and valid_id(data["preview_id"])
-    monkeypatch.delenv("DJ_POWER_MODE")
-    assert "master_db_write" not in json.loads(run(*job.dry, "--json").stdout)  # a clone: as before
-    assert run(*job.dry).stdout.splitlines()[-1].endswith(f"--power-mode --preview-id {data['preview_id']}")
-
-
-def test_the_mcp_preview_says_the_settings_refuse_master_db(monkeypatch, rb):
-    """dj_copy_preview runs the CLI (in-process here): its result names the settings' refusal, and
-    the power-mode write it would lead to is refused before anything runs."""
-    rb.db = TxCopyDB([song("1", 1), song("2", 2)])
-
-    def in_process(cmd, **kwargs):
-        result = runner.invoke(cli.app, cmd[3:])
-        return NS(returncode=result.exit_code, stdout=result.stdout, stderr=result.stderr)
-
-    monkeypatch.setattr(m.subprocess, "run", in_process)
-    monkeypatch.setenv("DJ_POWER_MODE", "false")
-    preview = json.loads(m.dj_copy_preview("jazzy", "jazz_base/2.1_jazzy"))
-    assert preview["result"]["master_db_write"] == hostenv.POWER_MODE_OFF
-    pid = preview["result"]["preview_id"]
-    done = json.loads(m.dj_copy_apply("jazzy", "jazz_base/2.1_jazzy", preview_id=pid, power_mode=True))
-    assert done["ok"] is False and done["error"] == hostenv.POWER_MODE_OFF
-    assert rb.db.added == [] and rb.backups == [] and not used(pid)
+    assert len(calls) == len(OTHER_TOOLS)
