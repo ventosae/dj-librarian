@@ -31,7 +31,7 @@ MAX_LINES = 120
 
 # R-901, spelled out so a change to DIRS/FILES cannot quietly drop an entry from the template.
 R901_DIRS = (
-    "exports", "profile", "structure", "taste", "crates", "reports", "proposals", "wishlist",
+    "profile", "structure", "taste", "crates", "reports", "proposals", "wishlist",
 )  # fmt: skip
 R901_FILES = ("README.md", "library.yaml", "links.yaml", "log.md")
 
@@ -141,7 +141,6 @@ def test_voice_section_is_short_and_points_to_voice_md(sections):
     lines = [line for line in body.split("\n") if line.strip()]
     assert 1 <= len(lines) <= 5
     assert "working DJ" in body
-    assert "shared/voice.md" in body
 
 
 def test_no_book_text(text):
@@ -193,7 +192,6 @@ def test_reply_rules_attribution(text, sections):
 
 
 def test_checklist_is_referenced_not_copied(text, sections):
-    assert "shared/adhd.md" in sections["Reply rules"]
     assert "Pre-send checklist" not in text
     assert "- [ ]" not in text
 
@@ -209,10 +207,7 @@ def test_checklist_is_referenced_not_copied(text, sections):
         "dry-run by default",
         "preview, then an explicit yes",
         "is not a yes",
-        "the default write path is a rekordbox xml the dj imports",
         "never open or print `.env`",
-        # W-34: the engine extension takes the keys in its settings form; `.env` is a clone's
-        "the dj's spotify keys live in the engine's settings form (in a clone: `.env`)",
         "never ask for or repeat them",
     ],
 )

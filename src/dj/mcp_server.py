@@ -1,4 +1,4 @@
-"""MCP server: lets an agent that cannot run Windows programs (Claude Cowork) use the dj CLI.
+"""MCP server: lets Claude use the dj CLI on the DJ's computer.
 
 It is NOT a shell. Every tool runs one fixed `dj` command with --json, as a list of
 arguments (no shell, no string building), so every rule in CLAUDE.md still holds:
@@ -54,7 +54,7 @@ server = MCPServer(
     "dj-librarian",
     instructions=(
         "Tools for the DJ's rekordbox library via the dj CLI. rekordbox is the truth; you only "
-        "propose. Read the dj-sync skill first. Every *_apply / *_write / *_undo tool "
+        "propose. Every *_apply / *_write / *_undo tool "
         "needs the preview_id its preview tool returned: call the preview, show the DJ the result, "
         "ask, and only after their explicit yes pass that preview_id. dj_tree_apply, dj_apply_write, "
         "dj_copy_apply, dj_structure_write and dj_crate_write write straight into rekordbox's master.db, "
@@ -78,7 +78,6 @@ server = MCPServer(
 # (the library's plans/ once plans live there) without touching the lookup.
 TRACKLISTS = "tracklists"
 PLANS = "plans"
-EXPORTS = "exports"
 
 # NFR-03: pages of a list that grows with the library (see `paginate`).
 PAGE_SIZE = 50  # the default items per page
@@ -177,8 +176,8 @@ def tidy_plan_file(path: str) -> str:
 def library_file(path: str, suffixes: tuple[str, ...], folder: str | None = None) -> str:
     """Like repo_file, but a file inside the configured library folder is accepted too.
     A relative path is looked up in the library folder first, then in the repo; with a default
-    `folder`, then in that folder of each (NFR-05: "x.xml" -> exports/x.xml). An existing exact
-    path wins.
+    `folder`, then in that folder of each (NFR-05: "x.plan.json" -> plans/x.plan.json). An existing
+    exact path wins.
 
     An unusable library setting (a drive root, the home folder) leaves the repo as the only
     root, as the CLI falls back to the repo (intake.default_paths): repo files keep working,
@@ -563,26 +562,12 @@ def preview_id_arg(preview_id: Any, preview_tool: str) -> str:
     return pid
 
 
-ADD_MODES = ("db", "xml")
-
-
 def db_write_on() -> None:
     """A master.db write tool, before anything runs: DJ_POWER_MODE=false (the one off switch)
     refuses it. Unset or true: on, on every OS."""
     refusal = hostenv.power_mode_refusal()
     if refusal:
         raise ToolInputError(refusal)
-
-
-def add_mode_flags(mode: Any) -> list[str]:
-    """The write tools' `mode`: "db" (the default, also when empty) writes master.db; "xml" writes
-    an XML the DJ imports. Checked before the preview id."""
-    if not isinstance(mode, str) or mode.strip() not in ("", *ADD_MODES):
-        raise ToolInputError(f"mode must be one of {', '.join(ADD_MODES)}, got {mode!r}.")
-    if mode.strip() == "xml":
-        return ["--xml"]
-    db_write_on()
-    return []
 
 
 # -- read-only ---------------------------------------------------------------------------
@@ -619,41 +604,43 @@ def dj_tree_preview(file: str = "tree.yaml", page: int = 1, page_size: int = PAG
 
 @server.tool(annotations=READ)
 @guarded
-def dj_library_inspect(xml: str = "", page: int = 1, page_size: int = PAGE_SIZE) -> str:
-    """Library summary from one model: source, counts (tracks, folders, playlists, smart,
-    orphans, entries; complete), a sample of the top of the playlist tree (at most 30 nodes and
-    10 child names each; `tree_more` / `more_children` count the rest; the sample comes in pages,
-    `paging`: its `total` counts every top-level node, `listed` the ones in the sample), which
-    fields the source lacks, and notes. `xml` = a rekordbox collection XML inside the dj-library
-    folder or the repo; a bare name is looked up in exports/ (e.g.
-    "2026-10-20-collection.xml" -> exports/2026-10-20-collection.xml); empty = a read-only
-    snapshot of master.db (`snapshot_path` = the copy that was read). Writes nothing. The whole
-    tree: dj_status."""
+def dj_library_inspect(page: int = 1, page_size: int = PAGE_SIZE) -> str:
+    """Library summary, read from a read-only snapshot of rekordbox's master.db (`snapshot_path` =
+    the copy that was read): counts (tracks, folders, playlists, smart, orphans, entries;
+    complete), a sample of the top of the playlist tree (at most 30 nodes and 10 child names each;
+    `tree_more` / `more_children` count the rest; the sample comes in pages, `paging`: its `total`
+    counts every top-level node, `listed` the ones in the sample), and notes. Works while rekordbox
+    runs. Writes nothing. The whole tree: dj_status."""
     page, page_size = page_args(page, page_size)
-    positionals = (library_file(xml, (".xml",), folder=EXPORTS),) if xml else ()
-    return run_paged(["library", "inspect"], positionals, keys=("tree",), page=page, page_size=page_size,
+    return run_paged(["library", "inspect"], keys=("tree",), page=page, page_size=page_size,
                      more={"tree": "tree_more"})
 
 
-ANALYZE_SOURCES = ("xml", "db")
-
-
-@server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
-@guarded
-def dj_library_analyze(source: str = "xml") -> str:
-    """Analyse the DJ's library in one go and render the HTML report: reads the library once
-    (source "xml" = the latest export in the dj-library folder; "db" = a read-only snapshot of
-    master.db), then writes profile/ (incl. identity.json, the six axes and the archetype, and
-    sleeve.svg), structure/ (incl. proposals.yaml with 2-3 restructure proposals), taste/ and
+@server.tool(annotations=LIBRARY_TEXT)
+def dj_library_analyze() -> str:
+    """Analyse the DJ's library in one go and render the HTML report: reads the library once from
+    a read-only snapshot of rekordbox's master.db (works while rekordbox runs), then writes
+    profile/ (incl. identity.json, the six axes and the archetype, and sleeve.svg), structure/
+    (incl. proposals.yaml with 2-3 restructure proposals), taste/ and
     reports/<date>-library.html, plus log.md lines. Identity runs after taste, before the
     report. Text files in the configured dj-library folder only; rekordbox, Spotify and audio
     files are never written.
     Returns counts first, the report path, the proposals (trigger, cost) and any failed step.
     It always rebuilds structure/proposals.yaml (an edited copy is kept first): after renaming a
-    proposal, render with the dj-report script instead. exit_code 2 = refused, see `hint`."""
-    if source not in ANALYZE_SOURCES:
-        raise ToolInputError(f"source must be one of {', '.join(ANALYZE_SOURCES)}, got {source!r}.")
-    return run_dj(["library", "analyze", "--source", source])
+    proposal, or after writing profile/habits.md and profile/identity.md, render with
+    dj_library_report instead. exit_code 2 = refused, see `hint`."""
+    return run_dj(["library", "analyze"])
+
+
+@server.tool(annotations=LIBRARY_TEXT)
+def dj_library_report() -> str:
+    """Render the HTML report again from the files in the dj-library folder, without reading
+    rekordbox and without touching structure/proposals.yaml: call it after writing
+    profile/habits.md and profile/identity.md (the liner notes), or after renaming a proposal.
+    Writes reports/<date>-library.html (a second one that day is -2) and one log.md line; returns
+    counts first, the `report` path and the log line. Never writes to rekordbox, Spotify or audio
+    files. exit_code 2 = the dj-library folder is not set up, see `hint`."""
+    return run_dj(["library", "report", "--render-only"])
 
 
 @server.tool(annotations=WRITE)
@@ -789,35 +776,33 @@ def dj_tree_apply(preview_id: str, file: str = "tree.yaml") -> str:
 
 @server.tool(annotations=WRITE)
 @guarded
-def dj_apply_write(plan_file: str, preview_id: str, mode: str = "") -> str:
+def dj_apply_write(plan_file: str, preview_id: str) -> str:
     """WRITES to rekordbox master.db: appends the `decision: yes` tracks of a plan to its crate.
     Backup first, one commit, exit_code 2 while rekordbox is open. It then updates the match cache
     and the declined list and writes a report (reports/apply/ in a library folder).
-    mode="xml" writes proposals/<crate>-adds-<date>.xml for the DJ to import instead.
     Call dj_apply_preview, show the DJ the
     result, ask, and only after their explicit yes pass its preview_id (same `plan_file`; a bare
     name is looked up in plans/: "2026-10-20-house.plan.json" ->
     plans/2026-10-20-house.plan.json). Appends one log.md line itself. A long list comes back as its
     first page; `paging.<list>.rest_in` names the report with all of it."""
-    flags = add_mode_flags(mode)
+    db_write_on()
     pid = preview_id_arg(preview_id, "dj_apply_preview")
     plan = library_file(plan_file, (".json",), folder=PLANS)
-    return run_paged(["apply", "--apply", *flags, "--preview-id", pid], (plan,), **WRITTEN_LISTS)
+    return run_paged(["apply", "--apply", "--preview-id", pid], (plan,), **WRITTEN_LISTS)
 
 
 @server.tool(annotations=WRITE)
 @guarded
-def dj_copy_apply(source: str, target: str, preview_id: str, mode: str = "") -> str:
+def dj_copy_apply(source: str, target: str, preview_id: str) -> str:
     """WRITES to rekordbox master.db: appends the tracks of playlist `source` that `target` lacks
     to `target`. Backup first, one commit, exit_code 2 while rekordbox is open.
-    mode="xml" writes proposals/<target>-adds-<date>.xml for the DJ to import instead.
     Call dj_copy_preview, show the DJ the result, ask, and only after their explicit yes pass its
     preview_id (same source and target). Appends one log.md line
     itself. A long list comes back as its first page; `paging.<list>.rest_in` names the report with
     all of it."""
-    flags = add_mode_flags(mode)
+    db_write_on()
     pid = preview_id_arg(preview_id, "dj_copy_preview")
-    return run_paged(["copy", "--apply", *flags, "--preview-id", pid], (source, target), **WRITTEN_LISTS)
+    return run_paged(["copy", "--apply", "--preview-id", pid], (source, target), **WRITTEN_LISTS)
 
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
@@ -853,7 +838,7 @@ def dj_push_apply(playlist: str, preview_id: str, name: str = "", include_ambigu
     return run_paged(options, (playlist,), **WRITTEN_LISTS)
 
 
-# -- dj-build: a proposal -> rekordbox XML the DJ imports (R-501..R-505) -------------------
+# -- dj-build: a proposal -> folders and playlists in rekordbox (R-501..R-505) -------------
 
 
 def _proposal(proposal: str) -> str:
@@ -874,8 +859,8 @@ def dj_structure_preview(proposal: str, page: int = 1, page_size: int = PAGE_SIZ
     result, say "Close rekordbox first.", ask "Write it into rekordbox?" (Yes / Change / Stop) and
     after that yes call dj_structure_write. `into_rekordbox` null: `into_rekordbox_off` says why it
     cannot be written. A `blocked` result has no
-    preview_id (a conflict, nothing to create, current-tree.yaml older than the export, or this
-    exact build already written)."""
+    preview_id (a conflict, nothing to create, or current-tree.yaml older than rekordbox's tree:
+    run dj_library_analyze again)."""
     page, page_size = page_args(page, page_size)
     root = str(library_root())
     options = ["library", "build", "--library", root, "--rows-limit", "0"]  # every row: the pages bound it
@@ -885,21 +870,20 @@ def dj_structure_preview(proposal: str, page: int = 1, page_size: int = PAGE_SIZ
 
 @server.tool(annotations=WRITE)
 @guarded
-def dj_structure_write(proposal: str, preview_id: str, mode: str = "") -> str:
+def dj_structure_write(proposal: str, preview_id: str) -> str:
     """WRITES the previewed structure straight into rekordbox's master.db: rekordbox closed, a
     verified backup first, one commit; then one log.md line and the chosen structure in library.yaml.
-    mode="xml" writes proposals/<slug>.xml for the DJ to import instead. Needs the
-    preview_id from dj_structure_preview and the DJ's explicit yes to that preview. Refuses without
+    Needs the preview_id from dj_structure_preview and the DJ's explicit yes to that preview. Refuses without
     one, after any change since the preview, or when the id was already used (one preview, one
     write). exit_code 2: rekordbox is open. `warnings`: it is written; tell the DJ each one."""
-    flags = add_mode_flags(mode)  # the off switch first, then the id
+    db_write_on()  # the off switch first, then the id
     pid = preview_id_arg(preview_id, "dj_structure_preview")
     root = str(library_root())
-    options = ["library", "build", "--library", root, "--apply", *flags, "--preview-id", pid]
+    options = ["library", "build", "--library", root, "--apply", "--preview-id", pid]
     return run_dj(options, (_proposal(proposal),))
 
 
-# -- Crate me: a crate from the DJ's own library -> rekordbox XML (R-601..R-604, R-702) ------
+# -- Crate me: a crate from the DJ's own library -> playlists in rekordbox (R-601..R-604, R-702) --
 
 CRATE_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -925,7 +909,7 @@ def dj_crate_preview(spec: str, page: int = 1, page_size: int = PAGE_SIZE) -> st
     and master.db untouched. Show the DJ the result, say "Close rekordbox first.", ask "Write it into
     rekordbox?" and after that yes call dj_crate_write. `into_rekordbox` null: `into_rekordbox_off`
     says why it cannot be written. A `blocked` result has no preview_id (a playlist of that name exists in the
-    DJ's Crates folder, or this exact crate was written already)."""
+    DJ's Crates folder)."""
     page, page_size = page_args(page, page_size)
     root = str(library_root())
     options = ["library", "crate", "--library", root, "--picks-limit", "0"]  # every pick: the pages bound it
@@ -935,15 +919,14 @@ def dj_crate_preview(spec: str, page: int = 1, page_size: int = PAGE_SIZE) -> st
 
 @server.tool(annotations=WRITE)
 @guarded
-def dj_crate_write(spec: str, preview_id: str, mode: str = "") -> str:
+def dj_crate_write(spec: str, preview_id: str) -> str:
     """WRITES the previewed crate (folder Crates with the playlist and its spares) straight into
     rekordbox's master.db: rekordbox closed, a verified backup first, one commit; then crates/<slug>.md
-    (the crate record) and one log.md line. mode="xml" writes proposals/crate-<slug>.xml for the DJ
-    to import instead. Needs the preview_id from dj_crate_preview and the DJ's
+    (the crate record) and one log.md line. Needs the preview_id from dj_crate_preview and the DJ's
     explicit yes to that preview. Refuses without one, after any change since the preview, or when
-    the id was already used. exit_code 2: rekordbox is open. Never overwrites a file (a taken name
-    becomes -2). `warnings`: it is written; tell the DJ each one."""
-    flags = add_mode_flags(mode)  # the off switch first, then the id
+    the id was already used. exit_code 2: rekordbox is open. The crate record never overwrites a
+    file (a taken name becomes -2). `warnings`: it is written; tell the DJ each one."""
+    db_write_on()  # the off switch first, then the id
     pid = (preview_id or "").strip() if isinstance(preview_id, str) else ""
     if not pid:
         raise ToolInputError(
@@ -953,7 +936,7 @@ def dj_crate_write(spec: str, preview_id: str, mode: str = "") -> str:
     if not valid_id(pid):
         raise ToolInputError(f"{preview_id!r} is not a preview id (12 hex digits from dj_crate_preview).")
     root = str(library_root())
-    options = ["library", "crate", "--library", root, "--apply", *flags, "--preview-id", pid]
+    options = ["library", "crate", "--library", root, "--apply", "--preview-id", pid]
     return run_dj(options, (_crate_spec(spec),))
 
 

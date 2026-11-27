@@ -1169,7 +1169,7 @@ def page(
     name = str((identity or {}).get("handle") or handle or identity_mod.DEFAULT_HANDLE)
     source = _source(profile)
     missing = [FIELD_NAMES.get(f, f) for f in (profile or {}).get("not_in_source") or []]
-    read = f"read from {source}" if source else "read from your export"
+    read = f"read from {source}" if source else "read from rekordbox"
     measured = [name for name, data in ((PROFILE_FACTS, profile), (IDENTITY_JSON, identity),
                                         (STRUCTURE_FACTS, structure), (GRAPH_JSON, graph), (TASTE_FACTS, taste),
                                         (proposals_mod.PROPOSALS_YAML, entries)) if data]  # fmt: skip
@@ -1276,13 +1276,13 @@ def run_render(folder: LibraryFolder | str | Path, *, today: date | None = None)
 
 
 def run_report(
-    folder: LibraryFolder | str | Path, *, xml: str | Path | None = None, today: date | None = None
+    folder: LibraryFolder | str | Path, *, source: str | None = None, today: date | None = None
 ) -> dict[str, Any]:
-    """Proposals from the latest export (or `xml`) into structure/proposals.yaml, then the HTML
-    report, then one log.md line. Returns counts first, the report, the proposals, the files
+    """Proposals from the library (a master.db snapshot) into structure/proposals.yaml, then the
+    HTML report, then one log.md line. Returns counts first, the report, the proposals, the files
     written and kept (a copy of a proposals.yaml the DJ or Claude edited)."""
     folder = library_folder(folder)
-    lib, source = proposals_mod.read_export(folder, xml)
+    lib, source = proposals_mod.read_library(folder, source)
     found = proposals_mod.candidates(lib)
     paths = proposals_mod.write_proposals(folder, found, today, source=source)
     report = render(folder, today=today)

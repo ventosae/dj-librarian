@@ -1,7 +1,7 @@
 """dj.analysis.run_all (W-17): the one-shot analysis, `dj library analyze` and the MCP tool
-dj_library_analyze. Reads the library once (XML export or a master.db snapshot), writes every
-analysis file and the report inside the library folder, nothing anywhere else, and opens no
-write session on master.db (R-104, R-202, R-341, R-401 ... R-406)."""
+dj_library_analyze. Reads the library once (a master.db snapshot; the export fixture here is
+test support), writes every analysis file and the report inside the library folder, nothing
+anywhere else, and opens no write session on master.db (R-104, R-202, R-341, R-401 ... R-406)."""
 
 from __future__ import annotations
 
@@ -16,10 +16,12 @@ import pytest
 import xml_fixtures as fx
 from typer.testing import CliRunner
 
-from dj import cli, libfolder, safety
+from dj import build_library, cli, libfolder, safety
 from dj import mcp_server as m
 from dj.analysis import common, run_all, taste
 from dj.analysis import proposals as P
+
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
 
 DAY = date(2026, 10, 20)
 EXPORT = "exports/2026-10-20-collection.xml"
@@ -81,8 +83,8 @@ def test_analyze_xml_writes_every_file_and_only_inside_the_library(lib_dir, tmp_
     monkeypatch.setattr(safety, "open_db", refuse)
     monkeypatch.setattr(safety, "backup", refuse)
     reads = []
-    real_read = run_all.read_xml
-    monkeypatch.setattr(run_all, "read_xml", lambda path: reads.append(path) or real_read(path))
+    real_read = run_all.read_for_build
+    monkeypatch.setattr(run_all, "read_for_build", lambda *a: reads.append(a) or real_read(*a))
     before = snapshot(tmp_path)
     result = run_all.analyze(lib_dir, today=DAY)
     after = snapshot(tmp_path)
@@ -95,8 +97,7 @@ def test_analyze_xml_writes_every_file_and_only_inside_the_library(lib_dir, tmp_
     assert result["written"] == WRITTEN and result["kept"] == [] and result["failed"] == []
     assert [line.split(" ", 3)[2] for line in result["log"]] == ["profile", "structure", "taste", "identity", "report"]
     changed = {p for p in after if before.get(p) != after[p]}
-    assert changed == {f"dj-library/{rel}" for rel in WRITTEN} | {"dj-library/log.md", "dj-library/library.yaml"}
-    assert libfolder.load_meta(lib_dir)["source"] == "xml"  # W-36: dj-build reads what this analysis read
+    assert changed == {f"dj-library/{rel}" for rel in WRITTEN} | {"dj-library/log.md"}
     assert set(before) <= set(after)  # nothing removed; the export and the DJ's XML untouched
 
 
@@ -130,22 +131,15 @@ def test_a_step_that_fails_is_named_and_the_report_still_renders(lib_dir, monkey
     assert done.exit_code == 1 and "FAILED taste: disk full" in done.output
 
 
-def test_bad_arguments(lib_dir):
-    with pytest.raises(ValueError, match="source"):
-        run_all.analyze(lib_dir, source="cloud", today=DAY)
-    with pytest.raises(ValueError, match="--xml goes with --source xml"):
-        run_all.analyze(lib_dir, source="db", xml=EXPORT, today=DAY)
-
-
 def test_a_folder_that_is_not_a_library_is_refused(tmp_path):
     plain = tmp_path / "plain"
     plain.mkdir()
     with pytest.raises(common.NotALibraryFolder):
-        run_all.analyze(plain, xml=fx.SAMPLE_XML, today=DAY)
+        run_all.analyze(plain, today=DAY)
     assert list(plain.iterdir()) == []
 
 
-# -- from master.db (Door 2) ------------------------------------------------------------------------
+# -- from master.db: what every command does --------------------------------------------------------
 
 
 def test_analyze_db_reads_one_snapshot_and_db_data_reaches_every_file(lib_dir, live, sessions, tmp_path, monkeypatch):
@@ -185,13 +179,14 @@ def test_analyze_db_reads_one_snapshot_and_db_data_reaches_every_file(lib_dir, l
         assert live.parent.as_posix() not in text and str(live.parent) not in text, rel
 
 
-def test_cli_analyze_db(lib_dir, live, sessions):
-    done = runner.invoke(cli.app, ["library", "analyze", "--library", str(lib_dir), "--source", "db",
-                                   "--today", "2026-10-20", "--json"])  # fmt: skip
+def test_cli_analyze_db(lib_dir, live, monkeypatch):
+    monkeypatch.setattr(build_library, "DEFAULT_SOURCE", "db")  # no export_reads: the CLI as the DJ's engine runs it
+    done = runner.invoke(cli.app, ["library", "analyze", "--library", str(lib_dir), "--today", "2026-10-20", "--json"])
     assert done.exit_code == 0, done.output
     data = json.loads(done.output[done.output.index("{"):])
     assert data["read"] == "master.db" and data["counts"]["playlists"] == 9
-    assert all(write is False for write, _path in sessions)
+    for flag in ("--source", "--xml"):  # no way to point the CLI at an export
+        assert runner.invoke(cli.app, ["library", "analyze", "--library", str(lib_dir), flag, "x"]).exit_code == 2
 
 
 # -- CLI and MCP --------------------------------------------------------------------------------------
@@ -214,8 +209,6 @@ def test_cli_analyze_refuses_and_errors(lib_dir, tmp_path):
     plain.mkdir()
     done = runner.invoke(cli.app, ["library", "analyze", "--library", str(plain)])
     assert done.exit_code == 2 and "REFUSED" in done.output and list(plain.iterdir()) == []
-    done = runner.invoke(cli.app, ["library", "analyze", "--library", str(lib_dir), "--source", "cloud"])
-    assert done.exit_code == 1 and "ERROR source must be one of xml, db" in done.output
 
 
 @pytest.fixture
@@ -232,17 +225,10 @@ def calls(monkeypatch):
 
 def test_mcp_tool_runs_one_fixed_command(calls):
     assert json.loads(m.dj_library_analyze())["ok"] is True
-    assert calls[-1][0][3:] == ["library", "analyze", "--source", "xml", "--json"]
-    m.dj_library_analyze("db")
-    assert calls[-1][0][3:] == ["library", "analyze", "--source", "db", "--json"]
+    assert calls[-1][0][3:] == ["library", "analyze", "--json"]
+    assert json.loads(m.dj_library_report())["ok"] is True
+    assert calls[-1][0][3:] == ["library", "report", "--render-only", "--json"]
     assert "shell" not in calls[-1][1]
-
-
-def test_mcp_tool_refuses_another_source_without_running(calls):
-    for bad in ("cloud", "--apply", "xml; rm"):
-        answer = json.loads(m.dj_library_analyze(bad))
-        assert answer["ok"] is False and "source must be one of" in answer["error"]
-    assert calls == []
 
 
 def test_mcp_tool_on_a_folder_not_set_up_runs_the_real_cli_and_never_blames_rekordbox(tmp_path, monkeypatch):
@@ -261,18 +247,8 @@ def test_mcp_tool_on_a_folder_not_set_up_runs_the_real_cli_and_never_blames_reko
 def test_mcp_tool_writes_text_files_only():
     import asyncio
 
-    tool = {t.name: t for t in asyncio.run(m.server.list_tools())}["dj_library_analyze"]
-    assert tool.annotations.read_only_hint is False and tool.annotations.destructive_hint is False
-    assert "source" in tool.input_schema["properties"]
-
-
-def test_analyze_db_writes_the_same_files_as_the_xml_and_records_its_source(lib_dir, live, tmp_path):
-    """W-36 (D-30): the engine path (no export read) gives the same file set as the XML path, and
-    library.yaml says which read it was, so dj-build reads the same."""
-    other = tmp_path / "xml" / "dj-library"
-    libfolder.scaffold(other, device="windows", today=DAY)
-    libfolder.import_export(other, fx.write_xml(tmp_path / "xml" / "collection.xml"), today=DAY)
-    from_xml = run_all.analyze(other, today=DAY)
-    from_db = run_all.analyze(lib_dir, source="db", today=DAY)
-    assert from_db["failed"] == [] and sorted(from_db["written"]) == sorted(from_xml["written"])
-    assert libfolder.load_meta(lib_dir)["source"] == "db" and libfolder.load_meta(other)["source"] == "xml"
+    tools = {t.name: t for t in asyncio.run(m.server.list_tools())}
+    for name in ("dj_library_analyze", "dj_library_report"):
+        tool = tools[name]
+        assert tool.annotations.read_only_hint is False and tool.annotations.destructive_hint is False
+        assert tool.input_schema.get("properties", {}) == {}  # no argument: no source, no file

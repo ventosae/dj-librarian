@@ -27,6 +27,8 @@ from dj.analysis import proposals as P
 from dj.analysis import run_all
 from dj.treeschema import TreeNode
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 DAY = date(2026, 10, 20)
 # (letter, BPM centre, tracks, genre, playlist), slowest first. Sizes 3 5 9 4 7 12: the four
 # biggest are b, c, e and f, so f (the fastest, slot 6 by the old rule) is in colour and d (in the

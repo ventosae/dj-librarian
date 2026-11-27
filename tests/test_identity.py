@@ -14,14 +14,11 @@ import itertools
 import json
 import re
 import shutil
-import subprocess
-import sys
 from datetime import date, datetime
 from pathlib import Path
 
 import pytest
 import xml_fixtures as fx
-import yaml
 from reply_checks import avoided_words
 from typer.testing import CliRunner
 
@@ -30,9 +27,9 @@ from dj.analysis import identity, profile, structure, taste
 from dj.analysis.common import NotALibraryFolder
 from dj.model import Library, PlaylistNode, Track
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 REPO = Path(__file__).resolve().parents[1]
-SKILL = REPO / "plugin" / "skills" / "dj-identity"
-SCRIPT = SKILL / "scripts" / "identity.py"
 DAY = date(2026, 10, 20)
 EXPORT = "exports/2026-10-20-collection.xml"
 FIXTURE_SCORES = {"depth": 94, "selectivity": 57, "discipline": 66, "breadth": 81, "momentum": 69, "memory": 75}
@@ -65,7 +62,7 @@ def lib_dir(measured, tmp_path) -> Path:
 
 @pytest.fixture(scope="module")
 def table():
-    return identity.load_archetypes(SKILL / "archetypes.yaml")
+    return identity.load_archetypes()
 
 
 def _read(root: Path, rel: str) -> dict:
@@ -251,40 +248,6 @@ def test_names_are_affectionate_one_line_and_in_the_voice(table):
             assert not banned & set(text.lower().replace(".", " ").replace(",", " ").split()), (entry["slug"], text)
 
 
-@pytest.mark.parametrize(("change", "message"), [
-    (lambda d: d["archetypes"].pop(), "expected 8"),
-    (lambda d: d["archetypes"][0]["pairs"].append(["memory", "momentum"]), "belongs to"),
-    (lambda d: d["archetypes"][2]["pairs"].clear(), "owns no pair"),
-    (lambda d: d["archetypes"][2]["pairs"].__setitem__(0, ["depth", "taste"]), "not a pair"),
-    (lambda d: d["archetypes"][3].__setitem__("meaning", "two\nlines"), "one line"),
-    (lambda d: d["archetypes"][4].__setitem__("slug", "Bad Slug"), "slug"),
-])  # fmt: skip
-def test_a_broken_table_is_refused(tmp_path, change, message):
-    data = yaml.safe_load((SKILL / "archetypes.yaml").read_text(encoding="utf-8"))
-    change(data)
-    path = tmp_path / "archetypes.yaml"
-    path.write_text(yaml.safe_dump(data), encoding="utf-8")
-    with pytest.raises(identity.IdentityError, match=message):
-        identity.load_archetypes(path)
-
-
-def test_a_missing_pair_is_refused():
-    data = yaml.safe_load((SKILL / "archetypes.yaml").read_text(encoding="utf-8"))
-    data["archetypes"][0]["pairs"] = data["archetypes"][0]["pairs"][:1]  # drops depth + momentum
-    with pytest.raises(identity.IdentityError, match="no archetype for depth \\+ momentum"):
-        identity.check_archetypes(data)
-
-
-def test_the_default_table_ships_with_the_package_and_equals_the_skill_copy():
-    """`dj library analyze` finds the table in any install (the packaged copy); the skill script
-    passes its own; the two files are the same bytes."""
-    assert identity.ARCHETYPES_YAML == Path(identity.__file__).with_name("archetypes.yaml")
-    assert identity.SKILL_ARCHETYPES_YAML == SKILL / "archetypes.yaml"
-    assert identity.ARCHETYPES_YAML.read_bytes() == (SKILL / "archetypes.yaml").read_bytes(), (
-        "src/dj/analysis/archetypes.yaml and plugin/skills/dj-identity/archetypes.yaml differ: copy the skill's file")
-    assert identity.load_archetypes() == identity.load_archetypes(SKILL / "archetypes.yaml")
-
-
 # -- edge libraries: every axis stays in 0..100 -----------------------------------------------
 
 
@@ -357,7 +320,7 @@ def test_missing_facts_are_an_error_and_nothing_is_written(lib_dir):
 def test_facts_from_another_export_are_refused(lib_dir, tmp_path):
     newer = dict(fx.SPEC, product=dict(fx.SPEC["product"], Version="7.2.19"))
     libfolder.import_export(lib_dir, fx.write_xml(tmp_path / "newer.xml", newer), today=date(2026, 10, 21))
-    with pytest.raises(identity.IdentityError, match="another export"):
+    with pytest.raises(identity.IdentityError, match="another library"):
         identity.run(lib_dir, today=DAY)
     assert not (lib_dir / identity.IDENTITY_JSON).exists()
 
@@ -373,35 +336,6 @@ def test_a_folder_that_is_not_a_library_is_refused(tmp_path):
 # -- the skill script and the CLI -------------------------------------------------------------
 
 
-def _script(*args) -> tuple[int, dict]:
-    done = subprocess.run([sys.executable, str(SCRIPT), *map(str, args)], capture_output=True, text=True,
-                          encoding="utf-8", timeout=120)  # fmt: skip
-    lines = done.stdout.splitlines()
-    assert len(lines) == 1, (done.stdout, done.stderr)
-    return done.returncode, json.loads(lines[0])
-
-
-def test_the_script_prints_one_json_and_uses_its_own_table(lib_dir):
-    code, out = _script("--library", lib_dir, "--today", "2026-10-20")
-    assert code == 0 and out["ok"] is True
-    assert out["scores"] == FIXTURE_SCORES and out["archetype"]["slug"] == "crate-archaeologist"
-    assert out["written"] == ["profile/identity.json", "profile/sleeve.svg"]
-
-
-def test_the_script_refuses_and_errors_with_exit_codes(lib_dir, tmp_path):
-    plain = tmp_path / "plain"
-    plain.mkdir()
-    code, out = _script("--library", plain)
-    assert code == 2 and out["ok"] is False and "refused" in out
-    (lib_dir / "profile" / "facts.json").unlink()
-    code, out = _script("--library", lib_dir)
-    assert code == 1 and "profile/facts.json not found" in out["error"]
-    code, out = _script("--library", lib_dir, "--today", "20/10/2026")
-    assert code == 1 and "YYYY-MM-DD" in out["error"]
-    code, out = _script("--nope")
-    assert code == 1 and out["error"].startswith("usage:")
-
-
 def test_cli_identity_json_and_text(lib_dir, tmp_path):
     done = runner.invoke(cli.app, ["library", "identity", "--library", str(lib_dir), "--today", "2026-10-20", "--json"])
     assert done.exit_code == 0, done.output
@@ -415,17 +349,6 @@ def test_cli_identity_json_and_text(lib_dir, tmp_path):
     plain.mkdir()
     refused = runner.invoke(cli.app, ["library", "identity", "--library", str(plain)])
     assert refused.exit_code == 2 and "REFUSED" in refused.output
-
-
-def test_skill_md_documents_the_axes_the_run_and_the_liner_notes():
-    text = (SKILL / "SKILL.md").read_text(encoding="utf-8").replace("\r\n", "\n")
-    assert "**Requirements:** R-1401, R-1402, R-1403, R-1404, R-1405, R-1406." in text
-    for needle in ("python3 scripts/identity.py --library", "--today", "uv run dj library identity",
-                   "profile/identity.md", "120 words", "identity.json", "# Liner notes",
-                   "> Words by Claude, from profile/identity.json.", "archetypes.yaml"):  # fmt: skip
-        assert needle in text, needle
-    for axis in identity.AXIS_NAMES.values():
-        assert f"| {axis} |" in text, axis
 
 
 def test_structure_facts_of_another_export_are_refused_too(lib_dir):

@@ -70,16 +70,14 @@ from fractions import Fraction
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Iterable
 
+from dj.build_library import read_for_build
 from dj.libfolder import (
     LibraryFolder,
     LibraryFolderError,
     append_log,
-    latest_export,
-    relative,
     write_text,
 )
 from dj.model import Library, LibraryError, PlaylistNode, Track, id_sort_key
-from dj.readers.xml import read_xml
 from dj.taste_files import NOW_LIMIT, AppendPlan, Entry, plan_entries, write_plan
 
 MODULE = "dj.analysis.taste"
@@ -837,28 +835,6 @@ def _back_up(folder: LibraryFolder, paths: list[Path], today: date) -> dict[str,
     return {"folder": folder.relative(target), "files": [path.name for path in old]}
 
 
-def _source_of(folder: LibraryFolder, path: Path) -> str:
-    """The export as a path relative to the folder; just its name when it lies outside."""
-    try:
-        return relative(folder.root, path)
-    except LibraryFolderError:
-        return path.name
-
-
-def _resolve_xml(root: Path, xml: str | Path) -> Path:
-    """A `--xml` argument as one absolute path. A relative path is looked up in the library
-    folder first, then in the current folder (as dj-start and the other analysis scripts do).
-    Not found in either -> LibraryFolderError."""
-    given = Path(xml).expanduser()
-    path = given
-    if not given.is_absolute():
-        in_library = root / given
-        path = in_library if in_library.is_file() else Path.cwd() / given
-    if not path.is_file():
-        raise LibraryFolderError(f"{given.as_posix()}: file not found in the library folder or the current folder.")
-    return path.resolve()
-
-
 def _log_counts(added: int, rebuild: bool, backup: dict[str, Any] | None) -> dict[str, int]:
     counts = {"lines added": added}
     if rebuild:
@@ -871,18 +847,17 @@ def _log_counts(added: int, rebuild: bool, backup: dict[str, Any] | None) -> dic
 def run(
     folder: LibraryFolder | str | Path,
     *,
-    xml: str | Path | None = None,
+    source: str | None = None,
     today: date | None = None,
     rebuild: bool = False,
 ) -> dict[str, Any]:
-    """Read the latest export (or `xml`), measure, append to taste/, log one line:
+    """Read the library (a master.db snapshot, `dj.build_library`), measure, append to taste/, log one line:
     `<date> <time> taste -> <n> lines added[, 4 files rebuilt, <k> old files kept in
     .cache/taste-rebuild-<date>]; taste` (R-904).
 
     Returns counts first (NFR-03), then the source, the written files, the added lines per
     file (the diff to show the DJ, R-332) and the rebuild backup. A folder without library.yaml
-    -> NotALibraryFolder. A relative `xml` is looked up in the library folder, then in the
-    current folder. A write that fails part way still logs what was written, then raises
+    -> NotALibraryFolder. A write that fails part way still logs what was written, then raises
     TasteWriteError.
     """
     folder = _as_folder(folder)
@@ -891,9 +866,7 @@ def run(
             f"{folder.root.name} is not a dj-library folder (no library.yaml). "
             "Set it up with dj-start first. Nothing was written."
         )
-    path = _resolve_xml(folder.root, xml) if xml else latest_export(folder.root)
-    source = _source_of(folder, path)
-    lib = read_xml(path)
+    lib, source = read_for_build(folder, source)
     data = facts(lib, today=today)
     try:
         result = write(folder, data, source=source, today=today, rebuild=rebuild)

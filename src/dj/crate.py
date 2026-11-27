@@ -1,15 +1,14 @@
 """Crate me: a crate for a night, picked from the DJ's own library (R-601..R-604, R-702).
 
-Door 1 core: stdlib + PyYAML only (contract section 0). Reads the latest export XML
-(`dj.readers.xml`), `taste/` and `crates/<slug>.spec.yaml`; never opens master.db, never imports
-pyrekordbox.
+Reads the library from a master.db snapshot (`dj.build_library`), `taste/` and
+`crates/<slug>.spec.yaml`. The one write is `dj.db_write.crate`: straight into master.db.
 
     spec = load_spec(folder.crates / "saturday.spec.yaml")
     result = select(lib, spec, taste_facts, vetoes)   # pure: same spec + same library, same crate
     p = preview(folder, "saturday")    # writes nothing but the gate record in .cache/previews/
     ... the DJ reads the preview and says yes ...
-    r = apply(folder, "saturday", p.preview_id)   # proposals/crate-saturday.xml, crates/saturday.md,
-                                                  # one log.md line
+    dj.db_write.crate(folder, "saturday", p.preview_id)   # into rekordbox, crates/saturday.md,
+                                                          # one log.md line
 
 The spec. Claude turns the DJ's brief into `crates/<slug>.spec.yaml` (R-602), only with the fields
 the brief supports::
@@ -23,7 +22,7 @@ the brief supports::
     exclude_genres: [Techno]
     keys: [8A, Am]                  # Camelot, classic or Open Key; neighbours on the wheel fit too
     anchors: ["9", "13"]            # track ids the crate is built around: always in
-    my_tags: [Vocal]                # scores only: the XML export carries no My Tags
+    my_tags: [Vocal]                # scores only: +10 per tag the track carries
     min_rating: 3                   # stars, 0-5
     curve: warmup                   # flat (default) | warmup | peak
 
@@ -77,21 +76,15 @@ Tessa Quorum - Open Plan in 3 playlists · 5 stars"); Claude may say it in its o
 with other numbers (R-601, R-302).
 
 Writing (R-603) is behind the gate (`dj.gate`, kind "crate", args `{"crate": slug}`): `preview`
-records the digest of the spec, the export and the crate (ids and reasons); `apply` computes it
-again and refuses (GateError, before any file is written) without a valid preview id or after
-any change. It writes `proposals/crate-<slug>.xml` (one folder "Crates" holding the playlist
-`<name>` with the picks in order and `<name> spares`, left out when no spares fit; create-only,
-`-2`, `-3`) and
-`crates/<slug>.md` (the crate record: the full picks and spares tables; create-only too), then
-one `log.md` line. When the DJ's tree (the latest export, and `structure/current-tree.yaml` when
-there is one) already has a top-level "Crates" folder, the XML uses its spelling and the import
-card says to drag the two playlists into it; a playlist of that name already in it blocks the
-crate (hard rule 5: rename it in the spec). The export cannot show a crate written after it, so
-the crate XMLs in `proposals/` newer than the export count too: one holding a playlist of that
-name blocks the crate the same way (the DJ may have imported it), and one holding a Crates folder
-while the tree has none makes the import card drag the two playlists into that folder, with a
-warning. Once the XML is written, a later failure (the MD file, marking the preview used, the
-log line) is a warning, not an error.
+records the digest of the spec, the library read and the crate (ids and reasons); the write
+(`dj.db_write.crate`, after `checked` here) computes it again and refuses (GateError, before
+anything is written) without a valid preview id or after any change. It writes one folder "Crates"
+holding the playlist `<name>` with the picks in order and `<name> spares` (left out when no spares
+fit) into master.db, then `crates/<slug>.md` (the crate record: the full picks and spares tables;
+create-only, `-2`, `-3`) and one `log.md` line. When the DJ's tree (rekordbox's, and
+`structure/current-tree.yaml` when there is one) already has a top-level "Crates" folder, the crate
+goes into it under its own spelling; a playlist of that name already in it blocks the crate (hard
+rule 5: rename it in the spec).
 """
 
 from __future__ import annotations
@@ -112,14 +105,11 @@ from dj import libfolder, treeschema
 from dj.analysis import taste as taste_analysis
 from dj.analysis.common import dup_key
 from dj.build_library import DB_READ, read_for_build
-from dj.build_structure import import_steps, product_version
-from dj.gate import Gate, GateError, preview_id_for, require_id
+from dj.gate import Gate, GateError, require_id
 from dj.libfolder import LibraryFolder, LibraryFolderError
 from dj.model import Library, LibraryError, Track, id_sort_key
-from dj.readers.xml import read_xml
 from dj.taste_files import Vetoes, feedback_scores, read_gig_feedback, read_vetoes
 from dj.treeschema import TreeSchemaError
-from dj.writers.rekordbox_xml import BuildError, build_lists_xml, numbered, write_xml
 
 __all__ = [
     "CrateError",
@@ -127,12 +117,11 @@ __all__ = [
     "CrateResult",
     "CrateSpec",
     "CrateSpecError",
-    "CrateWriteResult",
     "GateError",
     "NotEnoughTracks",
     "Pick",
-    "apply",
     "camelot",
+    "checked",
     "load_spec",
     "parse_spec",
     "preview",
@@ -931,7 +920,7 @@ def select(
             duplicates += 1
     if spec.my_tags and not any(t.my_tags for t in tracks):
         warnings.append(
-            "My Tags are not in the XML export: `my_tags` did not count (the engine reads them from master.db)."
+            "No track in the library carries a My Tag: `my_tags` did not count."
         )
 
     def pick(s: _Scored, spare: bool) -> Pick:
@@ -981,11 +970,11 @@ def _ordered(picks: list[Pick], curve: str) -> list[Pick]:
     return climb + list(reversed(easing))
 
 
-# -- the library folder: spec, export, taste, vetoes ---------------------------------------
+# -- the library folder: spec, library, taste, vetoes --------------------------------------
 
 
 def _library(folder: LibraryFolder, source: str | None = None) -> tuple[Library, str]:
-    """The latest export, or a master.db snapshot for `source` db (library.yaml's when None, W-38)."""
+    """The library the crate is picked from: a master.db snapshot (dj.build_library)."""
     try:
         return read_for_build(folder, source)
     except (LibraryFolderError, LibraryError, ValueError) as exc:
@@ -993,7 +982,7 @@ def _library(folder: LibraryFolder, source: str | None = None) -> tuple[Library,
 
 
 def load_taste(
-    folder: LibraryFolder | str | Path, lib: Library, export: str = "the export"
+    folder: LibraryFolder | str | Path, lib: Library, export: str = "the library"
 ) -> tuple[dict[str, Any], str, tuple[str, ...]]:
     """(taste facts for `select`, where they came from, warnings).
 
@@ -1049,12 +1038,12 @@ class _Top:
     name: str
     folder: bool
     children: tuple[str, ...]
-    where: str = ""  # "" = the latest export; else the file that lists it
+    where: str = ""  # "" = rekordbox's own tree; else the file that lists it
 
 
 def _tops(folder: LibraryFolder, lib: Library) -> tuple[list[_Top], tuple[str, ...]]:
-    """(the top level of the DJ's tree, warnings): the latest export's, then
-    `structure/current-tree.yaml`'s when dj-structure has written one (it can be newer)."""
+    """(the top level of the DJ's tree, warnings): rekordbox's own, then
+    `structure/current-tree.yaml`'s when the analysis has written one."""
     tops = [_Top(n.name, n.kind == "folder", tuple(c.name for c in n.children)) for n in lib.roots]
     path = folder.root / CURRENT_TREE
     if not path.is_file():
@@ -1062,7 +1051,7 @@ def _tops(folder: LibraryFolder, lib: Library) -> tuple[list[_Top], tuple[str, .
     try:
         doc = treeschema.load(path)
     except (TreeSchemaError, UnicodeDecodeError, OSError) as exc:
-        return tops, (f"{CURRENT_TREE} cannot be read ({_one_line(exc)}): only the export's tree was checked.",)
+        return tops, (f"{CURRENT_TREE} cannot be read ({_one_line(exc)}): only rekordbox's tree was checked.",)
     tops += [_Top(n.name, n.kind == "folder", tuple(c.name for c in n.children), CURRENT_TREE) for n in doc.nodes]
     return tops, ()
 
@@ -1071,21 +1060,19 @@ def _same(a: str, b: str) -> bool:
     return treeschema.norm(a) == treeschema.norm(b)
 
 
-def _placement(
-    tops: Sequence[_Top], names: Sequence[str], slug: str
-) -> tuple[str, list[dict[str, str]], str | None]:
-    """(the folder name the XML uses, where the DJ drags what, why the crate is blocked or None).
+def _placement(tops: Sequence[_Top], names: Sequence[str], slug: str) -> tuple[str, str | None]:
+    """(the Crates folder's name as the write uses it, why the crate is blocked or None).
 
-    A top-level folder "Crates" in the DJ's tree (the export, or structure/current-tree.yaml) is
+    A top-level folder "Crates" in the DJ's tree (rekordbox's, or structure/current-tree.yaml) is
     used as it is spelled; a playlist of the crate's name already in it blocks the crate (hard
     rule 5). `names`: the crate's playlists (`_playlist_names`)."""
     hits = [t for t in tops if _same(t.name, CRATES_FOLDER)]
     if not hits:
-        return CRATES_FOLDER, [{"node": CRATES_FOLDER, "into": "Playlists"}], None
+        return CRATES_FOLDER, None
     folders = [t for t in hits if t.folder]
     if not folders:
         listed = f" ({hits[0].where} lists it)" if hits[0].where else ""
-        return CRATES_FOLDER, [], (
+        return CRATES_FOLDER, (
             f"A playlist named {hits[0].name!r} sits at the top of your tree{listed}, where the crate's "
             f"{CRATES_FOLDER} folder goes. Rename it in rekordbox, then preview again."
         )
@@ -1095,92 +1082,11 @@ def _placement(
             taken = next((c for c in top.children if _same(c, want)), None)
             if taken is not None:
                 listed = f" ({top.where} lists it)" if top.where else ""
-                return spelled, [], (
+                return spelled, (
                     f"{spelled}/{taken} exists in rekordbox already{listed}. Change `name:` in "
                     f"crates/{slug}{SPEC_SUFFIX}, then preview again."
                 )
-    return spelled, [{"node": f"{spelled}/{n}", "into": spelled} for n in names], None
-
-
-@dataclass(frozen=True)
-class _Written:
-    """A crate XML written since the latest export: the DJ may have imported it already."""
-
-    file: str  # relative to the library folder
-    when: str  # local 'YYYY-MM-DD HH:MM' (the file's time)
-    folder: str  # its Crates folder, as spelled
-    playlists: tuple[str, ...]
-
-
-def _own_file(folder: LibraryFolder, slug: str, digest: str) -> str | None:
-    """The file this exact crate was written to already (its gate record is used), or None."""
-    try:
-        record = Gate(folder.cache).load(preview_id_for(KIND, {"crate": slug}, digest))
-    except GateError:
-        return None
-    return record.written if record.used else None
-
-
-def _written_since(folder: LibraryFolder, export: str, skip: str | None) -> list[_Written]:
-    """The crate XMLs in proposals/ written since the latest export, oldest first. Both times are
-    file times (one clock). `skip`: the file this exact crate went to (the preview says
-    "Already written" for it). A file that does not read as a rekordbox XML is not a crate."""
-    try:
-        since = (folder.root / export).stat().st_mtime_ns
-    except OSError:
-        return []
-    found: list[tuple[int, _Written]] = []
-    for path in sorted(folder.proposals.glob("crate-*.xml")):
-        rel = folder.relative(path)
-        if rel == skip:
-            continue
-        try:
-            stamp = path.stat().st_mtime_ns
-            if stamp < since:
-                continue
-            roots = read_xml(path).roots
-        except (OSError, LibraryError):
-            continue
-        when = datetime.fromtimestamp(stamp / 1e9).strftime("%Y-%m-%d %H:%M")
-        for node in roots:
-            if node.kind == "folder" and _same(node.name, CRATES_FOLDER):
-                found.append((stamp, _Written(rel, when, node.name, tuple(c.name for c in node.children))))
-    return [w for _stamp, w in sorted(found, key=lambda x: (x[0], x[1].file))]
-
-
-def _since_export(
-    written: Sequence[_Written],
-    tops: Sequence[_Top],
-    folder_name: str,
-    moves: list[dict[str, str]],
-    names: Sequence[str],
-    slug: str,
-) -> tuple[list[dict[str, str]], str | None, tuple[str, ...]]:
-    """(moves, why blocked or None, warnings) once the crates written since the latest export
-    count: the export cannot show them, but the DJ may have imported them (hard rule 5). A
-    playlist of the crate's name in one blocks the crate, as one in rekordbox does; a Crates
-    folder in one, while the tree has none, makes the import card drag the two playlists into
-    that folder, with a warning for the case it was not imported."""
-    for w in written:
-        for want in names:
-            taken = next((p for p in w.playlists if _same(p, want)), None)
-            if taken is not None:
-                return moves, (
-                    f"{w.folder}/{taken} is in {w.file}, written {w.when}, after your latest export: if you "
-                    f"imported it, rekordbox has that playlist. Change `name:` in crates/{slug}{SPEC_SUFFIX}, "
-                    "or, if you did not import it, export the collection again; then preview again."
-                ), ()
-    if not written or any(t.folder and _same(t.name, CRATES_FOLDER) for t in tops):
-        return moves, None, ()
-    last = written[-1]
-    into = [{"node": f"{folder_name}/{n}", "into": last.folder} for n in names]
-    lists = "the two playlists" if len(names) == 2 else "the playlist"
-    warning = (
-        f"{last.file} (written {last.when}, after your latest export) holds a {last.folder} folder too: "
-        f"if you imported it, drag {lists} into that folder, as the import card says; if not, "
-        f"drag the whole {folder_name} folder into Playlists."
-    )
-    return into, None, (warning,)
+    return spelled, None
 
 
 @dataclass(frozen=True)
@@ -1192,13 +1098,11 @@ class _State:
     export: str
     taste: str
     folder_name: str
-    moves: tuple[dict[str, str], ...]
     blocked: str | None
     digest: str
     warnings: tuple[str, ...]
     lib: Library
     playlists: tuple[str, ...] = ()  # the playlists in the Crates folder: the picks, the spares if any
-    placement_warnings: tuple[str, ...] = ()  # the import card needs them too (a crate since the export)
 
 
 def _digest(slug: str, spec: CrateSpec, export: str, folder_name: str, result: CrateResult) -> str:
@@ -1223,12 +1127,8 @@ def _state(folder: LibraryFolder, ref: str, source: str | None = None) -> _State
     result = select(lib, spec, taste, _vetoes(folder), _feedback(folder, lib))
     names = _playlist_names(spec.name, result)
     tops, tree_warnings = _tops(folder, lib)
-    folder_name, moves, blocked = _placement(tops, names, slug)
+    folder_name, blocked = _placement(tops, names, slug)
     digest = _digest(slug, spec, export, folder_name, result)
-    since_warnings: tuple[str, ...] = ()
-    if blocked is None:
-        written = _written_since(folder, export, _own_file(folder, slug, digest))
-        moves, blocked, since_warnings = _since_export(written, tops, folder_name, moves, names, slug)
     return _State(
         slug=slug,
         spec=spec,
@@ -1237,13 +1137,11 @@ def _state(folder: LibraryFolder, ref: str, source: str | None = None) -> _State
         export=export,
         taste=taste_source,
         folder_name=folder_name,
-        moves=tuple(moves),
         blocked=blocked,
         digest=digest,
-        warnings=tuple(taste_warnings) + result.warnings + tree_warnings + since_warnings,
+        warnings=tuple(taste_warnings) + result.warnings + tree_warnings,
         lib=lib,
         playlists=names,
-        placement_warnings=since_warnings,
     )
 
 
@@ -1260,7 +1158,7 @@ class CratePreview:
     slug: str = ""
     name: str = ""
     spec_file: str = ""
-    export: str = ""
+    export: str = ""  # the read the tracks come from: "master.db"
     taste: str = ""
     curve: str = "flat"
     playlists: tuple[str, ...] = ()
@@ -1292,15 +1190,6 @@ class CratePreview:
         }
 
 
-def _local(stamp: str) -> str:
-    """A stored ISO time as local 'YYYY-MM-DD HH:MM' (the text as it is if unreadable)."""
-    try:
-        moment = datetime.fromisoformat(stamp)
-    except (TypeError, ValueError):
-        return str(stamp)
-    return (moment.astimezone() if moment.tzinfo else moment).strftime("%Y-%m-%d %H:%M")
-
-
 def preview(
     folder: LibraryFolder | str | Path,
     spec_ref: str,
@@ -1310,8 +1199,8 @@ def preview(
     source: str | None = None,
 ) -> CratePreview:
     """The crate the spec gives, and a preview id for the gate. Writes nothing but the gate
-    record in `.cache/previews/` (no XML, no MD). `today` is accepted for the shared interface
-    (the files carry their date at `apply`); `now` dates the gate record (tests)."""
+    record in `.cache/previews/` (no crates/*.md). `today` is accepted for the shared interface
+    (the crate record carries its date at the write); `now` dates the gate record (tests)."""
     del today
     folder = _folder(folder)
     state = _state(folder, spec_ref, source)
@@ -1319,16 +1208,8 @@ def preview(
     if blocked is None:
         gate = Gate(folder.cache)
         preview_id = gate.record(KIND, {"crate": state.slug}, state.digest, now=now)
-        if gate.load(preview_id).written == DB_READ:  # written into rekordbox, gone from its tree since (W-38)
+        if gate.load(preview_id).used:  # written before, gone from rekordbox's tree since: a fresh id (W-38)
             preview_id = gate.record(KIND, {"crate": state.slug}, state.digest, now=now, rearm=True)
-        record = gate.load(preview_id)
-        if record.used:
-            blocked = (
-                f"Already written on {_local(record.used)}: {record.written or 'an XML in proposals/'}. "
-                f"Import that file; it holds this exact crate. For another crate, change "
-                f"{state.spec_file} and preview again."
-            )
-            preview_id = None
     name = state.spec.name
     return CratePreview(
         picks=state.result.picks,
@@ -1349,38 +1230,10 @@ def preview(
     )
 
 
-# -- apply (R-603) -------------------------------------------------------------------------
+# -- what the write checks first, and the crate record (R-603) -------------------------------
 
 
-@dataclass(frozen=True)
-class CrateWriteResult:
-    xml_path: Path
-    md_path: Path | None  # None when the MD file could not be written (see warnings)
-    import_steps: tuple[str, ...]
-    log_line: str
-    slug: str = ""
-    name: str = ""
-    xml_file: str = ""  # relative to the library folder
-    md_file: str = ""
-    counts: dict[str, int] = field(default_factory=dict)
-    device: str = ""
-    warnings: tuple[str, ...] = ()  # the XML is written; where to drag it (a crate since the export), what failed after it
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "counts": self.counts,
-            "crate": self.slug,
-            "name": self.name,
-            "written": self.xml_file,
-            "record": self.md_file,
-            "device": self.device,
-            "import_steps": list(self.import_steps),
-            "log_line": self.log_line,
-            "warnings": list(self.warnings),
-        }
-
-
-def _meta_device(folder: LibraryFolder) -> str:
+def _check_meta(folder: LibraryFolder) -> None:
     try:
         meta = libfolder.load_meta(folder.root)
     except LibraryFolderError as exc:
@@ -1388,11 +1241,10 @@ def _meta_device(folder: LibraryFolder) -> str:
     errors = libfolder.validate_meta(meta)
     if errors:
         raise CrateError("library.yaml: " + "; ".join(errors) + ". Nothing was written.")
-    return str(meta["device"])
 
 
 def _preflight(folder: LibraryFolder) -> None:
-    """Before the XML is written: log.md takes a line. Opening it to append writes nothing; it
+    """Before the write: log.md takes a line. Opening it to append writes nothing; it
     fails when the file is a folder, read-only or held by another program."""
     if not folder.log.exists():
         return  # created with its title line by append_log
@@ -1410,9 +1262,9 @@ def _cell(value: Any) -> str:
     return " ".join(str(value).replace("|", "\\|").split())
 
 
-def render_md(state: _State, xml_file: str, day: date) -> str:
+def render_md(state: _State, written: str, day: date) -> str:
     """crates/<slug>.md: title, provenance, a summary of at most 5 lines, then the full picks
-    and spares tables (the crate record)."""
+    and spares tables (the crate record). `written`: where the crate went (`DB_READ`: rekordbox)."""
     spec, result = state.spec, state.result
     c = result.counts
     folder = state.folder_name
@@ -1421,7 +1273,7 @@ def render_md(state: _State, xml_file: str, day: date) -> str:
         f"{c['picks']} picks and {c['spares']} spares for: {spec.brief}. Curve: {spec.curve}.",
         f"Picked from {c['candidates']} tracks that fit ({spec.filters_text()}); taste from {state.taste}.",
         "Left out: " + ", ".join(left) + ".",
-        ("Written into rekordbox: playlists " if xml_file == DB_READ else f"Import {xml_file}: playlists ")
+        ("Written into rekordbox: playlists " if written == DB_READ else f"Written to {written}: playlists ")
         + " and ".join(f"{folder}/{n}" for n in state.playlists) + ".",
     ]
     if state.warnings:
@@ -1450,25 +1302,16 @@ def render_md(state: _State, xml_file: str, day: date) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _write_new(path: Path, text: str) -> Path:
-    """`path`, or the first free `<stem>-N<suffix>` next to it; never over an existing file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    for candidate in numbered(path):
-        if libfolder.write_new_text(candidate, text):
-            return candidate
-    raise CrateError(f"{path.name}: every numbered name is taken. Nothing was written.")
-
-
 def checked(
     folder: LibraryFolder | str | Path, spec_ref: str, preview_id: str, *, now: datetime | None = None,
     source: str | None = None,
 ) -> tuple[LibraryFolder, _State, Gate]:
-    """Everything a write needs checked before it writes, for the XML (`apply`) and for master.db
-    (`dj.db_write`): the id's shape, the crate, no block, the gate record (same content, unused),
-    log.md writable. GateError / CrateError, nothing written."""
+    """Everything the write into master.db (`dj.db_write.crate`) needs checked before it writes:
+    the id's shape, the crate, no block, the gate record (same content, unused), log.md writable.
+    GateError / CrateError, nothing written."""
     require_id(preview_id)  # no id, no write: refused before anything is read
     folder = _folder(folder)
-    _meta_device(folder)
+    _check_meta(folder)
     state = _state(folder, spec_ref, source)
     if state.blocked:
         raise CrateError(state.blocked + " Nothing was written.")
@@ -1485,67 +1328,3 @@ def playlist_lists(state: _State) -> list[tuple[tuple[str, str], list[str]]]:
     if result.spares:  # none fit: no empty spares playlist (the preview warned)
         lists.append(((state.folder_name, name + SPARES_SUFFIX), [p.id for p in result.spares]))
     return lists
-
-
-def apply(
-    folder: LibraryFolder | str | Path,
-    spec_ref: str,
-    preview_id: str,
-    *,
-    today: date | None = None,
-    now: datetime | None = None,
-    source: str | None = None,
-) -> CrateWriteResult:
-    """Write `proposals/crate-<slug>.xml` and `crates/<slug>.md` for a preview the DJ said yes
-    to, then one log.md line. Refuses (GateError / CrateError, nothing written) without a valid
-    preview id, after any change since the preview, when the crate is blocked, or when log.md
-    cannot take its line. Once the XML is written, a later failure is a warning in the result.
-    Never opens master.db."""
-    folder, state, gate = checked(folder, spec_ref, preview_id, now=now, source=source)
-    device = _meta_device(folder)
-    name, result = state.spec.name, state.result
-    lists = playlist_lists(state)
-    try:
-        text = build_lists_xml(lists, state.lib, product_version=product_version())
-    except BuildError as exc:
-        raise CrateError(f"{exc}. Nothing was written.") from exc
-    xml_path = write_xml(text, folder.proposals / f"crate-{state.slug}.xml")
-    # The XML is written: from here on the crate is done, and a failure below is a warning.
-    xml_file = folder.relative(xml_path)
-    day = today or (now.date() if now else date.today())
-    warnings: list[str] = list(state.placement_warnings)  # where the playlists go, for the import card
-    md_path: Path | None = None
-    md_file = ""
-    try:
-        md_path = _write_new(folder.crates / f"{state.slug}.md", render_md(state, xml_file, day))
-        md_file = folder.relative(md_path)
-    except (CrateError, OSError) as exc:
-        warnings.append(
-            f"crates/{state.slug}.md was not written ({exc}). The XML is written; preview again for the list."
-        )
-    try:
-        gate.consume(preview_id, now=now, written=xml_file)
-    except (GateError, OSError) as exc:
-        warnings.append(f"Preview {preview_id} could not be marked used ({exc}). Do not use it again.")
-    counts = {"picks": len(result.picks), "spares": len(result.spares)}
-    if result.counts.get("vetoed"):
-        counts["vetoed"] = result.counts["vetoed"]
-    try:
-        log_line = libfolder.append_log(folder.root, f"crate {state.slug}", counts, file=xml_path, now=now, today=today)
-    except (LibraryFolderError, OSError) as exc:
-        told = ", ".join(f"{n} {key}" for key, n in counts.items())
-        log_line = f"{libfolder.log_clock(today, now)} crate {state.slug} -> {told}; {xml_file}"
-        warnings.append(f"log.md: the crate line was not added ({exc}). Add it by hand: {log_line}")
-    return CrateWriteResult(
-        xml_path=xml_path,
-        md_path=md_path,
-        import_steps=import_steps(device, xml_file, list(state.moves)),
-        log_line=log_line,
-        slug=state.slug,
-        name=name,
-        xml_file=xml_file,
-        md_file=md_file,
-        counts=counts,
-        device=device,
-        warnings=tuple(warnings),
-    )

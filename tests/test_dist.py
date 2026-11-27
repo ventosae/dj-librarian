@@ -1,5 +1,5 @@
-"""dist/ in the repo: the plugin zip of the current version (the full one, with the engine inside) is
-tracked, so it can be downloaded from GitHub and installed on any laptop (W-37). It must be what
+"""dist/ in the repo: the plugin zip of the current version (the plugin plus engine/) is tracked, so
+it can be downloaded from GitHub and installed on any laptop. It must be what
 `scripts/build_plugin_zip.py` makes of the code beside it: a stale zip installs old code.
 
 The content check compares the files in the committed zip with a fresh `entries()` (names and bytes,
@@ -47,8 +47,7 @@ def test_the_current_versions_zip_is_in_dist():
 @GIT
 def test_dist_tracks_the_plugin_zip_and_ignores_the_rest():
     assert f"dist/{ZIP}" in _git("ls-files", "--", "dist").stdout.split(), f"commit dist/{ZIP}"
-    others = ["dist/notes.txt", f"dist/.{ZIP}.x1y2.tmp", f"dist/dj-librarian-plugin-{VERSION}-no-engine.zip",
-              f"dist/dj-librarian-engine-{VERSION}.mcpb"]  # fmt: skip
+    others = ["dist/notes.txt", f"dist/.{ZIP}.x1y2.tmp"]
     assert _git("check-ignore", "--no-index", *others).stdout.split() == others
     assert _git("check-ignore", "--no-index", f"dist/{ZIP}").stdout.split() == []
 

@@ -9,29 +9,27 @@ from __future__ import annotations
 
 import json
 import re
-import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
 import xml_fixtures as fx
 import yaml
-from pyrekordbox.rbxml import RekordboxXml
-from test_door1_imports import run_blocked
 from typer.testing import CliRunner
 
 from dj import build_structure as bs
-from dj import cli, libfolder, safety, treeschema
+from dj import cli, libfolder, treeschema
 from dj import mcp_server as m
-from dj.gate import Gate, GateError
+from dj.gate import Gate
 from dj.libfolder import LibraryFolder
 from dj.model import PlaylistNode
 from dj.readers.xml import read_xml
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 DAY = date(2026, 10, 20)
 NOW = datetime(2026, 10, 20, 14, 5)
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "plugin" / "skills" / "dj-build" / "scripts" / "build.py"
 runner = CliRunner()
 
 LANES_TREE = [
@@ -166,13 +164,6 @@ def test_find_proposal_unknown_names_what_exists(folder):
         bs.find_proposal(folder, "  ")
 
 
-def test_find_proposal_without_proposals_says_run_dj_report(tmp_path):
-    root = tmp_path / "lib"
-    libfolder.scaffold(root, device="mac", today=DAY)
-    with pytest.raises(bs.BuildError, match="run dj-report first"):
-        bs.find_proposal(root, "lanes")
-
-
 @pytest.mark.parametrize("slug", ["../evil", "Lanes", "a b", "", None])
 def test_find_proposal_refuses_an_unsafe_slug(folder, slug):
     bad = [dict(PROPOSALS[0], slug=slug)]
@@ -222,7 +213,7 @@ def test_preview_reads_the_djs_edits_and_never_overwrites_them(folder):
 
 def test_preview_needs_the_current_tree(folder):
     (folder.structure / "current-tree.yaml").unlink()
-    with pytest.raises(bs.BuildError, match="run dj-structure first"):
+    with pytest.raises(bs.BuildError, match="run the analysis first"):
         bs.preview(folder, "lanes", today=DAY)
     assert not (folder.proposals / "lanes.yaml").exists() and not folder.cache.exists()
 
@@ -238,16 +229,6 @@ def test_preview_id_is_stable_for_the_same_content(folder):
     assert bs.preview(folder, "Lanes", today=DAY, now=NOW).preview_id == a
 
 
-@pytest.mark.parametrize(("slug", "reason"), [("clash", "conflict"), ("gig-first", "Nothing to create")])
-def test_a_conflict_or_nothing_to_create_blocks_the_build(folder, slug, reason):
-    p = bs.preview(folder, slug, today=DAY, now=NOW)
-    assert p.preview_id is None and reason in p.blocked
-    assert not folder.cache.exists()  # nothing to approve, no record
-    with pytest.raises(bs.BuildError, match=reason):
-        bs.apply(folder, slug, "0123456789ab", today=DAY, now=NOW)
-    assert not list(folder.proposals.glob("*.xml"))
-
-
 def test_only_smart_nodes_left_is_nothing_to_create_and_says_they_are_made_by_hand(folder):
     smart = treeschema.TreeDoc(treeschema.parse([
         {"folder": "House", "children": [{"smart": "house 120+", "rules": [{"bpm_range": [120, 130]}]}]},
@@ -261,170 +242,7 @@ def test_only_smart_nodes_left_is_nothing_to_create_and_says_they_are_made_by_ha
 # -- apply refusals (R-1102) ---------------------------------------------------------------
 
 
-@pytest.mark.parametrize("pid", ["", "   ", None])
-def test_apply_without_a_preview_id_is_refused_before_anything(folder, pid, monkeypatch):
-    bs.preview(folder, "lanes", today=DAY, now=NOW)
-    before = _snapshot(folder.root)
-    monkeypatch.setattr(bs, "find_proposal", lambda *a, **k: pytest.fail("read before refusing"))
-    with pytest.raises(GateError, match="No preview id"):
-        bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert _snapshot(folder.root) == before
-
-
-def test_apply_with_a_wrong_id_is_refused(folder):
-    bs.preview(folder, "lanes", today=DAY, now=NOW)
-    before = _snapshot(folder.root)
-    with pytest.raises(GateError, match="No preview with id 0123456789ab"):
-        bs.apply(folder, "lanes", "0123456789ab", today=DAY, now=NOW)
-    assert _snapshot(folder.root) == before
-
-
-def test_apply_with_the_id_of_another_proposal_is_refused(folder):
-    other = treeschema.TreeDoc(treeschema.parse([{"playlist": "brand new"}]).nodes, {"name": "Other"})
-    (folder.proposals / "other.yaml").write_text(treeschema.dumps(other), encoding="utf-8")
-    pid = bs.preview(folder, "other", today=DAY, now=NOW).preview_id
-    bs.preview(folder, "lanes", today=DAY, now=NOW)
-    with pytest.raises(GateError, match="not .*lanes"):
-        bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert not list(folder.proposals.glob("*.xml"))
-
-
-def test_apply_after_the_proposal_changed_is_refused(folder):
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    path = folder.proposals / "lanes.yaml"
-    path.write_text(path.read_text(encoding="utf-8").replace("1.3_closing", "1.3_late"), encoding="utf-8")
-    before = _snapshot(folder.root)
-    with pytest.raises(GateError, match="changed since preview"):
-        bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert _snapshot(folder.root) == before
-
-
-def test_apply_after_the_current_tree_changed_is_refused(folder):
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    current = folder.structure / "current-tree.yaml"
-    doc = treeschema.load(current)
-    meanwhile = treeschema.TreeNode("playlist", "made in rekordbox meanwhile")
-    current.write_text(treeschema.dumps(treeschema.TreeDoc(doc.nodes + (meanwhile,), doc.meta)), encoding="utf-8")
-    with pytest.raises(GateError, match="changed since preview"):
-        bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert not list(folder.proposals.glob("*.xml"))
-
-
-def test_apply_after_a_new_export_changed_the_mapped_tracks_is_refused(folder, tmp_path):
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    spec = fx.spec_copy()
-    spec["tree"][0]["children"][0]["tracks"].append("1")  # House/1.1_warm_up gained a track
-    newer = libfolder.import_export(folder.root, fx.write_xml(tmp_path / "newer.xml", spec), today=DAY)
-    assert libfolder.latest_export(folder.root) == newer
-    with pytest.raises(GateError, match="changed since preview"):
-        bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert not list(folder.proposals.glob("*.xml"))
-    again = bs.preview(folder, "lanes", today=DAY, now=NOW)
-    assert again.preview_id != pid and again.export == libfolder.relative(folder.root, newer)
-
-
-def test_apply_after_24_hours_is_refused(folder):
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    with pytest.raises(GateError, match="older than 24 hours"):
-        bs.apply(folder, "lanes", pid, today=DAY, now=NOW + timedelta(hours=25))
-    assert not list(folder.proposals.glob("*.xml"))
-
-
-def test_apply_twice_with_one_id_is_refused(folder):
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    before = _snapshot(folder.root)
-    with pytest.raises(GateError, match="already used"):
-        bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert _snapshot(folder.root) == before
-    assert [p.name for p in folder.proposals.glob("*.xml")] == ["lanes.xml"]
-    assert len(_build_lines(folder)) == 1
-
-
-def test_apply_needs_the_preview_to_have_written_the_yaml(folder):
-    with pytest.raises(bs.BuildError, match="run the preview first"):
-        bs.apply(folder, "lanes", "0123456789ab", today=DAY, now=NOW)
-
-
 # -- apply (R-502, R-503, R-505) -----------------------------------------------------------
-
-
-def test_apply_writes_the_xml_one_log_line_and_the_chosen_structure(folder):
-    pid = bs.preview(folder, "Build me the Lanes structure", today=DAY, now=NOW).preview_id
-    log_before = folder.log.read_text(encoding="utf-8")
-    result = bs.apply(folder, "Build me the Lanes structure", pid, today=DAY, now=NOW)
-    assert result.xml_path == folder.proposals / "lanes.xml" and result.xml_file == "proposals/lanes.xml"
-    log_after = folder.log.read_text(encoding="utf-8")
-    assert log_after == log_before + result.log_line + "\n"  # exactly one line appended (R-505)
-    assert result.log_line == "2026-10-20 14:05 build lanes -> 5 create, 4 skip, 1 manual, 22 tracks; proposals/lanes.xml"
-    meta = libfolder.load_meta(folder.root)
-    assert meta["structure"] == {"chosen": "lanes"} and meta["updated"] == "2026-10-20"
-    record = json.loads((folder.cache / "previews" / f"{pid}.json").read_text(encoding="utf-8"))
-    assert datetime.fromisoformat(record["used"]) == NOW.astimezone(timezone.utc)  # stored in UTC
-    assert record["written"] == "proposals/lanes.xml"
-    assert result.counts == {"create": 5, "skip": 4, "manual": 1, "tracks": 22}
-    assert result.warnings == () and result.to_dict()["warnings"] == []
-
-
-def test_the_xml_holds_the_create_nodes_with_the_tracks_their_from_maps(folder):
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    rb = RekordboxXml(bs.apply(folder, "lanes", pid, today=DAY, now=NOW).xml_path)
-    top = rb.get_playlist()
-    assert [n.name for n in top.get_playlists()] == ["Lanes", "House"]
-    lanes = rb.get_playlist("Lanes")
-    assert [n.name for n in lanes.get_playlists()] == ["96-112 funk disco", "118-124 house", "126-132 techno"]
-    assert lanes.get_playlist("96-112 funk disco").get_tracks() == [1, 2, 3, 4, 5, 6, 7, 9, 13, 17]
-    assert lanes.get_playlist("118-124 house").get_tracks() == [8, 21, 10, 11, 9, 12, 13, 14, 15]
-    assert lanes.get_playlist("126-132 techno").get_tracks() == [11, 12, 13, 14, 15, 16, 17, 18]
-    house = rb.get_playlist("House")  # the SKIP folder is there only as the ancestor
-    assert [n.name for n in house.get_playlists()] == ["1.3_closing"] and house.count == 1
-    assert house.get_playlist("1.3_closing").get_tracks() == [int(i) for i in
-                                                             "1 2 3 4 5 6 7 8 9 10 11 12 16 19 20 22".split()]
-    assert rb.num_tracks == 22
-    text = (folder.proposals / "lanes.xml").read_text(encoding="utf-8")
-    for absent in ("1.1_warm_up", "deep_rollers", 'Name="Deep"', "all techno"):  # SKIP and MANUAL
-        assert absent not in text
-    lib = read_xml(libfolder.latest_export(folder.root))
-    built = read_xml(folder.proposals / "lanes.xml")
-    for track in rb.get_tracks():  # tracks referenced by location (R-503)
-        tid = str(track.TrackID)
-        assert built.tracks[tid].location == lib.tracks[tid].location
-
-
-def test_an_existing_xml_is_never_overwritten(folder):
-    keep = folder.proposals / "lanes.xml"
-    keep.write_text("the DJ's own file", encoding="utf-8")
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    result = bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert result.xml_path.name == "lanes-2.xml" and result.xml_file == "proposals/lanes-2.xml"
-    assert keep.read_text(encoding="utf-8") == "the DJ's own file"
-    assert result.log_line.endswith("; proposals/lanes-2.xml")
-
-
-def test_previewing_a_written_build_again_is_blocked_as_already_built(folder):
-    first = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    bs.apply(folder, "lanes", first, today=DAY, now=NOW)
-    later = NOW + timedelta(hours=1)
-    again = bs.preview(folder, "lanes", today=DAY, now=later)  # the same content: the same, used id
-    assert again.preview_id is None and again.blocked.startswith("Already built on ")
-    assert "proposals/lanes.xml" in again.blocked and "change proposals/lanes.yaml" in again.blocked
-    with pytest.raises(GateError, match="already used"):  # one yes, one write
-        bs.apply(folder, "lanes", first, today=DAY, now=later)
-    assert [p.name for p in folder.proposals.glob("*.xml")] == ["lanes.xml"]
-    assert len(_build_lines(folder)) == 1
-
-
-def test_a_changed_proposal_builds_again_and_never_overwrites(folder):
-    first = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    bs.apply(folder, "lanes", first, today=DAY, now=NOW)
-    path = folder.proposals / "lanes.yaml"
-    path.write_text(path.read_text(encoding="utf-8").replace("1.3_closing", "1.4_after_hours"), encoding="utf-8")
-    later = NOW + timedelta(hours=1)
-    second = bs.preview(folder, "lanes", today=DAY, now=later).preview_id
-    assert second and second != first
-    result = bs.apply(folder, "lanes", second, today=DAY, now=later)
-    assert result.xml_path.name == "lanes-2.xml"
-    assert len(_build_lines(folder)) == 2
 
 
 # -- the current tree must match the export the tracks come from (hard rule 5) -------------
@@ -441,35 +259,13 @@ def _newer_export_with_lanes(folder: LibraryFolder, tmp_path: Path) -> Path:
     return newer
 
 
-def test_a_current_tree_older_than_the_export_blocks_the_build(folder, tmp_path):
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id  # before the new export
-    newer = _newer_export_with_lanes(folder, tmp_path)
-    p = bs.preview(folder, "lanes", today=DAY, now=NOW)
-    assert p.preview_id is None
-    assert p.blocked == (
-        "structure/current-tree.yaml is older than the latest export (exports/2026-10-20-collection-2.xml): "
-        "for Lanes it says CREATE, the export says SKIP. Run dj-structure again, then preview again."
-    )
-    with pytest.raises(bs.BuildError, match="older than the latest export"):
-        bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert not list(folder.proposals.glob("*.xml")) and not _build_lines(folder)
-
-    _write_current_tree(folder.root, newer)  # dj-structure ran again
-    fresh = bs.preview(folder, "lanes", today=DAY, now=NOW)
-    assert fresh.blocked is None and ("SKIP", "Lanes") in _rows(fresh)
-    assert ("SKIP", "Lanes/118-124 house") in _rows(fresh)
-    rb = RekordboxXml(bs.apply(folder, "lanes", fresh.preview_id, today=DAY, now=NOW).xml_path)
-    lanes = rb.get_playlist("Lanes")  # there only as the folder the new playlists go into
-    assert [n.name for n in lanes.get_playlists()] == ["96-112 funk disco", "126-132 techno"]
-
-
 def test_a_current_tree_with_a_node_the_export_lacks_blocks_the_build(folder):
     current = folder.structure / "current-tree.yaml"
     doc = treeschema.load(current)
     lanes = treeschema.TreeNode("folder", "Lanes")
     current.write_text(treeschema.dumps(treeschema.TreeDoc(doc.nodes + (lanes,), doc.meta)), encoding="utf-8")
     p = bs.preview(folder, "lanes", today=DAY, now=NOW)
-    assert p.preview_id is None and "for Lanes it says SKIP, the export says CREATE" in p.blocked
+    assert p.preview_id is None and "for Lanes it says SKIP, rekordbox says CREATE" in p.blocked
 
 
 def test_smart_playlists_the_export_cannot_carry_are_not_a_stale_tree(folder):
@@ -493,22 +289,6 @@ def test_smart_playlists_the_export_cannot_carry_are_not_a_stale_tree(folder):
     assert _rows(p) == [("SKIP", "All Techno"), ("SKIP", "funk & disco 78-92"), ("CREATE", "brand new")]
 
 
-def test_an_existing_folder_is_spelled_as_it_exists_in_the_xml_and_the_import_card(folder):
-    mine = treeschema.TreeDoc(treeschema.parse([
-        {"folder": "house", "children": [{"playlist": "new one", "from": ["House/1.2_peak"]}]},
-    ]).nodes, {"name": "Spelling"})  # fmt: skip
-    (folder.proposals / "spelling.yaml").write_text(treeschema.dumps(mine), encoding="utf-8")
-    p = bs.preview(folder, "spelling", today=DAY, now=NOW)
-    assert _rows(p) == [("SKIP", "House"), ("CREATE", "House/new one")]
-    result = bs.apply(folder, "spelling", p.preview_id, today=DAY, now=NOW)
-    rb = RekordboxXml(result.xml_path)
-    assert [n.name for n in rb.get_playlist().get_playlists()] == ["House"]  # rekordbox's own name
-    assert rb.get_playlist("House", "new one").get_tracks() == [9, 11, 12, 13, 14, 15]
-    assert result.drags == ({"node": "House/new one", "into": "House"},)
-    assert result.import_steps[2] == "Drag the new playlists into Playlists: House/new one into House."
-    assert 'Name="house"' not in result.xml_path.read_text(encoding="utf-8")
-
-
 # -- structure/proposals.yaml problems -----------------------------------------------------
 
 
@@ -524,19 +304,6 @@ def test_two_proposals_with_one_slug_or_name_are_refused(folder, second, match):
             bs.find_proposal(folder, ref)
 
 
-def test_a_broken_proposals_yaml_does_not_block_the_djs_own_file(folder):
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    (folder.structure / "proposals.yaml").write_text("- slug: [unclosed\n", encoding="utf-8")
-    again = bs.preview(folder, "Build me the Lanes structure", today=DAY, now=NOW)
-    assert again.preview_id == pid and again.blocked is None
-    assert len(again.warnings) == 1 and "structure/proposals.yaml is not valid YAML" in again.warnings[0]
-    assert again.warnings[0].endswith("Read proposals/lanes.yaml alone.")
-    result = bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert result.xml_file == "proposals/lanes.xml" and result.warnings == again.warnings
-    out = _cli("gig-first", "--library", folder.root)  # not in proposals/: the broken file is the error
-    assert out.exit_code == 1 and "not valid YAML" in out.stderr
-
-
 def test_cli_preview_prints_warnings(folder):
     bs.preview(folder, "lanes", today=DAY, now=NOW)
     (folder.structure / "proposals.yaml").write_text("- slug: [unclosed\n", encoding="utf-8")
@@ -547,103 +314,7 @@ def test_cli_preview_prints_warnings(folder):
 # -- log.md and library.yaml (R-505) -------------------------------------------------------
 
 
-def test_apply_refuses_before_writing_when_log_md_cannot_take_the_line(folder):
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    text = folder.log.read_text(encoding="utf-8")
-    folder.log.unlink()
-    folder.log.mkdir()  # held open / not a file: the line could not be appended
-    with pytest.raises(bs.BuildError, match="log.md cannot be written.*Nothing was written"):
-        bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert not list(folder.proposals.glob("*.xml"))
-    assert Gate(folder.cache).load(pid).used is None  # the yes is still good
-    assert libfolder.load_meta(folder.root)["structure"] == {"chosen": None}
-    folder.log.rmdir()
-    folder.log.write_text(text, encoding="utf-8")
-    result = bs.apply(folder, "lanes", pid, today=DAY, now=NOW)  # fixed: the same id writes
-    assert result.xml_file == "proposals/lanes.xml" and len(_build_lines(folder)) == 1
-
-
-def test_a_failure_after_the_xml_is_written_is_a_warning_not_an_error(folder, monkeypatch):
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-
-    def locked(*args, **kwargs):
-        raise PermissionError(13, "Permission denied")
-
-    monkeypatch.setattr(libfolder, "append_log", locked)
-    monkeypatch.setattr(libfolder, "update_meta", locked)
-    result = bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert result.xml_path.is_file() and result.xml_file == "proposals/lanes.xml"
-    log_warning, meta_warning = result.warnings
-    assert log_warning.startswith("log.md: the build line was not added")
-    assert log_warning.endswith(
-        "Add it by hand: 2026-10-20 14:05 build lanes -> 5 create, 4 skip, 1 manual, 22 tracks; proposals/lanes.xml")
-    assert result.log_line in log_warning
-    assert meta_warning.startswith("library.yaml: structure.chosen was not set to lanes")
-    assert Gate(folder.cache).load(pid).used  # one yes, one write: still used
-    out = _cli("lanes", "--library", folder.root)
-    assert "Already built on" in out.stdout
-
-
-@pytest.mark.parametrize(("device", "menu"), [("mac", "rekordbox menu > Preferences"), ("windows", "File > Preferences")])
-def test_the_import_card_fits_the_djs_os(tmp_path, device, menu):
-    folder = _make_library(tmp_path, device=device)
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    result = bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    steps = result.import_steps
-    assert len(steps) == 3 and result.device == device
-    assert steps[0].startswith(f"In rekordbox open {menu} > Advanced > Database > rekordbox xml > Imported Library")
-    assert "pick proposals/lanes.xml" in steps[0]
-    assert 'turn on "rekordbox xml"' in steps[1]
-    assert steps[2] == "Drag the new playlists into Playlists: Lanes into Playlists; House/1.3_closing into House."
-    assert result.drags == ({"node": "Lanes", "into": "Playlists"}, {"node": "House/1.3_closing", "into": "House"})
-
-
-def test_import_steps_cap_the_list_and_refuse_an_unknown_device():
-    moves = [{"node": f"n{i}", "into": "Playlists"} for i in range(7)]
-    assert bs.import_steps("mac", "proposals/x.xml", moves)[2].endswith("n4 into Playlists; +2 more.")
-    with pytest.raises(bs.BuildError, match="device"):
-        bs.import_steps("linux", "proposals/x.xml")
-
-
-def test_apply_refuses_a_broken_library_yaml_before_writing(folder):
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    folder.library_yaml.write_text("schema_version: 1\n", encoding="utf-8")
-    with pytest.raises(bs.BuildError, match="library.yaml"):
-        bs.apply(folder, "lanes", pid, today=DAY, now=NOW)
-    assert not list(folder.proposals.glob("*.xml"))
-
-
 # -- master.db is never opened (R-504) -----------------------------------------------------
-
-
-def test_build_never_opens_master_db(folder, monkeypatch):
-    def boom(*args, **kwargs):
-        raise AssertionError("dj-build touched master.db")
-
-    for name in ("open_db", "_connect", "find_master_db", "backup"):
-        monkeypatch.setattr(safety, name, boom)
-    monkeypatch.setitem(sys.modules, "pyrekordbox", None)  # any new import of it fails
-    monkeypatch.setitem(sys.modules, "dj.readers.db", None)
-    pid = bs.preview(folder, "lanes", today=DAY, now=NOW).preview_id
-    assert bs.apply(folder, "lanes", pid, today=DAY, now=NOW).xml_path.is_file()
-
-
-def test_build_runs_in_the_door1_sandbox_with_pyrekordbox_blocked(folder):
-    done = run_blocked(f"""
-        import json
-        from datetime import date
-        import dj.safety as safety
-        def boom(*a, **k):
-            raise AssertionError("master.db")
-        safety.open_db = safety._connect = safety.find_master_db = boom
-        from dj import build_structure as bs
-        p = bs.preview({str(folder.root)!r}, "Build me the Lanes structure", today=date(2026, 10, 20))
-        r = bs.apply({str(folder.root)!r}, "lanes", p.preview_id, today=date(2026, 10, 20))
-        assert "dj.readers.db" not in sys.modules and "dj.library" not in sys.modules
-        print(json.dumps(r.to_dict()))
-    """)
-    assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout)["written"] == "proposals/lanes.xml"
 
 
 # -- CLI -----------------------------------------------------------------------------------
@@ -667,7 +338,7 @@ def test_cli_preview_shows_rows_counts_nothing_written_and_the_id(folder):
 
 
 def test_cli_apply_without_preview_id_refuses_before_anything_runs(folder, monkeypatch):
-    for name in ("preview", "apply", "find_proposal"):
+    for name in ("preview", "checked", "find_proposal"):
         monkeypatch.setattr(bs, name, lambda *a, **k: pytest.fail("ran before refusing"))
     monkeypatch.setattr(libfolder, "configured_root", lambda: pytest.fail("ran before refusing"))
     for extra in ([], ["--preview-id", "  "]):
@@ -675,25 +346,6 @@ def test_cli_apply_without_preview_id_refuses_before_anything_runs(folder, monke
         assert result.exit_code == 1
         lines = result.stderr.strip().splitlines()
         assert len(lines) == 1 and lines[0].startswith("REFUSED --apply needs --preview-id")
-
-
-def test_cli_apply_with_a_wrong_id_is_refused(folder):
-    _cli("lanes", "--library", folder.root, "--today", "2026-10-20")
-    result = _cli("lanes", "--library", folder.root, "--apply", "--xml", "--preview-id", "0123456789ab")
-    assert result.exit_code == 1 and result.stderr.startswith("REFUSED No preview with id")
-    assert not list(folder.proposals.glob("*.xml"))
-
-
-def test_cli_preview_then_apply_json(folder):
-    preview = _cli("lanes", "--library", folder.root, "--today", "2026-10-20", "--json")
-    data = json.loads(preview.stdout)
-    assert list(data)[0] == "counts" and data["preview_id"]
-    applied = _cli("lanes", "--library", folder.root, "--today", "2026-10-20", "--apply", "--xml",
-                   "--preview-id", data["preview_id"], "--json")  # fmt: skip
-    assert applied.exit_code == 0, applied.stderr
-    out = json.loads(applied.stdout)
-    assert out["written"] == "proposals/lanes.xml" and len(out["import_steps"]) == 3
-    assert out["counts"] == {"create": 5, "skip": 4, "manual": 1, "tracks": 22}
 
 
 def test_cli_preview_rows_limit_caps_the_json_rows_and_0_gives_every_row(folder):
@@ -707,13 +359,6 @@ def test_cli_preview_rows_limit_caps_the_json_rows_and_0_gives_every_row(folder)
     page = m.paginate(capped, ("rows",), 1, 50, more={"rows": "rows_more"})
     assert page["paging"]["rows"]["total"] == len(LANES_ROWS) and page["paging"]["rows"]["listed"] == 3
     assert _cli("lanes", "--library", folder.root, "--rows-limit", "-1").exit_code != 0
-
-
-def test_cli_text_apply_prints_the_import_card(folder):
-    pid = bs.preview(folder, "lanes", today=DAY).preview_id
-    result = _cli("lanes", "--library", folder.root, "--apply", "--xml", "--preview-id", pid)
-    assert result.exit_code == 0, result.stderr
-    assert "Wrote proposals/lanes.xml" in result.stdout and "  3. Drag the new playlists" in result.stdout
 
 
 def test_cli_blocked_preview_has_no_id(folder):
@@ -793,36 +438,6 @@ def test_mcp_structure_tools_annotations():
 
 
 # -- the skill script (Door 1 entry point) -------------------------------------------------
-
-
-def _script(*args: str):
-    done = run_blocked(f"""
-        import runpy
-        sys.argv = [{str(SCRIPT)!r}, *{list(args)!r}]
-        runpy.run_path({str(SCRIPT)!r}, run_name="__main__")
-    """)
-    return done.returncode, json.loads(done.stdout) if done.stdout.strip() else done.stderr
-
-
-def test_script_preview_and_apply_with_engine_packages_blocked(folder):
-    root = str(folder.root)
-    code, data = _script("preview", "Build me the Lanes structure", "--library", root, "--today", "2026-10-20")
-    assert code == 0 and data["ok"] is True and data["written"] == "Nothing written yet."
-    assert data["counts"]["create"] == 5
-    code, refused = _script("apply", "lanes", "--library", root)
-    assert code == 2 and "No preview id" in refused["refused"]
-    code, refused = _script("apply", "lanes", "--library", root, "--preview-id", "0123456789ab")
-    assert code == 2 and "No preview with id" in refused["refused"]
-    code, done = _script("apply", "lanes", "--library", root, "--preview-id", data["preview_id"], "--today", "2026-10-20")
-    assert code == 0 and done["written"] == "proposals/lanes.xml" and len(done["import_steps"]) == 3
-    assert len(_build_lines(folder)) == 1
-
-
-def test_script_errors_exit_1(folder):
-    code, data = _script("preview", "nope", "--library", str(folder.root))
-    assert code == 1 and "No proposal matches" in data["error"]
-    code, data = _script("frobnicate")
-    assert code == 1 and data["ok"] is False
 
 
 def test_the_gate_record_lives_in_the_library_cache(folder):

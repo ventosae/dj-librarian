@@ -1,22 +1,21 @@
-"""The A6 handout, docs/handout/ (W-34 item 5).
+"""The A6 handout, docs/handout/.
 
-The card's "Set me up" line names the install command (D-29). The PDF is 2 pages of 105 × 148 mm,
-the size the HTML's `@page` sets; the two previews are its pages at 3×; docs/handout/README.md names
-the files, the OFL fonts embedded in fonts.css and the exact commands that re-render all three.
+The card is the first session with the engine: install, start, coffee, the report, pick a structure,
+"Close rekordbox first" then yes. The PDF is 2 pages of 105 × 148 mm, the size the HTML's `@page`
+sets; the two previews are its pages at 3×; docs/handout/README.md names the files, the OFL fonts
+embedded in fonts.css and the exact commands that re-render all three.
 """
 
 from __future__ import annotations
 
 import re
 import struct
-from html.parser import HTMLParser
 from pathlib import Path
 
 HANDOUT = Path(__file__).resolve().parents[1] / "docs" / "handout"
 HTML = HANDOUT / "dj-librarian-a6.html"
 PDF = HANDOUT / "dj-librarian-a6.pdf"
 README = HANDOUT / "README.md"
-SET_ME_UP = "Code tab → /dj-librarian:install → Allow. Then say set me up."
 PT_PER_MM = 72 / 25.4
 
 
@@ -24,47 +23,11 @@ def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8").replace("\r\n", "\n")
 
 
-class _Rows(HTMLParser):
-    """(bubble, what) for every row of the back page's "say these" list."""
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.rows: list[list[str]] = []
-        self.cls: str | None = None
-
-    def handle_starttag(self, tag, attrs):
-        cls = dict(attrs).get("class") or ""
-        if cls == "row":
-            self.rows.append([])
-        if cls in ("bubble", "what"):
-            self.cls = cls
-            self.rows[-1].append("")
-
-    def handle_endtag(self, tag):
-        if tag == "div":
-            self.cls = None
-
-    def handle_data(self, data):
-        if self.cls and self.rows:
-            self.rows[-1][-1] += data
-
-
-def _rows() -> dict[str, str]:
-    parser = _Rows()
-    parser.feed(_text(HTML))
-    return {bubble.strip(): " ".join(what.split()) for bubble, what in parser.rows}
-
-
-def test_the_set_me_up_line_names_the_install_command():
-    rows = _rows()
-    assert rows["Set me up"] == SET_ME_UP
-    assert "Installs the engine" not in _text(HTML) and "10 min)" not in _text(HTML)
-
-
 def test_the_page_size_is_a6_from_the_css():
     html = _text(HTML)
     assert "@page { size: 105mm 148mm; margin: 0; }" in html
     assert html.count('<section class="page">') == 2
+    assert "xml" not in html.lower() and "/dj-librarian:install" in html and "Close rekordbox first" in html
 
 
 def test_the_pdf_has_two_a6_pages():

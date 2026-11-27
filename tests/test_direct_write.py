@@ -20,10 +20,10 @@ from types import SimpleNamespace as NS
 
 import pytest
 import xml_fixtures as fx
-from test_build_structure import DAY, _make_library
+from test_build_structure import _make_library
 from typer.testing import CliRunner
 
-from dj import cli, db_write, libfolder, safety
+from dj import cli, db_write, safety
 from dj.gate import Gate
 
 runner = CliRunner()
@@ -133,9 +133,7 @@ def rb(request, monkeypatch, tmp_path):
 
 @pytest.fixture
 def folder(tmp_path, rb):
-    f = _make_library(tmp_path)
-    libfolder.update_meta(f.root, today=DAY, source="db")
-    return f
+    return _make_library(tmp_path)
 
 
 def args(folder, *more):

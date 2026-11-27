@@ -56,8 +56,6 @@ claude plugin validate ./plugin --strict
 claude plugin validate .
 ```
 
-`uv run python scripts/build_mcpb.py --smoke` builds the standalone engine bundle and starts it with the command and env `mcpb/manifest.json` gives a host, and compares its tools with the manifest's.
-
 `tests/conftest.py` blocks the real rekordbox database and all network sockets. No test may open a real database or an audio file outside `tmp_path`. After any pyrekordbox upgrade, run `tests/test_contract.py` before any write.
 
 ## Branches, commits and pull requests
@@ -67,20 +65,43 @@ claude plugin validate .
 - **Every PR cites the requirement ids it satisfies** (`R-…`, `NFR-…`, `C-…`) from [docs/requirements.md](docs/requirements.md). A change with no requirement starts as an issue.
 - Update [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`.
 - The version changes only through `scripts/bump_version.py` (see Versioning below).
-- Run `claude plugin validate ./plugin --strict` before opening a PR that touches `plugin/`, and `uv run python scripts/build_mcpb.py --smoke` for one that touches `mcpb/`.
+- Run `claude plugin validate ./plugin --strict` before opening a PR that touches `plugin/`.
 
 ## Versioning
 
-`version` in `pyproject.toml` is the one source. `uv run python scripts/bump_version.py patch|minor` writes it into `uv.lock`, `plugin/.claude-plugin/plugin.json`, the marketplace entry in `.claude-plugin/marketplace.json` and `mcpb/manifest.json`, and turns CHANGELOG.md's `[Unreleased]` into `[<version>] - <date>` with a fresh, empty `[Unreleased]` above it. The zip names and the zip's `engine/BUILD.txt` stamp follow pyproject.toml when they are built. `tests/test_version_sync.py` fails CI on any drift; run `uv sync` after a bump, so `dj status` reports the new version.
+`version` in `pyproject.toml` is the one source. `uv run python scripts/bump_version.py patch|minor` writes it into `uv.lock`, `plugin/.claude-plugin/plugin.json` and the marketplace entry in `.claude-plugin/marketplace.json`, and turns CHANGELOG.md's `[Unreleased]` into `[<version>] - <date>` with a fresh, empty `[Unreleased]` above it. The zip name and the zip's `engine/BUILD.txt` stamp follow pyproject.toml when the zip is built. `tests/test_version_sync.py` fails CI on any drift; run `uv sync` after a bump, so `dj status` reports the new version.
 
-- **Patch** for every PR that changes the plugin or the engine. The bump is the PR's last commit, then rebuild `dist/dj-librarian-plugin-<version>.zip` (`uv run python scripts/build_plugin_zip.py`) and commit it with it: the zip in `dist/` is the one people download from GitHub to install, and `tests/test_dist.py` fails when it is stale. The previous version's zip goes in the same commit (`git rm`).
+- **Patch** for every PR that changes the plugin or the engine. The bump is the PR's last commit, then rebuild `dist/dj-librarian-plugin-<version>.zip` and commit it with it (the steps are below): the zip in `dist/` is the one people download from GitHub to install, and `tests/test_dist.py` fails when it is stale. The previous version's zip goes in the same commit (`git rm`).
 - **Minor** when the DJ must re-upload the zip, re-run `/dj-librarian:install`, or `library.yaml` changes shape.
 - Docs-only and test-only PRs don't bump.
 - A tag `v<version>` only when a zip is handed to a DJ, after the maintainer's yes. The tag runs `.github/workflows/release.yml`, and the zip in that release is the one handed over.
 
+The zip in `dist/` is built from the committed files with LF line endings, so commit the code first. On macOS and Linux:
+
+```bash
+uv run python scripts/build_plugin_zip.py
+```
+
+On Windows with git's `core.autocrlf` on, the working files have CRLF endings and would zip other bytes: build from an LF copy of the commit instead, in a folder beside the repo (run from the repo root).
+
+```bash
+git clone -q -c core.autocrlf=false . ../djl-lf
+```
+
+```bash
+uv run python ../djl-lf/scripts/build_plugin_zip.py --out dist
+```
+
+Then swap the zips and commit (delete `../djl-lf` afterwards):
+
+```bash
+git rm -q dist/dj-librarian-plugin-<old version>.zip
+git add dist/dj-librarian-plugin-<version>.zip
+```
+
 ## Writes: the safety rule
 
-Anything that writes to rekordbox, Spotify or audio files must follow these rules and must have tests, including the XML writer.
+Anything that writes to rekordbox, Spotify or audio files must follow these rules and must have tests.
 
 - Create and add only. Never delete, rename, move or reorder what exists.
 - Dry-run by default. Real writes only behind `--apply`, after a preview the user said yes to.
@@ -88,7 +109,7 @@ Anything that writes to rekordbox, Spotify or audio files must follow these rule
 - Only the pyrekordbox calls listed in [CLAUDE.md](CLAUDE.md) may mutate. Never `delete_*`, `move_*`, `rename_*` or `update_*`.
 - MCP tools are a fixed list. A write tool has a matching preview tool and refuses without a plan or preview id. Arguments are passed as a list, never through a shell.
 - The dry-run records a preview id and `--apply` checks it, through `dj.write_gate` (`record`, `check`, `consume`; the CLI's `--preview-id`). Anything that changed since the preview refuses the write (R-1102).
-- A `master.db` write also needs `--power-mode` and runs on Windows only (`write_gate.require_power_mode`, R-205).
+- A `master.db` write is the one write path into rekordbox, on Windows and macOS alike. `DJ_POWER_MODE=false` is the only off switch.
 - A writing command appends its own `log.md` line through `dj.activity_log` (R-904); a dry-run or a refusal appends none.
 - An MCP tool whose list grows with the library returns it through `paginate` / `run_paged`: counts first, pages under the tool-result limit (NFR-03).
 

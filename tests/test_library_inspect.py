@@ -1,9 +1,6 @@
 """`dj library inspect` and the MCP tool dj_library_inspect: read-only, JSON shape (R-204)."""
 
 import json
-import os
-import subprocess
-import sys
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,20 +34,6 @@ def sessions(monkeypatch):
 
     monkeypatch.setattr(safety, "open_db", recording)
     return log
-
-
-def test_inspect_xml_json_shape(sessions):
-    result = run("library", "inspect", fx.SAMPLE_XML, "--json")
-    assert result.exit_code == 0, result.output
-    data = json.loads(result.output)
-    assert {"source", "counts", "tree", "fields_missing"} <= set(data)
-    assert data["source"] == "xml" and data["counts"] == fx.EXPECTED_COUNTS
-    assert data["fields_missing"] == ["isrc", "bit_depth", "my_tags", "has_artwork"]
-    assert data["tree"][0] == {"kind": "folder", "name": "House", "children": ["1.1_warm_up", "1.2_peak", "Deep"]}
-    assert data["tree"][2] == {"kind": "playlist", "name": "unsorted dump", "tracks": 16, "children": []}
-    assert all(set(n) >= {"kind", "name", "children"} for n in data["tree"])
-    assert data["snapshot_path"] is None and data["tree_more"] == 0
-    assert sessions == []  # the XML path never opens master.db
 
 
 def test_inspect_without_xml_reads_a_master_db_snapshot_read_only(sessions, monkeypatch, tmp_path):
@@ -113,11 +96,13 @@ def _big_spec(names: int = 20) -> dict:
 
 
 @pytest.mark.parametrize("pad", [10, 300])
-def test_inspect_json_stays_small_for_a_huge_tree(tmp_path, pad):
+def test_inspect_json_stays_small_for_a_huge_tree(tmp_path, pad, monkeypatch):
     from dj.commands.library import CHILD_LIMIT, NAME_LIMIT, TOP_LIMIT
 
-    xml = fx.write_xml(tmp_path / "big.xml", _big_spec(pad))
-    result = run("library", "inspect", xml, "--json")
+    live = fx.write_master_files(tmp_path / "rb")
+    monkeypatch.setattr(safety, "find_master_db", lambda: live)
+    monkeypatch.setattr(safety, "_connect", lambda path, quiet=False: fx.fake_db(_big_spec(pad), deleted=False))
+    result = run("library", "inspect", "--json")
     assert result.exit_code == 0, result.output
     data = json.loads(result.stdout)
     assert data["counts"]["playlists"] == 40 * 60 + 50 and data["counts"]["folders"] == 40
@@ -128,34 +113,8 @@ def test_inspect_json_stays_small_for_a_huge_tree(tmp_path, pad):
     # what the MCP tool hands the agent (run_dj re-wraps the result with indent=2)
     wrapped = json.dumps({"ok": True, "exit_code": 0, "result": data}, indent=2, ensure_ascii=False)
     assert len(result.stdout.encode()) < 60_000 and len(wrapped.encode()) < 60_000
-    text = run("library", "inspect", xml)
+    text = run("library", "inspect")
     assert f"... {60 - CHILD_LIMIT} more" in text.stdout and f"... {90 - TOP_LIMIT} more at the top" in text.stdout
-
-
-def test_inspect_text_output_names_what_the_xml_lacks():
-    result = run("library", "inspect", fx.SAMPLE_XML)
-    assert result.exit_code == 0, result.output
-    assert "24 tracks, 3 folders, 8 playlists, 0 smart, 2 orphans, 51 entries" in result.output
-    assert "[folder] House" in result.output and "not in the XML export: isrc" in result.output
-
-
-def test_inspect_bad_input_is_exit_1_not_a_traceback(tmp_path):
-    bad = tmp_path / "bad.xml"
-    bad.write_text("<nope/>", encoding="utf-8")
-    for target in (bad, tmp_path / "missing.xml"):
-        result = run("library", "inspect", target, "--json")
-        assert result.exit_code == 1 and "ERROR" in result.output
-
-
-def test_dj_library_inspect_command_line_prints_json():
-    """The acceptance line: `dj library inspect tests/fixtures/sample.xml --json`."""
-    env = dict(os.environ, PYTHONUTF8="1")
-    done = subprocess.run(
-        [sys.executable, "-m", "dj.cli", "library", "inspect", "tests/fixtures/sample.xml", "--json"],
-        cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=120, env=env,
-    )  # fmt: skip
-    assert done.returncode == 0, done.stderr
-    assert {"source", "counts", "tree", "fields_missing"} <= set(json.loads(done.stdout))
 
 
 # -- MCP ----------------------------------------------------------------------------------------
@@ -173,39 +132,9 @@ def calls(monkeypatch):
     return seen
 
 
-@pytest.fixture
-def folders(tmp_path, monkeypatch):
-    repo, library = tmp_path / "repo", tmp_path / "dj-library"
-    (repo / "tests").mkdir(parents=True)
-    (library / "exports").mkdir(parents=True)
-    monkeypatch.setattr(m, "REPO_ROOT", repo)
-    monkeypatch.setenv("DJ_LIBRARY", str(library))
-    return repo, library
-
-
 def test_mcp_inspect_without_xml_reads_master_db(calls):
     assert json.loads(m.dj_library_inspect())["ok"] is True
     assert calls[-1][3:] == ["library", "inspect", "--json"]
-
-
-def test_mcp_inspect_accepts_an_xml_in_the_library_folder_or_the_repo(calls, folders):
-    repo, library = folders
-    export = fx.write_xml(library / "exports" / "2026-10-20-collection.xml")
-    in_repo = fx.write_xml(repo / "tests" / "sample.xml")
-    m.dj_library_inspect("exports/2026-10-20-collection.xml")
-    assert calls[-1][3:] == ["library", "inspect", "--json", "--", str(export.resolve())]
-    m.dj_library_inspect(str(in_repo))
-    assert calls[-1][-1] == str(in_repo.resolve())
-
-
-def test_mcp_inspect_refuses_paths_outside_and_wrong_types(calls, folders, tmp_path):
-    repo, library = folders
-    outside = fx.write_xml(tmp_path / "elsewhere.xml")
-    (library / "notes.txt").write_text("x", encoding="utf-8")
-    for bad in (str(outside), "../elsewhere.xml", "notes.txt", "exports/missing.xml"):
-        answer = json.loads(m.dj_library_inspect(bad))
-        assert answer["ok"] is False and "error" in answer, bad
-    assert calls == []
 
 
 def test_library_root_defaults_to_the_repo_dj_library_folder(monkeypatch, tmp_path):
@@ -226,4 +155,4 @@ def test_mcp_inspect_is_a_read_tool():
     tools = {t.name: t for t in asyncio.run(m.server.list_tools())}
     tool = tools["dj_library_inspect"]
     assert tool.annotations.read_only_hint is True and not tool.annotations.destructive_hint
-    assert "xml" in tool.input_schema["properties"]
+    assert set(tool.input_schema["properties"]) == {"page", "page_size"}  # master.db only: no file argument

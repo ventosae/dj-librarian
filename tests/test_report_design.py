@@ -22,6 +22,8 @@ from dj import design, libfolder, report, report_charts
 from dj.analysis import proposals as P
 from dj.analysis import run_all
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 DAY = date(2026, 10, 20)
 HANDLE = "DJ Test"
 LINER = """# Liner notes

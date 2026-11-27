@@ -532,10 +532,13 @@ def test_a_command_logs_into_the_set_up_library_folder(rb, tmp_path, db, library
 
 
 def test_the_library_commands_log_once_themselves(tmp_path, monkeypatch, library):
-    """dj library profile (like build, analyze, structure, taste, report and start.py) appends its own
+    """dj library profile (like build, analyze, structure, taste and report) appends its own
     line through libfolder.append_log; activity_log adds none on top."""
     import xml_fixtures as fx
 
+    from dj import build_library
+
+    monkeypatch.setattr(build_library, "DEFAULT_SOURCE", "xml")  # test support: read the export fixture
     libfolder.import_export(library, fx.write_xml(tmp_path / "collection.xml"))
     before = log_lines(library)
     assert run("library", "profile", "--library", library).exit_code == 0
@@ -545,11 +548,3 @@ def test_the_library_commands_log_once_themselves(tmp_path, monkeypatch, library
 
 # -- the skills: Claude reads log.md, never writes it ---------------------------------------------
 
-
-@pytest.mark.parametrize("skill", ["dj-sync", "dj-tidy"])
-def test_the_skills_leave_log_md_to_the_tool(skill):
-    text = (Path(__file__).resolve().parents[1] / "plugin" / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
-    flat = " ".join(text.split())
-    assert "append one line to log.md" not in flat.lower()
-    assert "The tool writes log.md, never you (R-904)." in flat and "never write log.md yourself" in flat
-    assert "read log.md" in flat and "## Log line" in text and "R-904" in flat

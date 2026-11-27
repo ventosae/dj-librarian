@@ -2,6 +2,8 @@ import pytest
 
 from dj import safety
 
+REAL_FIND_MASTER_DB = safety.find_master_db  # conftest replaces it with a refusal for the whole run
+
 
 @pytest.fixture
 def fake_env(db, tmp_path, monkeypatch):
@@ -163,10 +165,9 @@ def test_rekordbox_running_refuses_to_guess_off_windows(monkeypatch):
 
 
 def test_find_master_db_override_must_exist(monkeypatch, tmp_path):
-    monkeypatch.undo()
     monkeypatch.setenv("DJ_MASTER_DB", str(tmp_path / "nope.db"))
     with pytest.raises(FileNotFoundError):
-        safety.find_master_db()
+        REAL_FIND_MASTER_DB()
 
 
 # -- the conftest guard itself: no test reaches the network (CLAUDE.md, Tests) -----------------

@@ -46,9 +46,7 @@ A library with no tracks scores 0 everywhere.
 Archetype: the two highest scores (ties by the axis order above) form an unordered pair; the
 archetype in `archetypes.yaml` that lists the pair is the DJ's. The table must hold 8
 archetypes covering each of the 15 pairs exactly once. The default table ships inside the
-package (`dj/analysis/archetypes.yaml`), so `dj library analyze` finds it in any install; the
-dj-identity skill script passes the skill's own copy (plugin/skills/dj-identity/), and a test
-keeps the two files the same.
+package (`dj/analysis/archetypes.yaml`), so `dj library analyze` finds it in any install.
 
 Lanes and their colours (Q-30, D-27): the lanes list is the taste lanes in BPM order (low end,
 then high end, then label). Slots are assigned here, once, and every chart reads them from
@@ -68,10 +66,9 @@ band is owned by the lane whose range (each end widened by half a BPM, since lan
 rounded) overlaps it most (ties: the slower lane) and carries that lane's slot; a band no lane
 touches has no owner, and it draws in the Other grey, as does a band owned by an Other lane.
 
-Seed: the sha256 of the export's bytes, so the sleeve changes only when the library does. A
-master.db read (dj library analyze --source db) has no export file; its seed is the sha256 of
-the measured counts instead. identity.json is deterministic: same facts, export and date ->
-same bytes (sorted keys).
+Seed: the sha256 of the measured counts (`seed_of_counts`), so the sleeve changes only when the
+library does. identity.json is deterministic: same facts, library and date -> same bytes
+(sorted keys).
 """
 
 from __future__ import annotations
@@ -89,21 +86,18 @@ import yaml
 
 from dj import design
 from dj import sleeve as sleeve_mod
-from dj.analysis.common import library_folder, resolve_xml, write_json
+from dj.analysis.common import library_folder, write_json
 from dj.analysis.profile import decade
+from dj.build_library import read_for_build
 from dj.libfolder import (
     DJ_NAME_MAX,
     LibraryFolder,
     LibraryFolderError,
     append_log,
-    latest_export,
     load_meta,
-    relative,
     write_text,
 )
 from dj.model import Library, LibraryError
-from dj.readers.xml import read_xml
-from dj.safety import REPO_ROOT
 
 MODULE = "dj.analysis.identity"
 SCHEMA = 1
@@ -116,8 +110,7 @@ AXES = ("depth", "selectivity", "discipline", "breadth", "momentum", "memory")
 AXIS_NAMES = {a: a.capitalize() for a in AXES}
 ARCHETYPE_COUNT = 8
 PAIRS = tuple((a, b) for i, a in enumerate(AXES) for b in AXES[i + 1:])  # the 15 unordered pairs
-ARCHETYPES_YAML = Path(__file__).with_name("archetypes.yaml")  # the packaged copy of the skill's table
-SKILL_ARCHETYPES_YAML = REPO_ROOT / "plugin" / "skills" / "dj-identity" / "archetypes.yaml"
+ARCHETYPES_YAML = Path(__file__).with_name("archetypes.yaml")  # the archetype table, packaged with dj
 
 BAND_EDGES = (100, 110, 118, 122, 125, 128, 135)
 BANDS = ("<100", "100-110", "110-118", "118-122", "122-125", "125-128", "128-135", "135+")
@@ -444,8 +437,7 @@ def load_archetypes(path: str | Path | None = None) -> list[dict[str, Any]]:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise IdentityError(f"archetypes.yaml not found at {path.name}: the dj-identity skill folder or the dj "
-                            "package is incomplete") from None
+        raise IdentityError(f"archetypes.yaml not found at {path.name}: the dj package is incomplete") from None
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         raise IdentityError(f"archetypes.yaml does not read: {exc}") from None
     return check_archetypes(data)
@@ -682,13 +674,6 @@ def _measured_from(facts: Mapping[str, dict[str, Any]]) -> dict[str, str | None]
     }
 
 
-def _source_name(folder: LibraryFolder, path: Path) -> str:
-    try:
-        return relative(folder.root, path)
-    except LibraryFolderError:
-        return path.name
-
-
 def _as_of(facts: Mapping[str, dict[str, Any]]) -> date | None:
     stamp = (facts["profile"].get("provenance") or {}).get("date")
     try:
@@ -711,15 +696,19 @@ def from_library(
     """The identity of a Library already read and measured (dj library analyze): build, write
     both files. No log line (the caller logs). Returns (identity, written paths)."""
     shape = measure(lib)
-    if lib.source == "xml" and lib.source_path and Path(lib.source_path).is_file():
-        seed = seed_of(lib.source_path)
-    else:
-        seed = seed_of_counts(shape)
     identity = build(
-        profile, structure, taste, shape, seed=seed, source=source, handle=handle_of(_meta(folder)),
+        profile, structure, taste, shape, seed=_seed(lib, shape), source=source, handle=handle_of(_meta(folder)),
         today=today or date.today(), table=load_archetypes(archetypes),
     )  # fmt: skip
     return identity, write(folder, identity)
+
+
+def _seed(lib: Library, shape: Mapping[str, Any]) -> int:
+    """The sleeve's seed: from what the library holds (`seed_of_counts`). An export fixture (test
+    support only, `dj.build_library.SOURCES`) seeds from its file, as before."""
+    if lib.source == "xml" and lib.source_path and Path(lib.source_path).is_file():
+        return seed_of(lib.source_path)
+    return seed_of_counts(shape)
 
 
 def _meta(folder: LibraryFolder) -> dict[str, Any] | None:
@@ -732,34 +721,33 @@ def _meta(folder: LibraryFolder) -> dict[str, Any] | None:
 def run(
     folder: LibraryFolder | str | Path,
     *,
-    xml: str | Path | None = None,
+    source: str | None = None,
     today: date | None = None,
     archetypes: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Read the three facts files and the export they came from (latest, or `xml`), write
-    profile/identity.json and profile/sleeve.svg, append one log.md line. Returns the summary.
+    """Read the three facts files and the library they came from (a master.db snapshot,
+    `dj.build_library`), write profile/identity.json and profile/sleeve.svg, append one log.md
+    line. Returns the summary.
 
     `today` (the date the axes are measured at) defaults to the date in profile/facts.json, so
     the same facts always give the same identity. A folder that is not a dj-library ->
-    NotALibraryFolder; a missing facts file, facts from another export or a broken archetype
+    NotALibraryFolder; a missing facts file, facts from another read or a broken archetype
     table -> IdentityError. Nothing is written in either case."""
     folder = library_folder(folder)
     facts = _read_facts(folder)
     table = load_archetypes(archetypes)
-    path = resolve_xml(folder.root, xml) if xml else latest_export(folder.root)
-    source = _source_name(folder, path)
+    lib, source = read_for_build(folder, source)
     stale = {k: v for k, v in _measured_from(facts).items() if v is not None and v != source}
     if stale:
         names = ", ".join(f"{FACTS[k]} ({v})" for k, v in sorted(stale.items()))
         raise IdentityError(
-            f"{names} measured another export than {source}: run profile, structure and taste again first. "
+            f"{names} measured another library than {source}: run the analysis again first (dj library analyze). "
             "Nothing was written."
         )
-    lib = read_xml(path)
     shape = measure(lib)
     day = today or _as_of(facts) or date.today()
     identity = build(
-        facts["profile"], facts["structure"], facts["taste"], shape, seed=seed_of(path), source=source,
+        facts["profile"], facts["structure"], facts["taste"], shape, seed=_seed(lib, shape), source=source,
         handle=handle_of(_meta(folder)), today=day, table=table,
     )  # fmt: skip
     written = write(folder, identity)

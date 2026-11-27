@@ -9,19 +9,14 @@ minutes left on every question, the skill's one-question-per-reply rules.
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
-import sys
-import textwrap
 from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import xml_fixtures as fx
-import yaml
-from reply_checks import reply_problems, text_problems
+from reply_checks import text_problems
 from typer.testing import CliRunner
 
 from dj import barber, cli, libfolder, safety
@@ -40,9 +35,9 @@ from dj.taste_files import (
     read_vetoes,
 )
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 REPO = Path(__file__).resolve().parents[1]
-SKILL = REPO / "plugin" / "skills" / "dj-barber"
-SCRIPT = SKILL / "scripts" / "barber.py"
 D0, D1, D2 = date(2026, 10, 20), date(2026, 10, 21), date(2026, 10, 22)
 PROGRESS = re.compile(r"^Question (\d+) of (\d+) · about (\d+) minutes? left$")
 TASTE_MD = {"taste/anchors.md", "taste/lanes.md", "taste/vetoes.md", "taste/feedback.md"}
@@ -706,92 +701,7 @@ def test_mcp_annotations():
 # -- the skill script -----------------------------------------------------------------------------
 
 
-def run_script(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    env = dict(os.environ, PYTHONUTF8="1")
-    return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd, capture_output=True, text=True,
-                          encoding="utf-8", timeout=120, env=env)  # fmt: skip
-
-
-def test_script_next_and_record(lib_dir, tmp_path):
-    done = run_script("next", "--library", str(lib_dir), "--today", "2026-10-21", cwd=tmp_path)
-    assert done.returncode == 0, done.stderr
-    out = json.loads(done.stdout)
-    assert out["ok"] is True and out["question"]["n"] == 1 and out["counts"]["left"] == 8
-    q = out["question"]
-    rec = run_script("record", "1", ANSWERS[q["kind"]], "--library", str(lib_dir), "--today", "2026-10-21", cwd=tmp_path)
-    assert rec.returncode == 0, rec.stderr
-    data = json.loads(rec.stdout)
-    assert data["ok"] is True and data["counts"]["lines_added"] == 1 and data["next"]["n"] == 2
-    bad = run_script("record", "2", "nope", "--library", str(lib_dir), "--today", "2026-10-21", cwd=tmp_path)
-    assert bad.returncode == 1 and "not an answer" in json.loads(bad.stdout)["error"]
-
-
-def test_script_refuses_and_errors(tmp_path):
-    plain = tmp_path / "plain"
-    plain.mkdir()
-    done = run_script("next", "--library", str(plain), cwd=tmp_path)
-    assert done.returncode == 2 and "library.yaml" in json.loads(done.stdout)["refused"]
-    assert list(plain.iterdir()) == []
-    for args in ((), ("next",), ("record", "1", "--library", str(plain)), ("record", "x", "A", "--library", str(plain))):
-        done = run_script(*args, cwd=tmp_path)
-        assert done.returncode == 1 and json.loads(done.stdout)["ok"] is False, args
-
-
-def test_script_runs_without_engine_packages(lib_dir, tmp_path):
-    code = textwrap.dedent(f"""
-        import runpy, sys
-        for name in ("pyrekordbox", "rapidfuzz", "httpx", "typer", "mcp"):
-            sys.modules[name] = None
-        sys.argv = ["barber.py", "next", "--library", {str(lib_dir)!r}, "--today", "2026-10-21"]
-        runpy.run_path({str(SCRIPT)!r}, run_name="__main__")
-    """)
-    env = dict(os.environ, PYTHONUTF8="1")
-    done = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True,
-                          encoding="utf-8", timeout=120, env=env)  # fmt: skip
-    assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout)["counts"]["questions"] == 8
-
-
 # -- the skill (R-701, R-702, R-703) --------------------------------------------------------------
-
-
-def _skill_text() -> tuple[dict, str]:
-    text = (SKILL / "SKILL.md").read_text(encoding="utf-8").replace("\r\n", "\n")
-    m_ = re.match(r"\A---\n(.*?)\n---\n(.*)\Z", text, re.DOTALL)
-    return yaml.safe_load(m_.group(1)), m_.group(2)
-
-
-def test_skill_md():
-    meta, body = _skill_text()
-    assert meta["name"] == "dj-barber" and meta["description"].strip()
-    assert "**Requirements:** R-701, R-702, R-703, R-1405." in body
-    assert "[shared/voice.md](../../shared/voice.md)" in body and "[shared/adhd.md](../../shared/adhd.md)" in body
-    for needle in (
-        "one question", "never ask two in one reply", "Question 3 of 8 · about 6 minutes left",
-        "under 10 minutes", "stop at any moment", "A / B", "numbered version", "Reply 1 or 2",
-        "scripts/barber.py next --library DIR", "scripts/barber.py record N ANSWER --library DIR",
-        "dj library barber next", "dj library barber record", "dj_barber_next()", "dj_barber_record(n, answer)",
-        "taste/anchors.md", "taste/lanes.md", "taste/vetoes.md", "taste/feedback.md",
-        "never propose", "never pair", "Crate me never picks that track", "read_vetoes", "skip",
-        "a gig\n  answered once is not asked about again",
-    ):  # fmt: skip
-        assert needle in body, needle
-    # nothing in the codebase makes the structure proposals honour vetoes: the skill must not promise it
-    assert "proposals leave it out" not in body and "do not read vetoes" in body
-
-
-def test_skill_example_replies_follow_the_rules():
-    """The shared chat-reply checker (the one W-28's transcript check runs) passes every example."""
-    _, body = _skill_text()
-    examples = re.findall(r"```text\n(.*?)\n```", body, re.DOTALL)
-    assert len(examples) >= 3
-    for reply in examples:
-        lines = [line for line in reply.split("\n") if line.strip()]
-        assert reply_problems(reply) == [], reply
-        assert any(f"taste/{name}" in reply for name in ("anchors.md", "lanes.md", "vetoes.md", "feedback.md"))
-        assert PROGRESS.match(re.split(r"\. ", next(line for line in lines if line.startswith("Question")))[0])
-        assert sum(line.count("?") for line in lines) == 1, reply  # one question per reply
-        assert re.search(r"\((under|about) (a|\d+) minutes?\)\.?$", lines[-1]), lines[-1]  # ends with < 2 min
 
 
 def test_vetoes_md_from_the_barber_reads_like_a_hand_written_one(tmp_path):

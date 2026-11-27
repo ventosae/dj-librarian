@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 REPO = Path(__file__).resolve().parents[1]
 REQUIREMENTS = REPO / "docs" / "requirements.md"
 QUESTIONS = ("Does the profile sound like you?", "Which proposal would you build?", "What did you not understand?")

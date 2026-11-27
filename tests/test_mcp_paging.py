@@ -504,14 +504,16 @@ def test_the_tidy_read_tools_page_the_lists_the_real_cli_prints(env, monkeypatch
     assert "groups" in m.paginate(dupes, ("groups",))["paging"]
 
 
-def test_inspect_pages_the_tree_the_real_cli_prints(tmp_path):
+def test_inspect_pages_the_tree_the_real_cli_prints(tmp_path, monkeypatch):
     import xml_fixtures as fx
     from typer.testing import CliRunner
 
-    from dj import cli
+    from dj import cli, safety
 
-    xml = fx.write_xml(tmp_path / "collection.xml")
-    data = json.loads(CliRunner().invoke(cli.app, ["library", "inspect", str(xml), "--json"]).stdout)
+    live = fx.write_master_files(tmp_path / "rb")
+    monkeypatch.setattr(safety, "find_master_db", lambda: live)
+    monkeypatch.setattr(safety, "_connect", lambda path, quiet=False: fx.fake_db())
+    data = json.loads(CliRunner().invoke(cli.app, ["library", "inspect", "--json"]).stdout)
     page = m.paginate(data, ("tree",), 1, 1)
     assert page["paging"]["tree"]["total"] == len(data["tree"]) and len(page["tree"]) == 1
     assert list(page)[0] == "counts"

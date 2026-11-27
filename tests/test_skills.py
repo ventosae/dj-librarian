@@ -335,7 +335,7 @@ def test_r1003_spot_check_on_the_chat_replies():
     assert "export" not in engine.lower().split("> the same session")[0] and "Connect a folder" not in engine
 
 
-def test_r1003_spot_check_on_the_report(tmp_path):
+def test_r1003_spot_check_on_the_report(tmp_path, monkeypatch):
     """R-1003, report slot (W-17): a real dj-report HTML, the synthetic library through the whole
     chain (profile, structure, taste, proposals, render). The words of each of its four sections
     pass the mechanical checklist: no pleasantry first, no list over 5, no word from the Avoid
@@ -346,9 +346,10 @@ def test_r1003_spot_check_on_the_report(tmp_path):
     import xml_fixtures as fx
     from reply_checks import report_sections
 
-    from dj import libfolder
+    from dj import build_library, libfolder
     from dj.analysis import run_all
 
+    monkeypatch.setattr(build_library, "DEFAULT_SOURCE", "xml")  # test support: read the export fixture
     day = date(2026, 10, 20)
     root = tmp_path / "dj-library"
     libfolder.scaffold(root, device="mac", today=day)

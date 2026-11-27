@@ -15,7 +15,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 import xml_fixtures as fx
-from test_build_structure import DAY, _make_library
+from test_build_structure import _make_library
 from test_crate import _make_library as _make_crate_library
 from test_crate import big_spec, write_spec
 from test_direct_write import TxDB
@@ -50,9 +50,7 @@ def rb(monkeypatch, tmp_path):
 
 @pytest.fixture
 def folder(tmp_path, rb):
-    f = _make_library(tmp_path)
-    libfolder.update_meta(f.root, today=DAY, source="db")  # analysed through the engine (W-36)
-    return f
+    return _make_library(tmp_path)
 
 
 def lib_args(folder, *more):
@@ -77,7 +75,7 @@ def write(folder, pid, *more):
 def test_the_preview_says_it_writes_into_rekordbox(folder):
     text = runner.invoke(cli.app, lib_args(folder)).stdout
     assert db_write.PREVIEW_LINE in text
-    assert "into rekordbox: dj library build lanes --apply --preview-id " in text
+    assert "to write:    dj library build lanes --apply --preview-id " in text
 
 
 # -- the write ---------------------------------------------------------------------------------------
@@ -176,7 +174,6 @@ def crate_folder(tmp_path, rb):
     rb.db = TxDB(fx.fake_db(big_spec()))
     f = _make_crate_library(tmp_path)
     write_spec(f)
-    libfolder.update_meta(f.root, today=DAY, source="db")
     return f
 
 
@@ -184,7 +181,7 @@ def test_a_crate_goes_into_rekordbox_with_its_record(crate_folder, rb):
     args = ["library", "crate", "sat", "--library", str(crate_folder.root)]
     data = json.loads(runner.invoke(cli.app, [*args, "--json"]).stdout)
     assert data["export"] == "master.db" and data["into_rekordbox"] == db_write.PREVIEW_LINE
-    picks = crate_mod.preview(crate_folder.root, "sat", source="db")  # what the DJ saw
+    picks = crate_mod.preview(crate_folder.root, "sat")  # what the DJ saw
     done = runner.invoke(cli.app, [*args, "--apply", "--preview-id", data["preview_id"], "--json"])
     assert done.exit_code == 0, done.output
     result = json.loads(done.stdout)
@@ -196,25 +193,8 @@ def test_a_crate_goes_into_rekordbox_with_its_record(crate_folder, rb):
     assert result["log_line"].endswith("; master.db") and " crate sat -> 50 picks, " in result["log_line"]
     record = (crate_folder.root / result["record"]).read_text(encoding="utf-8")
     assert "Written into rekordbox: playlists Crates/Saturday" in record and "Import master.db" not in record
-    after = crate_mod.preview(crate_folder.root, "sat", source="db")
+    after = crate_mod.preview(crate_folder.root, "sat")
     assert after.preview_id is None and "Crates/Saturday exists in rekordbox already" in after.blocked
-
-
-def test_without_the_engine_a_db_library_says_so_in_one_line(crate_folder, monkeypatch):
-    """A skill script in Cowork's sandbox has no pyrekordbox: the build and the crate say which tools
-    to use instead of failing on an import."""
-    import builtins
-
-    real = builtins.__import__
-
-    def no_engine(name, *args, **kwargs):
-        if name == "dj.readers.db":
-            raise ImportError("No module named 'pyrekordbox'")
-        return real(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", no_engine)
-    with pytest.raises(crate_mod.CrateError, match="read from rekordbox through the engine"):
-        crate_mod.preview(crate_folder.root, "sat")
 
 
 # -- after the review (W-38) ------------------------------------------------------------------------------
@@ -247,7 +227,7 @@ def test_a_failure_after_the_commit_is_not_called_a_rollback(folder, rb, monkeyp
 
 def test_the_first_of_two_same_named_folders_counts_as_the_tree_writer_takes_it():
     from dj.model import PlaylistNode
-    from dj.writers.rekordbox_xml import PlannedNode
+    from dj.write_plan import PlannedNode
 
     roots = (PlaylistNode("1", "folder", "Gigs", children=(PlaylistNode("2", "playlist", "new"),)),
              PlaylistNode("3", "folder", "Gigs"))  # rekordbox allows both: an XML imported twice  # fmt: skip
@@ -273,6 +253,6 @@ def test_the_result_counts_tracks_as_the_preview_does_and_names_entries_apart(fo
     data = json.loads(runner.invoke(cli.app, lib_args(folder, "--json")).stdout)
     done = write(folder, data["preview_id"], "--json")
     result = json.loads(done.stdout)
-    assert result["counts"]["tracks"] == data["counts"]["tracks"]  # unique tracks, as the XML route counts
+    assert result["counts"]["tracks"] == data["counts"]["tracks"]  # unique tracks, as the preview counts
     assert result["into_rekordbox"]["entries"] >= result["counts"]["tracks"]
     assert Path(result["backup"]).is_absolute()  # the engine's folder, never the dj-library's backups/

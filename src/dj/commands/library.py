@@ -1,9 +1,9 @@
-"""`dj library ...`: the library model (XML export or master.db snapshot) and its analysis.
+"""`dj library ...`: the library model (read from a master.db snapshot) and its analysis.
 
-Nothing here writes to rekordbox: `inspect` only reads; `profile`, `structure`, `taste`,
-`identity`, `report` and `analyze` write text files in the library folder (R-341); `build` and `crate`
-write a rekordbox XML the DJ imports, only with the id of a preview the DJ said yes to
-(R-501..R-505, R-601..R-604).
+`inspect` only reads; `profile`, `structure`, `taste`, `identity`, `report` and `analyze` write
+text files in the library folder (R-341); `build` and `crate` preview, and with --apply and the id
+of a preview the DJ said yes to write straight into rekordbox's master.db (`dj.db_write`:
+rekordbox closed, a verified backup, one transaction; R-501..R-505, R-601..R-604).
 """
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ from dj.analysis.common import NotALibraryFolder, parse_day
 from dj.gate import GateError
 from dj.libfolder import configured_root
 from dj.model import Library, LibraryError, PlaylistNode
-from dj.readers.xml import XML_FIELDS_MISSING, XML_NOTES, read_xml
 from dj.treeschema import TreeSchemaError
 
 EXIT_ERROR = 1
@@ -42,8 +41,8 @@ NAME_LIMIT = 120  # characters of a name shown; longer names end in "..."
 
 library_app = typer.Typer(
     add_completion=False, no_args_is_help=True, pretty_exceptions_show_locals=False,
-    help="The DJ's library as one model, read from a rekordbox XML export or a master.db "
-         "snapshot, and its analysis. Nothing here writes to rekordbox.",
+    help="The DJ's library as one model, read from a master.db snapshot, and its analysis. "
+         "build and crate write into rekordbox only with --apply and a preview id.",
 )  # fmt: skip
 
 
@@ -63,14 +62,10 @@ def _node_entry(node: PlaylistNode) -> dict[str, Any]:
 
 def summary(lib: Library, snapshot_path: str | None = None) -> dict[str, Any]:
     """Counts first, then a bounded sample of the top of the tree (NFR-03)."""
-    if lib.source == "xml":
-        missing, notes = list(XML_FIELDS_MISSING), list(XML_NOTES)
-    else:
-        from dj.readers.db import (
-            DB_NOTES,  # a db Library means the db reader is loaded already
-        )
+    from dj.readers.db import DB_NOTES
 
-        missing, notes = [], list(DB_NOTES)
+    missing: list[str] = []
+    notes = list(DB_NOTES) if lib.source == "db" else []
     return {
         "source": lib.source,
         "counts": lib.counts(),
@@ -106,8 +101,6 @@ def _lines(data: dict[str, Any]) -> list[str]:
             lines.append(f"      ... {node['more_children']} more")
     if data["tree_more"]:
         lines.append(f"  ... {data['tree_more']} more at the top")
-    if data["fields_missing"]:
-        lines += ["", "not in the XML export: " + ", ".join(data["fields_missing"])]
     if data["notes"]:
         lines += ["", "notes:"] + [f"  {note}" for note in data["notes"]]
     return lines
@@ -144,20 +137,14 @@ def _reader_log() -> Iterator[_ReaderLog]:
 
 @library_app.command()
 def inspect(
-    xml: str = typer.Argument(None, help="A rekordbox collection XML. Empty: a master.db snapshot."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
-    """Read-only summary: source, counts, top of the tree, what the source does not carry."""
+    """Read-only summary of rekordbox's library (a master.db snapshot): counts, top of the tree."""
     with _reader_log() as reader_log:
         try:
-            if xml:
-                lib = read_xml(xml)
-            else:
-                from dj.readers.db import (
-                    read_db,  # Door 2: pyrekordbox only when asked for
-                )
+            from dj.readers.db import read_db
 
-                lib = read_db()
+            lib = read_db()
         except (LibraryError, OSError) as exc:
             typer.echo(f"ERROR {exc}", err=True)
             raise typer.Exit(EXIT_ERROR)
@@ -168,16 +155,15 @@ def inspect(
 @library_app.command("profile")
 def profile_cmd(
     library: str = typer.Option(None, "--library", help="The dj-library folder. Default: the configured one."),
-    xml: str = typer.Option(None, "--xml", help="Read this collection XML instead of the latest export."),
     today: str = typer.Option(None, "--today", help="Date written into the files, YYYY-MM-DD. Default: today."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
     """Measure the library: writes profile/stats.md, profile/facts.json and a log.md line.
 
-    R-311. Reads the export only: nothing goes to rekordbox, Spotify or audio files (R-341)."""
+    R-311. Reads a master.db snapshot: nothing goes to rekordbox, Spotify or audio files (R-341)."""
     try:
         root = libfolder.configured_root() if not library else library
-        result = profile_analysis.run(root, xml=xml, today=parse_day(today))
+        result = profile_analysis.run(root, today=parse_day(today))
     except (LibraryError, OSError, ValueError) as exc:
         typer.echo(f"ERROR {exc}", err=True)
         raise typer.Exit(EXIT_ERROR)
@@ -207,7 +193,6 @@ def _structure_lines(result: dict[str, Any]) -> list[str]:
 @library_app.command()
 def structure(
     library: str = typer.Option(None, "--library", help="The dj-library folder. Default: the configured one."),
-    xml: str = typer.Option(None, "--xml", help="A collection XML to read instead of the latest export."),
     today: str = typer.Option(None, "--today", help="Date written into the files, YYYY-MM-DD. Default: today."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
@@ -216,7 +201,7 @@ def structure(
     try:
         day = date.fromisoformat(today) if today else None
         root = Path(library) if library else configured_root()
-        result = structure_analysis.run(root, xml=xml, today=day)
+        result = structure_analysis.run(root, today=day)
     except (LibraryError, TreeSchemaError, OSError, ValueError) as exc:
         typer.echo(f"ERROR {exc}", err=True)
         raise typer.Exit(EXIT_ERROR)
@@ -229,7 +214,6 @@ SHOWN_LINES = 5  # added lines shown per file in the text output; --json carries
 @library_app.command()
 def taste(
     library: str = typer.Option("", "--library", help="The dj-library folder. Empty: the configured one."),
-    xml: str = typer.Option("", "--xml", help="Read this export instead of the latest one in exports/."),
     today: str = typer.Option("", "--today", help="Date for new entries, YYYY-MM-DD. Empty: today."),
     rebuild: bool = typer.Option(
         False, "--rebuild", help="Rewrite taste/*.md from scratch. Only after the DJ said yes."
@@ -239,12 +223,12 @@ def taste(
     """Measure the DJ's taste (lanes, labels, artists, anchors, words) and append it to taste/.
 
     Appends, never rewrites (R-332): every run adds only new or changed lines and shows them.
-    Reads the export only; never writes to rekordbox, Spotify or audio files (R-341).
+    Reads a master.db snapshot; never writes to rekordbox, Spotify or audio files (R-341).
     """
     try:
         day = date.fromisoformat(today) if today else None
         folder = library or configured_root()
-        result = taste_analysis.run(folder, xml=xml or None, today=day, rebuild=rebuild)
+        result = taste_analysis.run(folder, today=day, rebuild=rebuild)
     except taste_analysis.NotALibraryFolder as exc:
         typer.echo(f"REFUSED {exc}", err=True)
         raise typer.Exit(EXIT_REFUSED)
@@ -279,7 +263,6 @@ def taste(
 @library_app.command("identity")
 def identity_cmd(
     library: str = typer.Option("", "--library", help="The dj-library folder. Empty: the configured one."),
-    xml: str = typer.Option("", "--xml", help="Read this export instead of the latest one in exports/."),
     today: str = typer.Option(
         "", "--today", help="Date the axes are measured at, YYYY-MM-DD. Empty: the date in profile/facts.json."
     ),
@@ -288,10 +271,10 @@ def identity_cmd(
     """Six measured axes, an archetype and the sleeve: profile/identity.json, profile/sleeve.svg.
 
     R-1401..R-1403. Reads profile/, structure/ and taste/ facts (run profile, structure and taste
-    first) and the export; one log.md line. Never writes to rekordbox, Spotify or audio files."""
+    first) and a master.db snapshot; one log.md line. Never writes to rekordbox, Spotify or audio files."""
     try:
         root = library or configured_root()
-        result = identity_analysis.run(root, xml=xml or None, today=parse_day(today))
+        result = identity_analysis.run(root, today=parse_day(today))
     except NotALibraryFolder as exc:
         typer.echo(f"REFUSED {exc}", err=True)
         raise typer.Exit(EXIT_REFUSED)
@@ -346,7 +329,7 @@ def report_cmd(
     reports/<date>-library.html from the files in the library folder. One log.md line.
     --render-only skips the proposals step, so a renamed proposal shows as written.
 
-    R-401..R-406. Reads the latest export and the folder's files; never writes to rekordbox.
+    R-401..R-406. Reads a master.db snapshot and the folder's files; never writes to rekordbox.
     A second report on the same day is <date>-library-2.html: `report` names the file written."""
     try:
         root = library or configured_root()
@@ -378,20 +361,18 @@ def report_cmd(
 @library_app.command("analyze")
 def analyze_cmd(
     library: str = typer.Option(None, "--library", help="The dj-library folder. Default: the configured one."),
-    source: str = typer.Option("xml", "--source", help="xml: the latest export (or --xml); db: a master.db snapshot."),
-    xml: str = typer.Option(None, "--xml", help="Read this collection XML instead of the latest export."),
     today: str = typer.Option(None, "--today", help="Date written into the files, YYYY-MM-DD. Default: today."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
     """Read the library once, then profile, structure, taste, identity, proposals and the HTML report.
 
-    Writes text files in the library folder only, one log.md line per step. --source db reads a
-    snapshot copy of master.db (read-only). Never writes to rekordbox, Spotify or audio files.
+    Writes text files in the library folder only, one log.md line per step. Reads a snapshot copy
+    of master.db (read-only). Never writes to rekordbox, Spotify or audio files.
     Exit 1 when a step failed (the rest still ran; `failed` names it)."""
     with _reader_log():
         try:
             root = library or configured_root()
-            result = run_all.analyze(root, source=source, xml=xml, today=parse_day(today))
+            result = run_all.analyze(root, today=parse_day(today))
         except NotALibraryFolder as exc:
             typer.echo(f"REFUSED {exc}", err=True)
             raise typer.Exit(EXIT_REFUSED)
@@ -468,10 +449,6 @@ def _fail(message: str) -> None:
     raise typer.Exit(EXIT_ERROR)
 
 
-_XML = typer.Option(False, "--xml", help="With --apply: write an XML to import instead of writing into "
-                    "rekordbox's master.db (the default: rekordbox closed, a backup first; dj.db_write).")  # fmt: skip
-
-
 def _preview_lines(data: dict[str, Any], rows: list[Any], slug: str) -> list[str]:
     c = data["counts"]
     state = "new, written now" if data["yaml_created"] else "yours, read as it is"
@@ -493,32 +470,15 @@ def _preview_lines(data: dict[str, Any], rows: list[Any], slug: str) -> list[str
         if data["lands_more"]:
             lines.append(f"  ... {data['lands_more']} more")
     if data["unplaced"]:
-        lines += ["", f"{data['unplaced']} track(s) have no file location and stay out of the XML."]
+        lines += ["", f"{data['unplaced']} track(s) have no file location and stay out of the new playlists."]
     if data.get("vetoed"):
-        lines += ["", f"{data['vetoed']} vetoed track(s) (taste/vetoes.md) stay out of the XML."]
+        lines += ["", f"{data['vetoed']} vetoed track(s) (taste/vetoes.md) stay out of the new playlists."]
     lines += [f"WARNING {w}" for w in data["warnings"]]
     lines += ["", "Nothing written yet."]
     if data["blocked"]:
         lines.append(f"BLOCKED {data['blocked']}")
     else:
         lines.append(f"preview id:  {data['preview_id']}")
-        lines.append(
-            f"to write:    dj library build {slug} --apply --xml --preview-id {data['preview_id']} "
-            "(an XML to import; only after the DJ said yes)"
-        )
-    return lines
-
-
-def _apply_lines(data: dict[str, Any]) -> list[str]:
-    c = data["counts"]
-    lines = [
-        f"Wrote {data['written']} ({c['create']} create, {c['skip']} skip, {c['manual']} manual, "
-        f"{c['tracks']} tracks). rekordbox untouched until you import it.",
-        f"Import in rekordbox ({data['device']}):",
-    ]
-    lines += [f"  {n}. {step}" for n, step in enumerate(data["import_steps"], 1)]
-    lines.append(f"log.md: {data['log_line']}")
-    lines += [f"WARNING {w}" for w in data["warnings"]]
     return lines
 
 
@@ -534,12 +494,10 @@ def build(
         help="Rows in the preview's --json; the rest are counted in rows_more. 0 = every row (the MCP tool pages them).",
     ),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
-    source: str = typer.Option(None, "--source", help="xml: the latest export; db: a master.db snapshot. Default: library.yaml's."),
-    xml: bool = _XML,
 ) -> None:
     """Preview a proposal (CREATE / SKIP / CONFLICT / MANUAL per node), or with --apply and the
     preview id write it into master.db (dj.db_write: rekordbox closed, a backup first, one
-    commit); with --xml write proposals/<slug>.xml for the DJ to import instead."""
+    commit). Reads a master.db snapshot."""
     if apply and not (preview_id or "").strip():
         _refuse("--apply needs --preview-id: run the preview, show it, write only after a yes.")
     try:
@@ -550,18 +508,12 @@ def build(
         root = Path(library) if library else libfolder.configured_root()
         if not root.is_dir():
             _fail(f"{root} is not a folder. Scaffold the dj-library folder first (dj-start).")
-        if apply and not xml:  # into master.db: dj.db_write prints and exits itself
-            return db_write.run_cli(as_json, lambda: db_write.build(root, proposal, preview_id.strip(), today=day,
-                                                                     source=source))  # fmt: skip
-        if apply:
-            result = build_structure.apply(root, proposal, (preview_id or "").strip(), today=day, source=source)
-            data = result.to_dict()
-            text = _apply_lines(data)
-        else:
-            found = build_structure.preview(root, proposal, today=day, source=source)
-            data = found.to_dict(root, limit=rows_limit or len(found.rows)) | db_write.preview_keys(root, source)
-            text = _preview_lines(data, list(found.rows), found.slug)
-            text += db_write.preview_lines(data, f"dj library build {found.slug}")
+        if apply:  # into master.db: dj.db_write prints and exits itself
+            return db_write.run_cli(as_json, lambda: db_write.build(root, proposal, preview_id.strip(), today=day))
+        found = build_structure.preview(root, proposal, today=day)
+        data = found.to_dict(root, limit=rows_limit or len(found.rows)) | db_write.preview_keys()
+        text = _preview_lines(data, list(found.rows), found.slug)
+        text += db_write.preview_lines(data, f"dj library build {found.slug}")
     except GateError as exc:
         _refuse(str(exc))
     except (build_structure.BuildError, TreeSchemaError, LibraryError, OSError, ValueError) as exc:
@@ -700,24 +652,6 @@ def _crate_preview_lines(found: crate_mod.CratePreview) -> list[str]:
         lines.append(f"BLOCKED {data['blocked']}")
     else:
         lines.append(f"preview id:  {data['preview_id']}")
-        lines.append(
-            f"to write:    dj library crate {data['crate']} --apply --xml --preview-id {data['preview_id']} "
-            "(an XML to import; only after the DJ said yes)"
-        )
-    return lines
-
-
-def _crate_apply_lines(data: dict[str, Any]) -> list[str]:
-    c = data["counts"]
-    lines = [
-        f"Wrote {data['written']} ({c['picks']} picks, {c['spares']} spares). rekordbox untouched until you import it.",
-    ]
-    if data["record"]:
-        lines.append(f"Crate record: {data['record']}")
-    lines.append(f"Import in rekordbox ({data['device']}):")
-    lines += [f"  {n}. {step}" for n, step in enumerate(data["import_steps"], 1)]
-    lines.append(f"log.md: {data['log_line']}")
-    lines += [f"WARNING {w}" for w in data["warnings"]]
     return lines
 
 
@@ -731,12 +665,10 @@ def crate_cmd(
     picks_limit: int = typer.Option(crate_mod.PICKS_LIMIT, "--picks-limit", min=0,
                                     help="Picks listed in the preview JSON; 0 = all (the MCP tool pages them)."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
-    source: str = typer.Option(None, "--source", help="xml: the latest export; db: a master.db snapshot. Default: library.yaml's."),
-    xml: bool = _XML,
 ) -> None:
     """Preview a crate from crates/<slug>.spec.yaml (picks with a reason each, spares by energy),
-    or with --apply and the preview id write it into master.db (dj.db_write) and crates/<slug>.md;
-    with --xml write proposals/crate-<slug>.xml for the DJ to import instead."""
+    or with --apply and the preview id write it into master.db (dj.db_write) and crates/<slug>.md.
+    Reads a master.db snapshot."""
     if apply and not (preview_id or "").strip():
         _refuse("--apply needs --preview-id: run the preview, show it, write only after a yes.")
     try:
@@ -747,16 +679,11 @@ def crate_cmd(
         root = Path(library) if library else libfolder.configured_root()
         if not root.is_dir():
             _fail(f"{root} is not a folder. Scaffold the dj-library folder first (dj-start).")
-        if apply and not xml:  # into master.db: dj.db_write prints and exits itself
-            return db_write.run_cli(as_json, lambda: db_write.crate(root, spec, preview_id.strip(), today=day,
-                                                                     source=source))  # fmt: skip
-        if apply:
-            data = crate_mod.apply(root, spec, (preview_id or "").strip(), today=day, source=source).to_dict()
-            text = _crate_apply_lines(data)
-        else:
-            found = crate_mod.preview(root, spec, today=day, source=source)
-            data = found.to_dict(picks_limit) | db_write.preview_keys(root, source)
-            text = _crate_preview_lines(found) + db_write.preview_lines(data, f"dj library crate {found.slug}")
+        if apply:  # into master.db: dj.db_write prints and exits itself
+            return db_write.run_cli(as_json, lambda: db_write.crate(root, spec, preview_id.strip(), today=day))
+        found = crate_mod.preview(root, spec, today=day)
+        data = found.to_dict(picks_limit) | db_write.preview_keys()
+        text = _crate_preview_lines(found) + db_write.preview_lines(data, f"dj library crate {found.slug}")
     except GateError as exc:
         _refuse(str(exc))
     except (crate_mod.CrateError, build_structure.BuildError, LibraryError, OSError) as exc:

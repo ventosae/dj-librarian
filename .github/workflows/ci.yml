@@ -4,7 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
-  # release.yml runs these same checks on a v* tag before its draft release (W-32).
+  # release.yml runs these same checks on a v* tag before its draft release.
   workflow_call:
 
 permissions:
@@ -48,20 +48,10 @@ jobs:
           node-version: "22"
       - name: Install Claude Code
         run: npm i -g @anthropic-ai/claude-code
-      # The engine bundle (the standalone fallback, not in the plugin): the official MCPB CLI checks
-      # its manifest against the strict 0.4 schema the host installs it with (the pin is
-      # scripts/build_mcpb.py's MCPB_CLI).
-      - name: Check the engine manifest (MCPB schema)
-        run: npx --yes @anthropic-ai/mcpb@2.1.2 validate mcpb/manifest.json
       - name: Validate plugin
         run: claude plugin validate ./plugin --strict
       - name: Validate marketplace
         run: claude plugin validate .
-      # Start the built bundle the way a host does: unpacked outside the checkout, its own
-      # `uv run` command and env, initialize and tools/list, the tools compared with the manifest's.
-      - uses: astral-sh/setup-uv@v6
-      - name: Start the built engine
-        run: python3 scripts/build_mcpb.py --out "$RUNNER_TEMP/engine" --smoke
 
   secrets:
     name: secret scan

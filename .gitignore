@@ -3,11 +3,10 @@ __pycache__/
 *.py[oc]
 build/
 # dist/: the plugin zip (with the engine inside) is tracked, so it can be downloaded from GitHub and
-# installed on any laptop (tests/test_dist.py fails when it is stale). The light zip, the .mcpb and
-# the builders' .tmp files stay out.
+# installed on any laptop (tests/test_dist.py fails when it is stale). The builder's .tmp files and
+# anything else stay out.
 dist/*
 !dist/dj-librarian-plugin-*.zip
-dist/dj-librarian-plugin-*-no-engine.zip
 wheels/
 *.egg-info
 .venv/
@@ -53,12 +52,6 @@ local/
 # Claude Code local settings
 .claude/settings.local.json
 
-# Plugin caches. plugin/engine/ is the engine copy scripts/build_plugin_zip.py puts in the zip only
-# (D-29); vendor/ and engine.mcpb are older layouts (D-22, W-34) a local build may have left.
-.mcpb-cache/
-/plugin/engine/
-/plugin/vendor/
-/plugin/engine.mcpb
 # Rendered locally, not tracked (W-35): the handout previews and the R-409 copy of the Booth shot
 /docs/handout/preview-*.png
 /docs/samples/report.png

@@ -1,12 +1,11 @@
-"""dj-build and dj-crate straight into rekordbox, on every OS (W-38, D-32, R-504).
+"""dj-build and dj-crate straight into rekordbox: the one write, on every OS (W-38, R-504).
 
     dj library build <proposal> --apply --preview-id <id>
     dj library crate <slug>     --apply --preview-id <id>
 
-With rekordbox closed, a proposal or a crate the DJ said yes to goes into master.db. The plan is the
-one the preview showed (`XmlPlan`: the folders, the playlists and their tracks, smart playlists left
-MANUAL). DJ_POWER_MODE=false is the one off switch; the build must read rekordbox itself (the track
-ids are master.db's).
+With rekordbox closed, a proposal or a crate the DJ said yes to goes into master.db. The plan is
+the one the preview showed (`dj.write_plan.WritePlan`: the folders, the playlists and their tracks,
+smart playlists left MANUAL). DJ_POWER_MODE=false is the one off switch.
 
 The chain, in this order, nothing else:
 1. the preview id: its shape, then the build's or crate's own gate record (same content, unused, under 24 h);
@@ -34,19 +33,16 @@ import typer
 from dj import build_structure, hostenv, libfolder, library, safety
 from dj import crate as crate_mod
 from dj import tree as tree_mod
-from dj.build_library import DB_READ, source_of
+from dj.build_library import DB_READ
 from dj.gate import GateError
-from dj.libfolder import LibraryFolder, LibraryFolderError
+from dj.libfolder import LibraryFolderError
 from dj.model import Library, LibraryError, PlaylistNode
-from dj.writers.rekordbox_xml import PlannedNode, XmlPlan, plan_lists
+from dj.write_plan import PlannedNode, WritePlan, plan_lists
 
 PREVIEW_LINE = "Writes into rekordbox directly (rekordbox must be closed). Backup first."
 CLOSE_FIRST = "Close rekordbox, then say yes again. Nothing written."
 OPEN_IT = "Open rekordbox: it's in the tree."
 CHANGED = "rekordbox's tree changed since the preview. Nothing written; preview again and show the DJ."
-SOURCE_XML = ("A write into rekordbox needs the build to read rekordbox itself: run the engine analysis "
-              "(dj_library_analyze source=\"db\") so library.yaml says source: db, or pass --source db, then preview "
-              "again. Nothing written.")  # fmt: skip
 CHANGED_ON_DISK = "WARNING: changed on disk"  # safety.open_db's note when a source file changed despite the failure
 EXIT_ERROR, EXIT_REKORDBOX_RUNNING = 1, 2
 
@@ -71,31 +67,25 @@ class MaybeWritten(DbWriteError):
 # -- is the route open --------------------------------------------------------------------------
 
 
-def route_off(folder: LibraryFolder | str | Path, source: str | None = None) -> str | None:
-    """Why a proposal or crate cannot go into rekordbox from here (one line), or None: the off
-    switch (DJ_POWER_MODE=false), and a build that reads master.db. The same on every OS."""
-    off = hostenv.power_mode_refusal()
-    if off:
-        return off
-    root = folder.root if isinstance(folder, LibraryFolder) else Path(folder)
-    try:
-        read = source_of(LibraryFolder(root), source)
-    except (LibraryFolderError, ValueError, OSError) as exc:
-        return f"{exc}"
-    return None if read == "db" else SOURCE_XML
+def route_off() -> str | None:
+    """Why a proposal or crate cannot go into rekordbox (one line), or None: only the off switch
+    (DJ_POWER_MODE=false). The same on every OS."""
+    return hostenv.power_mode_refusal()
 
 
-def preview_keys(folder: LibraryFolder | str | Path, source: str | None = None) -> dict[str, Any]:
+def preview_keys() -> dict[str, Any]:
     """The preview's keys for the skill: `into_rekordbox` (the line, or None) and, when None, why."""
-    off = route_off(folder, source)
+    off = route_off()
     return {"into_rekordbox": PREVIEW_LINE} if off is None else {"into_rekordbox": None, "into_rekordbox_off": off}
 
 
 def preview_lines(data: dict[str, Any], command: str) -> list[str]:
-    """The preview's text lines for the route: the line and the command, after the XML's."""
-    if data.get("blocked") or not data.get("into_rekordbox"):
+    """The preview's last text lines: the line and the command that writes it, or why it cannot be."""
+    if data.get("blocked"):
         return []
-    return [PREVIEW_LINE, f"into rekordbox: {command} --apply --preview-id {data['preview_id']} "
+    if not data.get("into_rekordbox"):
+        return [f"This preview cannot be written: {data.get('into_rekordbox_off')}"]
+    return [PREVIEW_LINE, f"to write:    {command} --apply --preview-id {data['preview_id']} "
                           "(only after the DJ said yes, rekordbox closed)"]  # fmt: skip
 
 
@@ -126,7 +116,7 @@ def expected(planned: Iterable[PlannedNode], roots: Iterable[PlaylistNode], pref
     return out
 
 
-def write_plan(db: Any, plan: XmlPlan, lib: Library) -> dict[str, int]:
+def write_plan(db: Any, plan: WritePlan, lib: Library) -> dict[str, int]:
     """Inside `safety.open_db(write=True)`: the session commits once, or rolls everything back.
     Checks first, then writes: a refusal leaves the session untouched."""
     actions = tree_mod.walk(_nodes(plan.nodes), db)
@@ -220,8 +210,8 @@ class DbResult:
         return out + [f"log.md: {self.log_line}"] + [f"WARNING {x}" for x in self.warnings]
 
 
-def _route(folder: LibraryFolder | str | Path, source: str | None) -> None:
-    off = route_off(folder, source)
+def _route() -> None:
+    off = route_off()
     if off is not None:
         raise DbWriteError(off)
 
@@ -246,14 +236,12 @@ def _after(gate: Any, preview_id: str, now: datetime | None, root: Path, action:
 def build(root: str | Path, ref: str, preview_id: str, *, today: date | None = None, now: datetime | None = None,
           source: str | None = None) -> DbResult:  # fmt: skip
     """A previewed proposal into master.db (the chain in the module docstring)."""
-    _route(root, source)
+    _route()
     folder, found, state, lib, gate = build_structure.checked(root, ref, preview_id, now=now, source=source)
-    if state.export != DB_READ:
-        raise DbWriteError(SOURCE_XML)
     with _logged_if_written(folder.root, f"build {found.slug}", today):
         with _session() as db:
             written = write_plan(db, state.plan, lib)
-    counts = {k: state.counts[k] for k in ("create", "skip", "manual", "tracks")}  # as the preview and the XML count
+    counts = {k: state.counts[k] for k in ("create", "skip", "manual", "tracks")}  # as the preview counts
     if state.plan.vetoed:
         counts["vetoed"] = len(state.plan.vetoed)
     line, warnings = _after(gate, preview_id, now, folder.root, f"build {found.slug}", counts, today)
@@ -268,10 +256,8 @@ def build(root: str | Path, ref: str, preview_id: str, *, today: date | None = N
 def crate(root: str | Path, ref: str, preview_id: str, *, today: date | None = None, now: datetime | None = None,
           source: str | None = None) -> DbResult:  # fmt: skip
     """A previewed crate into master.db: its Crates folder, the picks, the spares (the chain above)."""
-    _route(root, source)
+    _route()
     folder, state, gate = crate_mod.checked(root, ref, preview_id, now=now, source=source)
-    if state.export != DB_READ:
-        raise DbWriteError(SOURCE_XML)
     plan = plan_lists(crate_mod.playlist_lists(state), state.lib)
     with _logged_if_written(folder.root, f"crate {state.slug}", today):
         with _session() as db:

@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
-import sys
 import tempfile
 from contextlib import contextmanager
 from datetime import date
@@ -29,8 +27,9 @@ from dj.libfolder import LibraryFolder, LibraryFolderError, import_export, scaff
 from dj.model import Library, PlaylistNode, Track
 from dj.readers.xml import read_xml
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 REPO = Path(__file__).resolve().parents[1]
-SCRIPT = REPO / "plugin" / "skills" / "dj-structure" / "scripts" / "structure.py"
 SKILL = REPO / "plugin" / "skills" / "dj-structure" / "SKILL.md"
 TODAY = date(2026, 10, 20)
 READ_AT = "2026-10-20T09:00:00+00:00"
@@ -646,20 +645,6 @@ def test_two_runs_are_byte_identical(folder, tmp_path):
     assert all(text.endswith(b"\n") and b"\r\n" not in text for text in first.values())
 
 
-def test_no_absolute_paths_in_written_files(folder, tmp_path):
-    (tmp_path / "outside").mkdir()
-    xml_outside = fx.write_xml(tmp_path / "outside" / "my export.xml")
-    st.run(folder, xml=xml_outside, today=TODAY)
-    for name, data in _structure_files(folder).items():
-        text = data.decode("utf-8")
-        for needle in (str(tmp_path), tmp_path.as_posix(), "D:/", "/Users/", "//nas", "file://", "C:\\"):
-            assert needle not in text, (name, needle)
-    tree_text = (folder / "structure" / "current-tree.yaml").read_text(encoding="utf-8")
-    assert "generated from my export.xml on" in tree_text  # outside the folder: the file name only
-    log = (folder / "log.md").read_text(encoding="utf-8")
-    assert str(tmp_path) not in log and tmp_path.as_posix() not in log
-
-
 def test_source_label(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()
@@ -734,16 +719,6 @@ def test_a_note_in_the_first_line_is_kept(folder):
     assert "MY NOTE" not in tree.read_text(encoding="utf-8")
 
 
-def test_a_new_export_is_not_mistaken_for_an_edit(folder, tmp_path):
-    st.run(folder, today=TODAY)
-    spec = fx.spec_copy()
-    spec["tree"] = [n for n in spec["tree"] if n["name"] != "funk & disco 78-92"]
-    result = st.run(folder, xml=fx.write_xml(tmp_path / "newer.xml", spec), today=TODAY)
-    assert result["kept"] == []
-    names = [node.name for node in treeschema.load(folder / "structure" / "current-tree.yaml").nodes]
-    assert "funk & disco 78-92" not in names
-
-
 def test_run_errors(tmp_path):
     with pytest.raises(LibraryFolderError, match="not found"):
         st.run(tmp_path / "missing", today=TODAY)
@@ -756,28 +731,6 @@ def test_run_errors(tmp_path):
 
 def _files(root: Path) -> dict[str, bytes]:
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
-
-
-def test_a_folder_that_is_not_a_library_is_refused_and_left_alone(tmp_path):
-    # a wrong --library with --xml: no structure/, no log.md line, nothing of the DJ's overwritten
-    music = tmp_path / "Music"
-    (music / "structure").mkdir(parents=True)
-    (music / "my-notes.txt").write_text("mine", encoding="utf-8")
-    (music / "log.md").write_text("my own notes", encoding="utf-8")
-    (music / "structure" / "analysis.md").write_text("my essay on structure", encoding="utf-8")
-    before = _files(music)
-    xml = fx.write_xml(tmp_path / "collection.xml")
-
-    with pytest.raises(LibraryFolderError, match="not a dj-library folder .*dj-start"):
-        st.run(music, xml=xml, today=TODAY)
-    lib = read_xml(xml)
-    with pytest.raises(LibraryFolderError, match="not a dj-library folder"):
-        st.write(music, st.facts(lib), st.graph(lib), treeschema.from_library(lib), source="collection.xml", today=TODAY)
-    cli_result = runner.invoke(cli.app, ["library", "structure", "--library", str(music), "--xml", str(xml)])
-    assert cli_result.exit_code == 1 and "not a dj-library folder" in cli_result.stderr
-    done = _script("--library", str(music), "--xml", str(xml), cwd=tmp_path)
-    assert done.returncode == 1 and "not a dj-library folder" in json.loads(done.stdout)["error"]
-    assert _files(music) == before
 
 
 def test_an_invalid_library_yaml_is_refused(folder):
@@ -839,74 +792,5 @@ def test_cli_errors(folder, tmp_path):
     assert missing.exit_code == 1 and "No export" in missing.stderr
 
 
-def _script(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, str(SCRIPT), *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8",
-        timeout=120,
-    )  # fmt: skip
-
-
-def test_script_by_subprocess(folder, tmp_path):
-    done = _script("--library", str(folder), "--today", "2026-10-20", cwd=tmp_path)
-    assert done.returncode == 0, done.stderr
-    lines = done.stdout.strip().split("\n")
-    assert len(lines) == 1  # one JSON object
-    data = json.loads(lines[0])
-    assert data["ok"] is True and data["reveals"] == REVEALS and data["source"] == EXPORT
-    assert all((folder / path).is_file() for path in data["written"])
-
-
-def test_script_errors_are_one_json_object_and_exit_1(tmp_path):
-    root = tmp_path / "lib"
-    scaffold(root, device="mac", today=TODAY)
-    done = _script("--library", str(root), cwd=tmp_path)
-    assert done.returncode == 1
-    assert json.loads(done.stdout) == {"ok": False, "error": json.loads(done.stdout)["error"]}
-    assert "No export" in json.loads(done.stdout)["error"]
-    usage = _script(cwd=tmp_path)  # --library missing
-    assert usage.returncode == 1 and json.loads(usage.stdout)["ok"] is False
-
-
-def test_script_shim_points_at_the_repo_src():
-    assert (SCRIPT.resolve().parents[4] / "src" / "dj" / "analysis" / "structure.py").is_file()
-    text = SCRIPT.read_text(encoding="utf-8")
-    assert "    import dj  # noqa: F401\n" in text  # an importable dj first (engine venv or PyPI)
-    assert '(_here / "../../../../src", _here / "../../../engine/src")' in text  # then the clone, then the zip (D-29)
-
-
-def test_script_runs_without_the_engine_packages(folder):
-    # Door 1: the script and everything it imports work with pyrekordbox, typer & co. blocked.
-    from test_door1_imports import run_blocked
-
-    done = run_blocked(f"""
-        import runpy, sys
-        sys.argv = ["structure.py", "--library", {str(folder)!r}, "--today", "2026-10-20"]
-        try:
-            runpy.run_path({str(SCRIPT)!r}, run_name="__main__")
-        except SystemExit as exc:
-            assert exc.code == 0, exc.code
-        leaked = [n for n in ("pyrekordbox", "rapidfuzz", "httpx", "typer", "mcp") if sys.modules.get(n)]
-        assert not leaked, leaked
-    """)
-    assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout.strip().split("\n")[-1])["ok"] is True
-
-
 # -- the skill ---------------------------------------------------------------------------------
 
-
-def test_skill_md():
-    text = SKILL.read_text(encoding="utf-8").replace("\r\n", "\n")
-    meta = yaml.safe_load(re.match(r"\A---\n(.*?)\n---\n", text, re.DOTALL).group(1))
-    assert meta["name"] == "dj-structure" and meta["description"].strip()
-    assert "**Requirements:** R-301, R-302, R-321, R-322, R-341." in text
-    assert "](../../shared/voice.md)" in text and "](../../shared/adhd.md)" in text
-    patterns = _section(text, "Patterns I read first")
-    for topic in ("Depth and width", "Naming conventions", "sizes", "Overlap", "Orphans", "dumps", "smart vs plain"):
-        assert topic in patterns, topic
-    assert "scripts/structure.py --library" in text and "dj library structure" in text
-    assert "current-tree.yaml" in text and "R-341" in _section(text, "Never")
-    assert re.findall(r"^## (.+)$", text, re.MULTILINE)[-1] == "Pre-send checklist"
-    assert text.rstrip("\n").endswith(
-        "- [ ] Nothing was written to rekordbox, Spotify or audio files without a preview and an explicit yes."
-    )

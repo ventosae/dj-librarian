@@ -63,18 +63,17 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from dj import treeschema
+from dj.build_library import read_for_build
 from dj.libfolder import (
     LibraryFolder,
     LibraryFolderError,
     append_log,
-    latest_export,
     load_meta,
     relative,
     validate_meta,
     write_text,
 )
 from dj.model import Library, LibraryError, PlaylistNode, Track
-from dj.readers.xml import read_xml
 
 MODULE = "dj.analysis.structure"
 LIST_MAX = 5  # DJ-facing lists (R-1002 rule 9); full data lives in the JSON files
@@ -900,20 +899,19 @@ def write(
 
 
 def run(
-    folder: LibraryFolder | str | Path, *, xml: str | Path | None = None, today: date | None = None
+    folder: LibraryFolder | str | Path, *, source: str | None = None, today: date | None = None
 ) -> dict[str, Any]:
-    """Read the latest export (or `xml`), measure, write structure/, append one log.md line.
+    """Read the library (a master.db snapshot, `dj.build_library`), measure, write structure/,
+    append one log.md line.
 
     Returns {"written": [relative paths], "kept": [...], "source", "counts", "reveals", ...}.
     The folder must be a dj-library folder (library.yaml, see `_library_folder`); otherwise
-    LibraryFolderError and nothing is written. Reads only the XML; never opens master.db,
-    never writes to rekordbox (R-341).
+    LibraryFolderError and nothing is written. Never writes to rekordbox (R-341).
     """
     folder = _library_folder(folder)
     today = today or date.today()
-    path = Path(xml) if xml else latest_export(folder.root)
-    lib = read_xml(path)
-    source = source_label(folder.root, path.resolve())
+    lib, label = read_for_build(folder, source)
+    source = source_label(folder.root, label)
     data = facts(lib, today=today)
     paths = write(folder, data, graph(lib), treeschema.from_library(lib, today=today), source=source, today=today)
     written = [relative(folder.root, p) for p in paths[: len(FILES)]]

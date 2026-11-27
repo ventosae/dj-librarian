@@ -1,8 +1,7 @@
 """One version everywhere, from pyproject.toml (W-37; CONTRIBUTING.md, "Versioning").
 
-pyproject.toml, uv.lock, plugin.json, the marketplace entry, the engine bundle's manifest, the zip's
-engine/BUILD.txt stamp, the zip names, `dj status` and the newest CHANGELOG section all say the same
-version: CI fails on drift. `scripts/bump_version.py patch|minor` moves them together, in a copy here.
+pyproject.toml, uv.lock, plugin.json, the marketplace entry, the zip's engine/BUILD.txt stamp, the zip
+name, `dj status` and the newest CHANGELOG section all say the same version: CI fails on drift. `scripts/bump_version.py patch|minor` moves them together, in a copy here.
 """
 
 from __future__ import annotations
@@ -48,12 +47,10 @@ def test_every_file_says_pyprojects_version(bv):
     assert set(found.values()) == {VERSION}, f"version drift: {found} (scripts/bump_version.py moves them together)"
 
 
-def test_the_zip_names_and_the_build_stamp_follow_pyproject():
-    bz, mcpb = _load("build_plugin_zip"), _load("build_mcpb")
-    assert bz.version() == VERSION and mcpb.versions() == (VERSION, VERSION)
+def test_the_zip_name_and_the_build_stamp_follow_pyproject():
+    bz = _load("build_plugin_zip")
+    assert bz.version() == VERSION
     assert bz.zip_name(VERSION) == f"dj-librarian-plugin-{VERSION}.zip"
-    assert bz.zip_name(VERSION, engine=False) == f"dj-librarian-plugin-{VERSION}-no-engine.zip"
-    assert mcpb.NAME.format(version=VERSION) == f"dj-librarian-engine-{VERSION}.mcpb"
     assert re.fullmatch(rf"dj-librarian {re.escape(VERSION)} [0-9a-f]{{16}}\n", bz.stamp({}, bz.version()).decode())
 
 
@@ -87,7 +84,7 @@ CHANGES = "# Changelog\n\nIntro.\n\n## [Unreleased]\n\n### Added\n- A new thing.
 @pytest.fixture
 def repo(tmp_path, bv):
     root = tmp_path / "repo"
-    for rel in (bv.PYPROJECT, bv.UV_LOCK, bv.PLUGIN_JSON, bv.MARKETPLACE, bv.MCPB):
+    for rel in (bv.PYPROJECT, bv.UV_LOCK, bv.PLUGIN_JSON, bv.MARKETPLACE):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPO / rel, root / rel)
     (root / bv.CHANGELOG).write_text(CHANGES.format(old=VERSION), encoding="utf-8", newline="\n")
@@ -95,7 +92,7 @@ def repo(tmp_path, bv):
 
 
 def _snap(root: Path, bv) -> dict[str, list[str]]:
-    rels = (bv.PYPROJECT, bv.UV_LOCK, bv.PLUGIN_JSON, bv.MARKETPLACE, bv.MCPB, bv.CHANGELOG)
+    rels = (bv.PYPROJECT, bv.UV_LOCK, bv.PLUGIN_JSON, bv.MARKETPLACE, bv.CHANGELOG)
     return {rel.as_posix(): (root / rel).read_text(encoding="utf-8").splitlines() for rel in rels}
 
 
@@ -117,15 +114,14 @@ def test_a_patch_bump_moves_every_file_and_dates_the_changelog(repo, bv):
     out = bv.bump("patch", root=repo, today=date(2026, 11, 2))
     assert out == {"old": VERSION, "new": new, "zip": f"dj-librarian-plugin-{new}.zip",
                    "files": ["pyproject.toml", "uv.lock", "plugin/.claude-plugin/plugin.json",
-                             ".claude-plugin/marketplace.json", "mcpb/manifest.json", "CHANGELOG.md"]}  # fmt: skip
+                             ".claude-plugin/marketplace.json", "CHANGELOG.md"]}  # fmt: skip
     assert set(bv.versions(repo).values()) == {new}
     after = _snap(repo, bv)
-    for rel in ("pyproject.toml", "uv.lock", "plugin/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json",
-                "mcpb/manifest.json"):  # one line each, the rest of the file as it was
+    for rel in ("pyproject.toml", "uv.lock", "plugin/.claude-plugin/plugin.json",
+                ".claude-plugin/marketplace.json"):  # one line each, the rest of the file as it was
         changed = [(a, b) for a, b in zip(before[rel], after[rel]) if a != b]
         assert len(before[rel]) == len(after[rel]) and len(changed) == 1, rel
         assert changed[0][1] == changed[0][0].replace(VERSION, new), rel
-    assert "manifest_version" in "\n".join(after["mcpb/manifest.json"])  # "manifest_version" untouched
     text = (repo / "CHANGELOG.md").read_text(encoding="utf-8")
     assert text == (f"# Changelog\n\nIntro.\n\n## [Unreleased]\n\n## [{new}] - 2026-11-02\n\n### Added\n- A new thing.\n\n"
                     f"## [{VERSION}] - 2026-10-25\n\n- Old.\n")  # fmt: skip
@@ -136,7 +132,7 @@ def test_a_minor_bump(repo, bv):
 
 
 def _drift(root, bv):
-    path = root / bv.MCPB
+    path = root / bv.PLUGIN_JSON
     path.write_text(path.read_text(encoding="utf-8").replace(f'"version": "{VERSION}"', '"version": "9.9.9"'),
                     encoding="utf-8")  # fmt: skip
 

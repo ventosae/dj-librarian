@@ -30,6 +30,8 @@ from dj import design, report, report_charts, sleeve
 from dj.analysis import identity as identity_mod
 from dj.treeschema import TreeNode
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 DAY = date(2026, 10, 20)
 REPO = Path(__file__).resolve().parents[1]
 BOOTH = design.CATEGORICAL["dark"]

@@ -115,17 +115,14 @@ import yaml
 from dj import libfolder, treeschema
 from dj.analysis import structure as structure_analysis
 from dj.analysis import taste as taste_analysis
-from dj.analysis.common import fold, library_folder, pct, resolve_xml
+from dj.analysis.common import fold, library_folder, pct
+from dj.build_library import read_for_build
 from dj.libfolder import (
     LibraryFolder,
-    LibraryFolderError,
     append_log,
-    latest_export,
-    relative,
     write_text,
 )
 from dj.model import Library, LibraryError, PlaylistNode, Track
-from dj.readers.xml import read_xml
 from dj.treeschema import TreeDoc, TreeNode, TreeSchemaError
 
 MODULE = "dj.analysis.proposals"
@@ -137,7 +134,6 @@ KEYS = ("slug", "name", "family", "principle", "cost_minutes", "trigger", "lands
 SOURCE_KEY = "source"  # optional on load (Q-17): the library read the proposals were made from
 WRITTEN_KEYS = (*KEYS[:6], SOURCE_KEY, *KEYS[6:])  # the keys of an entry this module writes, in order
 DB_SOURCE = "master.db"
-_DB_SOURCE = re.compile(r"^master\.db(?: \(snapshot read (.+)\))?$")
 SLUG = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 STAYS = "stays where it is"
 INBOX, CRATES, SETS = "0_INBOX", "1_CRATES", "2_SETS"
@@ -847,18 +843,6 @@ def db_source(read_at: str) -> str:
     return f"{DB_SOURCE} (snapshot read {stamp})" if stamp else DB_SOURCE
 
 
-def parse_source(text: str) -> tuple[str, str | datetime | None]:
-    """A proposal's `source` -> ("db", the snapshot time or None) or ("export", the relative path)."""
-    m = _DB_SOURCE.match(" ".join(str(text).split()))
-    if not m:
-        return "export", str(text).strip()
-    try:
-        when = datetime.fromisoformat(m.group(1)) if m.group(1) else None
-    except ValueError:
-        when = None
-    return "db", when
-
-
 def _with_source(entry: dict[str, Any], source: str) -> dict[str, Any]:
     """The entry with `source` after `trigger` (WRITTEN_KEYS order)."""
     return {key: (source if key == SOURCE_KEY else entry[key]) for key in WRITTEN_KEYS}
@@ -914,7 +898,7 @@ def write_proposals(
     proposals: Sequence[Proposal],
     today: date | None = None,
     *,
-    source: str = "the latest export",
+    source: str = "master.db",
 ) -> list[Path]:
     """Write structure/proposals.yaml; returns [it] or [it, the kept copy of an edited file].
     `source` (relative to the folder) is named in the first comment line. Only into a
@@ -1019,18 +1003,16 @@ def load(path: str | Path) -> list[dict[str, Any]]:
 # -- running ---------------------------------------------------------------------------------
 
 
-def source_name(folder: LibraryFolder, path: Path) -> str:
-    """The export relative to the folder; an XML outside it by its file name only."""
-    try:
-        return relative(folder.root, path)
-    except LibraryFolderError:
-        return path.name
+def made_from(lib: Library, label: str) -> str:
+    """How structure/proposals.yaml names the read the proposals were made from: a master.db read
+    with its snapshot time (`db_source`), anything else by its label."""
+    return db_source(lib.read_at) if lib.source == "db" else label
 
 
-def read_export(folder: LibraryFolder, xml: str | Path | None = None) -> tuple[Library, str]:
-    """The Library of the latest export (or `xml`) and its name relative to the folder."""
-    path = resolve_xml(folder.root, xml) if xml else latest_export(folder.root)
-    return read_xml(path), source_name(folder, path)
+def read_library(folder: LibraryFolder, source: str | None = None) -> tuple[Library, str]:
+    """The Library (a master.db snapshot, `dj.build_library`) and how proposals.yaml names it."""
+    lib, label = read_for_build(folder, source)
+    return lib, made_from(lib, label)
 
 
 def log_time(today: date | None) -> datetime | None:
@@ -1039,12 +1021,12 @@ def log_time(today: date | None) -> datetime | None:
     return datetime.combine(today, libfolder._wall_clock().time()) if today else None
 
 
-def run(folder: LibraryFolder | str | Path, *, xml: str | Path | None = None, today: date | None = None) -> dict[str, Any]:
-    """Read the latest export (or `xml`), build the candidates, write structure/proposals.yaml,
+def run(folder: LibraryFolder | str | Path, *, source: str | None = None, today: date | None = None) -> dict[str, Any]:
+    """Read the library (a master.db snapshot), build the candidates, write structure/proposals.yaml,
     append one log.md line. Returns counts first, then the proposals, written and kept files.
     A folder without a valid library.yaml -> common.NotALibraryFolder, nothing written."""
     folder = library_folder(folder)
-    lib, source = read_export(folder, xml)
+    lib, source = read_library(folder, source)
     proposals = candidates(lib)
     paths = write_proposals(folder, proposals, today, source=source)
     line = append_log(folder.root, "proposals", {"proposals": len(proposals)}, PROPOSALS_YAML, today=today)

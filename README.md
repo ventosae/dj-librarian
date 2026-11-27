@@ -1,164 +1,121 @@
 # dj-librarian
 
 A DJ librarian for rekordbox that you talk to through Claude.
-It syncs Spotify playlists into rekordbox crates, builds playlist folders from a YAML file, copies playlists to Spotify, and tidies the tags of your audio files.
+It reads your rekordbox library and writes a report on it, rebuilds your playlist tree, picks crates for a night, syncs Spotify playlists into crates, and tidies the tags of your audio files.
 rekordbox stays the source of truth: the tool only ever proposes and adds.
 
-Status: early (0.1.0, unreleased). Windows is the tested platform. macOS is ported (process check, master.db location) but not yet confirmed against a live rekordbox on a Mac.
+Status: early. Windows is the tested platform. macOS runs the same code (process check, master.db location) but is not yet confirmed against a live rekordbox on a Mac.
 
 ## Safety model
 
-- **Create and add only.** Nothing that exists in rekordbox, on Spotify or on disk is ever deleted, renamed, moved or reordered.
-- **Dry-run is the default.** Every command that writes to rekordbox, Spotify or your audio files shows what it would do and prints a preview id first. Real writes need `--apply --preview-id <id>`: the id of the dry-run you said yes to. If anything changed since, the write is refused. Text files in your own folders (plans, reports, analysis, proposals, the shopping list) are written directly, without a preview id.
-- **Preview, then yes.** Through Claude, every write tool has a preview tool and needs its `preview_id`, and Claude asks you before it writes. Silence is not a yes. Which tools to leave on "ask every time": [docs/permissions.md](docs/permissions.md).
-- **Import, don't inject.** The default write path is a rekordbox XML file that you import yourself: `dj library build` writes a new playlist structure as `proposals/<slug>.xml`, `dj library crate` a crate as `proposals/crate-<slug>.xml`. Direct writes to rekordbox's `master.db` are a Windows power mode behind `--power-mode`: rekordbox must be closed, a verified backup is taken first, everything lands in one commit, and any error rolls back. `dj tree --apply` uses this power mode. Inbox adds and playlist copies write an XML too: `dj apply` and `dj copy` with `--apply --xml` write `proposals/<crate>-adds-<date>.xml` (any OS; you import it and drag the tracks onto the crate), or master.db with `--apply --power-mode`.
+- **Create and add only.** Nothing that exists in rekordbox, on Spotify or on disk is ever deleted, renamed, moved or reordered. One exception: `dj tidy` fills empty tags and renames audio files inside their own folder, on your request and with an undo record first.
+- **Preview, then yes.** Every write to rekordbox, Spotify or your audio files starts as a preview that writes nothing and returns a preview id. The write needs that id: one preview, one write. If anything changed since the preview, the write is refused. Claude asks you before it writes, and silence is not a yes.
+- **Straight into rekordbox, one way only.** After your yes the write goes into rekordbox's database (`master.db`): rekordbox must be closed (if that check cannot run, the write is refused), a verified backup is taken first, everything lands in one transaction, and any error rolls it back. `DJ_POWER_MODE=false` in the engine's environment turns every rekordbox write off.
 - **Idempotent.** A folder or playlist that exists at the same level is skipped. Running a command twice adds nothing the second time.
 
-The full rules are in [CLAUDE.md](CLAUDE.md) and [docs/requirements.md](docs/requirements.md).
-
-## Try it before the release
-
-Until the first release, a tester runs the plugin from a zip. This is Door 1: no clone and no install beyond the zip, about 15 minutes to your first report.
-
-1. Get the zip: download [`dist/dj-librarian-plugin-<version>.zip`](dist/) from this repo on GitHub (open the file, then **Download raw file**). It is the full plugin, the engine inside, built from the code beside it. Or build it in a clone with `uv run python scripts/build_plugin_zip.py`, which writes the same file. Once a version is tagged, the draft GitHub release has it too (only maintainers see a draft).
-2. In the Claude app: **Customize → Plugins → Add → Upload plugin**, and pick the zip.
-3. Open a new Cowork task and say "start". Door 1 runs in Cowork: an ordinary chat cannot connect a folder.
-4. Three moves from you: say Mac or Windows, export your collection from rekordbox (File → Export Collection in xml format), connect a folder in Cowork (a new one called `dj-library`) and drop the XML into it.
-5. About 5 minutes later the report is in `reports/<date>-library.html`: who you are as a DJ, how your library is built, two or three ways to rebuild it. Pick one and you see the new tree first; after your yes you get `proposals/<slug>.xml` to import in rekordbox yourself.
-
-rekordbox is never touched: Door 1 reads a copy of your export, and you do the import. Crate me and Style Barber run from the zip too.
-
-The engine (live reads of your rekordbox database for My Tags, Spotify, `dj tidy` on your audio files) comes in the same zip as source: in the Claude desktop app's Code tab, type `/dj-librarian:install` and click Allow on each step, then say "set me up" in a Cowork task; the engine card ([plugin/skills/dj-start/engine.md](plugin/skills/dj-start/engine.md), about 5 minutes) walks you through it. The second route is the engine on its own, `dj-librarian-engine-<version>.mcpb`: Claude desktop app → Settings → Extensions → drag it in → Install (unverified, Q-31). The light zip, `dj-librarian-plugin-<version>-no-engine.zip`, is Door 1 only. All of it in one place: [docs/install.md](docs/install.md).
+Text files in your own dj-library folder (plans, reports, analysis, proposals, the shopping list, the catalog) are written without a preview id. The full rules are in [CLAUDE.md](CLAUDE.md) and [docs/requirements.md](docs/requirements.md). Which tools to leave on "ask every time": [docs/permissions.md](docs/permissions.md).
 
 ## Install
 
-DJs: [docs/install.md](docs/install.md) is the one install doc. The plugin zip, then `/dj-librarian:install` in Claude Code for the engine (you click Allow); the engine's `.mcpb` as the second route; which tools to leave on "ask every time"; where the Spotify keys go. You never type in a terminal yourself.
+What you need: the Claude desktop app on a plan with Cowork, and rekordbox 7 on the same Mac or Windows PC (rekordbox 6 is untested). You never type in a terminal yourself.
 
-### From a clone (developers)
+1. Download [`dist/dj-librarian-plugin-<version>.zip`](dist/) from this repo on GitHub (open the file, then **Download raw file**). Don't unzip it.
+2. In the Claude app: **Customize → Plugins → Add → Upload plugin**, and pick the zip.
+3. Open the **Code** tab, type `/dj-librarian:install` and click **Allow** on each step. It installs the engine on your computer, makes your dj-library folder and backs up your rekordbox database into it. Restart Claude Desktop when it says so.
+4. Open a new Cowork task and type `/dj-librarian:dj-start`. About 5 minutes later you have the report on your library: who you are as a DJ, how the library is built, two or three ways to rebuild it.
+
+Pick a structure and you see the new tree first. Close rekordbox, say yes, and it is written into rekordbox; open rekordbox again and it is there.
+
+Updating, uninstalling, backups, permissions and the Spotify keys: [docs/install.md](docs/install.md).
+
+## What you can say
+
+| Skill | Say | What it does |
+|---|---|---|
+| `dj-start` | `/dj-librarian:dj-start`, "show my report" | Reads rekordbox, measures the library, writes the report and two or three structures to pick from. |
+| `dj-build` | "Build me the House Bases structure" | Shows the new playlist tree, then writes it into rekordbox after your yes. |
+| `dj-crate` | "Crate me 50 for Saturday" | Picks a crate from your own library with a reason per track. Name a seed track or say "build it with me" for the long version, with what to buy. |
+| `dj-barber` | "Style barber" | A short question session that sharpens your taste files. |
+| `dj-tidy` | "Check my tags" | Audits your audio files and fills empty tags, with an undo record first. |
+| `dj-spotify` | "Connect Spotify", "sync my inbox" | Your own Spotify app, inbox playlists into crates, a shopping list, a playlist pushed to Spotify. |
+| `install` | `/dj-librarian:install` | Installs or updates the engine; uninstall and backup live here too. |
+
+Your files live in your dj-library folder: plain text you own (`profile/`, `structure/`, `taste/`, `reports/`, `proposals/`, `crates/`, `wishlist/`, `backups/`), plus `catalog/catalog.db` and `catalog/tracks.csv`, a copy of your collection you can open in any SQLite or spreadsheet tool.
+
+## Configuration
+
+The engine reads `links.yaml`, `tidy.yaml`, `bases.yaml` and `tree.yaml` from your dj-library folder. Copy what you need from [examples/](examples/):
+
+| Example | Copy to | Used for |
+|---|---|---|
+| `examples/links.example.yaml` | `links.yaml` | Pairs a Spotify playlist with the rekordbox crate it feeds. |
+| `examples/tree.example.yaml` | `tree.yaml` | The playlist tree you want. |
+| `examples/bases.example.yaml` | `bases.yaml` | One folder per genre, same shape as the tree. |
+| `examples/tidy.example.yaml` | `tidy.yaml` | Your music roots, naming rule and CDJ profiles. File writes are limited to the roots. |
+| `examples/.env.example` | `.env` in the engine folder | The Spotify keys of your own Spotify app. Never in the dj-library folder, never in the chat. |
+
+The engine's environment: `DJ_LIBRARY` (your dj-library folder; the install sets it), `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` (read before any `.env`), `DJ_POWER_MODE` (`false` turns rekordbox writes off), `DJ_MASTER_DB` (another `master.db` than rekordbox's default location).
+
+## Claude plugin
+
+The zip is the plugin at its root (`.claude-plugin/plugin.json`, `skills/`, `hooks/`) plus `engine/`, the engine's source. `/dj-librarian:install` copies `engine/` to `dj-librarian` in your home folder, runs `uv sync` there and registers the MCP server `dj-mcp` in Claude Desktop's config, after a backup of that config and without touching any other entry.
+
+Read tools and write tools are separate tools, and every write tool refuses without the `preview_id` of its preview. In Claude Code the plugin also brings a PreToolUse hook (`plugin/hooks/`) that denies a write tool called without a `preview_id`. The hook starts `uv`, so on a machine without uv it blocks every write tool (it fails closed).
+
+With no engine tools in the session, a skill answers with one line: "Run /dj-librarian:install in the Code tab."
+
+Optional: [templates/project/instructions.md](templates/project/instructions.md) is a Cowork Project template you can paste into a new Project's instructions; the plugin works without it.
+
+## Developers
 
 You need [uv](https://docs.astral.sh/uv/) and rekordbox 7.
 
 ```bash
 git clone https://github.com/ventosae/dj-librarian.git
 cd dj-librarian
-uv sync
+uv sync --group dev
 uv run dj status
 ```
 
-`dj status` is read-only and works while rekordbox is open. If the clone sits in a cloud-synced folder (Dropbox, iCloud Drive and the like), keep the virtual environment outside it; see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-The three release files come from the clone:
-
-| Command | Writes |
-|---|---|
-| `uv run python scripts/build_mcpb.py` | `dist/dj-librarian-engine-<version>.mcpb`, the engine on its own |
-| `uv run python scripts/build_plugin_zip.py` | `dist/dj-librarian-plugin-<version>.zip`, the plugin with the engine's source inside |
-| `uv run python scripts/build_plugin_zip.py --no-engine` | `dist/dj-librarian-plugin-<version>-no-engine.zip`, the light zip (Door 1 only) |
-
-## Commands
-
-| Command | What it does |
-|---|---|
-| `uv run dj status` | Read-only. Track count (local files and streamed rows apart), the playlist tree, and per Spotify link the counts by status. |
-| `uv run dj backup [--library L] [--list]` | A verified copy of rekordbox's database in `<dj-library>/backups/rekordbox-<date>/` with `RESTORE.md`; nothing copied when unchanged. Reads rekordbox's folder, never writes it; never deletes a backup. |
-| `uv run dj tree [--file F]` | Dry-run of `tree.yaml` (or `F`): `CREATE`, `SKIP`, `HOLD`, `CONFLICT` per node. |
-| `uv run dj tree --apply --power-mode --preview-id <id>` | Creates the missing folders and playlists. Windows, rekordbox closed, backup first, one commit. |
-| `uv run dj pull <link>` / `--all` | Reads a Spotify playlist into `.cache/inbox/` in your dj-library folder (`inbox/` in the repo while the library's `links.yaml` holds no link). Read-only on Spotify. |
-| `uv run dj match <link>` | Matches the inbox against your library: `IN_CRATE`, `PROPOSE`, `AMBIGUOUS`, `MISSING`, `DECLINED`. |
-| `uv run dj plan <link>` | Writes a plan file and a wishlist. You set `decision: yes\|no` per item. |
-| `uv run dj apply <plan> [--apply --power-mode --preview-id <id>]` | Dry-run, then appends the approved tracks to the crate. |
-| `uv run dj copy "<src>" "<dst>" [--apply --power-mode --preview-id <id>]` | Appends the tracks of one rekordbox playlist to another. The source is only read. |
-| `uv run dj push "<playlist>" [--apply --preview-id <id>]` | Mirrors a rekordbox playlist into a private Spotify playlist. Adds only. |
-| `uv run dj build <tracklist.txt> [--apply --preview-id <id>]` | Turns an `Artist - Title` text tracklist into a private Spotify playlist. |
-| `uv run dj analyze` | Census of your Spotify library into Markdown reports. Read-only on Spotify. |
-| `uv run dj wishlist shop <link>` | `wishlist/<crate>.shopping.md`: Beatport and Bandcamp search links for the MISSING tracks of the link's newest plan. |
-| `uv run dj tidy audit <crate>` / `--all` / `--folder D` | Hygiene audit of the audio files (only read): tags, artwork, names, CDJ playability, duplicates. Writes its report in `reports/tidy/`. |
-| `uv run dj tidy plan <target>` | Proposes values for EMPTY tags, parsed from the file names. |
-| `uv run dj tidy apply <plan> [--apply --preview-id <id>]` | Writes approved tags (undo record first). Then Reload Tag in rekordbox. |
-| `uv run dj tidy undo <plan> [--apply --preview-id <id>]` | Restores what that apply changed. |
-| `uv run dj library use <folder>` | Tells the engine where your `dj-library/` folder is. |
-| `uv run dj library inspect [xml]` | Read-only summary of the library from an XML export, or from a master.db snapshot. |
-| `uv run dj library analyze [--source xml\|db]` | Reads the library once, then writes `profile/`, `structure/`, `taste/`, the proposals and the HTML report in your dj-library folder. One step each: `dj library profile`, `structure`, `taste`, `report`. |
-| `uv run dj library build "<proposal>" [--apply --preview-id <id>]` | Preview of a restructure proposal, then `proposals/<slug>.xml` for you to import. Never opens master.db. |
-| `uv run dj library crate <spec> [--apply --preview-id <id>]` | Preview of a crate from `crates/<slug>.spec.yaml`, then `proposals/crate-<slug>.xml` for you to import. |
-| `uv run dj library barber next` / `record N ANSWER` | Style Barber: one short question at a time; the answers go into `taste/` as dated lines. |
-
-Every command takes `--json`, except `dj tree --apply` (text only; its dry-run takes `--json`). Exit codes: `0` ok, `1` error, conflict or refused (no valid preview id, no `--power-mode`), `2` rekordbox is running (writes refused), or `dj library taste`, `report`, `analyze`, `barber` or `use` refused a folder that is not a set-up dj-library (`REFUSED` on stderr). `dj library profile` and `structure` report that case as `ERROR` with exit 1.
-
-Through Claude, the MCP tools return counts first and long lists in pages (`page`, `page_size`; `paging` says how many there are). A bare file name is looked up in its folder: `set.txt` in `tracklists/`, `x.plan.json` in `plans/`.
-
-## Configuration
-
-Your configuration lives in your dj-library folder: the engine reads `links.yaml`, `tidy.yaml`, `bases.yaml` and `tree.yaml` there first. In a clone, the same files at the repo root (gitignored) are the fallback, and the repo's `links.yaml` is used while the library's holds no link. The engine extension takes the Spotify keys in its settings form; a clone reads them from `.env`. Copy what you need from [examples/](examples/):
-
-| Example | Copy to | Used by |
-|---|---|---|
-| `examples/.env.example` | `.env` (a clone only) | Spotify commands. Create an app at the Spotify developer dashboard with redirect URI `http://127.0.0.1:8888/callback`. |
-| `examples/links.example.yaml` | `links.yaml` in your dj-library folder | `pull`, `match`, `plan`: pairs a Spotify playlist with a rekordbox crate. |
-| `examples/tree.example.yaml` | `tree.yaml` in your dj-library folder | `dj tree`: the playlist tree you want. |
-| `examples/bases.example.yaml` | `bases.yaml` in your dj-library folder | `dj tree --file bases.yaml`: one folder per genre, same shape. |
-| `examples/tidy.example.yaml` | `tidy.yaml` in your dj-library folder | `dj tidy`: your music roots, naming rule and CDJ profiles. File writes are limited to the roots. |
-
-## Claude plugin
-
-The plugin adds twelve skills (see `plugin/skills/`) and two more the DJ types as slash commands, `/dj-librarian:install` and `/dj-librarian:uninstall` (`plugin/skills/install/`, `uninstall/`). A DJ starts with **dj-start** ("start"): it sets up the dj-library folder from a rekordbox XML export and writes the first report. Read tools and write tools are separate, so you can leave every write tool on "ask every time"; which tool is which: [docs/permissions.md](docs/permissions.md). In Claude Code the plugin also brings a PreToolUse hook (`plugin/hooks/`) that denies a write tool called without a `preview_id`. The hook starts `uv`, so on a machine without uv it blocks every write tool (it fails closed; a known gap).
-
-The zip carries the engine's source in `plugin/engine/`, the one copy of the core (D-29). `/dj-librarian:install` copies it to `~/dj-librarian`, runs `uv sync` and `dj status`, asks once for the dj-library folder, backs up rekordbox's database into it (`dj backup`, D-31) and adds `dj-mcp` to Claude Desktop's config with absolute paths and `DJ_LIBRARY` set (`src/dj/installer.py`, a backup of the config first, nothing else in it touched). The engine also reads `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` and `DJ_POWER_MODE` from its environment before any `.env`. The standalone [MCP bundle](https://github.com/modelcontextprotocol/mcpb) (`scripts/build_mcpb.py`) is the second route; as an extension it keeps its state in `<dj-library>/.cache/engine/`. Claude Code 2.1.299 refuses a `uv` bundle inside a plugin, so the plugin no longer carries it (Q-31).
-
-- **Claude Code, from a clone:** add the marketplace from the clone. Run this inside the clone folder:
+`dj status` is read-only and works while rekordbox is open; `uv run dj --help` lists the commands. If the clone sits in a cloud-synced folder, keep the virtual environment outside it: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
-claude plugin marketplace add ./
+uv run pytest
+uv run ruff check .
+uv run python scripts/build_plugin_zip.py
 ```
 
-```bash
-claude plugin install dj-librarian@dj-librarian
-```
+The last line writes `dist/dj-librarian-plugin-<version>.zip`, the one file a DJ uploads. The tests never open a real rekordbox database, a socket or an audio file outside a temp folder.
 
-A plugin installed from the clone's marketplace is a copy of `plugin/` alone: no engine and no core, so its skill scripts answer with a one-line error that the core does not load, and `/dj-librarian:install` stops. Register the clone's engine by hand: [The engine on Windows and macOS](#the-engine-on-windows-and-macos) has the line for Claude Code and the config entry for Claude Desktop.
-
-The skills that need no engine (dj-start through the report, crates, builds, Style Barber) run from the plugin zip: they import the core from `plugin/engine/src` (D-29). The skill scripts look for the core in this order: an importable `dj` (the engine's venv), a clone of the repo, the zip's `engine/src`.
-
-Optional: [templates/project/instructions.md](templates/project/instructions.md) is a Cowork Project template you can paste into a new Project's instructions; the plugin works without it.
-
-### The engine on Windows and macOS
-
-The engine is the MCP server `dj-mcp`; it runs on your computer. A DJ installs it with `/dj-librarian:install` or the `.mcpb` ([docs/install.md](docs/install.md)). From a clone (developers), register it by hand.
-
-Claude Code, one line (`--scope user` makes it available in every folder; Claude Code started from your shell passes `UV_PROJECT_ENVIRONMENT` on):
+To use the clone's engine instead of an installed one, register it by hand. Claude Code:
 
 ```bash
 claude mcp add --scope user dj-librarian -- uv run --directory /path/to/dj-librarian --no-sync dj-mcp
 ```
 
-Claude Desktop, in its config file:
-
-| OS | Claude Desktop config file |
-|---|---|
-| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
-| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+Claude Desktop, in `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
 ```json
 {
   "mcpServers": {
     "dj-librarian": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/dj-librarian", "--no-sync", "dj-mcp"],
-      "env": {"UV_PROJECT_ENVIRONMENT": "/Users/<you>/.venvs/dj-librarian"}
+      "args": ["run", "--directory", "/path/to/dj-librarian", "--no-sync", "dj-mcp"]
     }
   }
 }
 ```
 
-On macOS, Claude Desktop starts programs with a short `PATH`: if it cannot find `uv`, put the full path that `which uv` prints into `command`. It does not read `~/.zshrc` either, so the `UV_PROJECT_ENVIRONMENT` from [CONTRIBUTING.md](CONTRIBUTING.md) does not reach it: pass the venv folder in `env` as above, as a full path (no `~`, no `$HOME`). On Windows it is written `C:\\Users\\<you>\\.venvs\\dj-librarian` in the JSON. Leave `env` out when uv uses `.venv/` inside the repo.
+On macOS, Claude Desktop starts programs with a short `PATH`: if it cannot find `uv`, put the full path that `which uv` prints into `command`.
 
-- **master.db.** Found through pyrekordbox, else at rekordbox's default location: `%APPDATA%\Pioneer\rekordbox\master.db` on Windows, `~/Library/Pioneer/rekordbox/master.db` on macOS. Set `DJ_MASTER_DB` to use another file. Reads work while rekordbox is open.
-- **Is rekordbox running?** Checked with `tasklist` on Windows and `/usr/bin/pgrep` on macOS. If the check cannot answer, writes are refused.
-- **Writes.** Direct master.db writes (`dj tree`, `dj apply`, `dj copy` with `--apply`) need `--power-mode` and stay Windows-only; on macOS they refuse with a one-line reason. In the engine extension, Power mode (Windows) in its settings is off by default, and while it is off every master.db write is refused. `dj tidy apply --apply` and `dj tidy undo --apply` write audio files on Windows only in v0.1; on macOS they refuse with a one-line reason (macOS support is planned for v0.2). Their dry-runs only read.
+- **master.db.** Found through pyrekordbox, else at rekordbox's default location: `%APPDATA%\Pioneer\rekordbox\master.db` on Windows, `~/Library/Pioneer/rekordbox/master.db` on macOS. Reads use a snapshot copy and work while rekordbox is open.
+- **Is rekordbox running?** Checked with `tasklist` on Windows (`rekordbox.exe`) and `/usr/bin/pgrep` on macOS (`rekordbox`). If the check cannot answer, writes are refused.
+- **Audio files.** `dj tidy` writes tags and names on Windows only for now; on macOS it audits and plans, and the write refuses with a one-line reason.
 
 ## Documentation
 
-- [docs/install.md](docs/install.md): the install doc for DJs, both doors, no terminal.
+- [docs/install.md](docs/install.md): install, update, uninstall, backup.
+- [docs/permissions.md](docs/permissions.md): which tool reads, which writes, and what to set.
 - [docs/requirements.md](docs/requirements.md): numbered requirements (authoritative).
 - [docs/architecture.md](docs/architecture.md): plugin architecture and repo layout.
 - [docs/decisions.md](docs/decisions.md): decisions and their reasons.

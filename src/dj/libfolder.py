@@ -1,17 +1,19 @@
-"""The DJ's `dj-library/` folder: scaffold, `library.yaml`, exports, `log.md` (R-901..R-905).
+"""The DJ's `dj-library/` folder: scaffold, `library.yaml`, `log.md` (R-901..R-905).
 
-Door 1 core: stdlib + PyYAML only (`dj.safety` is stdlib at import time).
+Stdlib + PyYAML only (`dj.safety` is stdlib at import time).
+
+`import_export` and `latest_export` (a collection XML in `exports/`) are TEST SUPPORT ONLY since
+0.2.0: no CLI command, MCP tool or skill reads or writes an export (`dj.build_library.SOURCES`).
 
 Rules this module keeps:
-- Create only. `scaffold` never overwrites a file; `import_export` copies the DJ's XML and
-  never moves, renames or deletes it. "Never overwrites" holds under races too: a new file is
+- Create only. `scaffold` never overwrites a file. "Never overwrites" holds under races too: a new file is
   written to a temp file and then linked into place, which fails if the name was taken.
   Only files the tool owns and rewrites (`library.yaml`, the state file) use os.replace.
 - Add only. The one change to a file the DJ may have written: missing machine-path lines are
   appended to an existing `.gitignore` (its own lines are kept as they are).
 - Library-relative paths. Every path written into the folder is POSIX and relative to it.
-  Absolute paths live only in `exports/*.xml` and `proposals/*.xml`, which the scaffolded
-  `.gitignore` keeps out of git (R-905), together with temp files (`*.tmp`).
+  The scaffolded `.gitignore` keeps any rekordbox XML an older version left in `exports/` or
+  `proposals/` out of git (it holds absolute paths, R-905), together with temp files (`*.tmp`).
 - `library.yaml` is the one file that may name this computer (device, rekordbox version).
 - A disk that refuses deletes and renames (Cowork's device VM, Q-27): a probe finds it before
   the first temp file, and files on it are then written in place, never through a temp file
@@ -43,7 +45,7 @@ from dj.model import LibraryError
 from dj.safety import REPO_ROOT, sha256
 
 SCHEMA_VERSION = 1
-DIRS = ("exports", "profile", "structure", "taste", "crates", "reports", "proposals", "wishlist")
+DIRS = ("profile", "structure", "taste", "crates", "reports", "proposals", "wishlist")
 FILES = ("README.md", "library.yaml", "links.yaml", "log.md", ".gitignore")
 DEVICES = ("mac", "windows")
 META_KEYS = (
@@ -56,8 +58,7 @@ META_KEYS = (
     "exports",
 )
 # Keys a library.yaml may hold but need not: files written before them stay valid (R-1406).
-# `source`: what the last full analysis read, "xml" (the export) or "db" (master.db through the
-# engine, W-36); dj-build reads the same one.
+# `source`: written by versions before 0.2.0 (what the analysis read); still accepted, never read.
 OPTIONAL_META_KEYS = ("dj_name", "source")
 SOURCES = ("xml", "db")
 DJ_NAME_MAX = 40  # characters of the DJ's handle (what they call you in the booth)
@@ -168,25 +169,20 @@ README_TEXT = """\
 # dj-library
 
 Your library as plain text. The tool writes what it measured, Claude writes what it heard
-from you, and you keep all of it. rekordbox stays the boss: nothing in here changes
-rekordbox until you import a file yourself.
+from you, and you keep all of it. rekordbox stays the boss: nothing is written into
+rekordbox until you saw a preview and said yes.
 
 ## Files at the top
 
 - `README.md`: this page.
-- `library.yaml`: the folder's settings. Mac or Windows, the rekordbox version of your last
-  export, when the folder was made and last changed, the structure you picked, and your DJ
-  name if you gave one. The tool keeps it current; you never need to edit it.
+- `library.yaml`: the folder's settings. Mac or Windows, when the folder was made and last
+  changed, the structure you picked, and your DJ name if you gave one. The tool keeps it
+  current; you never need to edit it.
 - `links.yaml`: your Spotify inbox playlists and the rekordbox crate each one feeds. Just a
   commented example until you set up Spotify.
 - `log.md`: one line for every change the tool made: date, what, how many, which file. The
   tool writes it, not Claude.
 - `.gitignore`: keeps the files that hold paths from this computer out of git.
-
-## What goes in
-
-- `exports/`: copies of the collection XML you export from rekordbox, named by date. Your
-  original stays where you saved it. The tool reads the newest copy.
 
 ## What the tool found
 
@@ -200,8 +196,8 @@ rekordbox until you import a file yourself.
 ## What you get
 
 - `reports/`: the HTML report on your library, one per run, named by date.
-- `proposals/`: playlist trees and crates ready for rekordbox. A `.yaml` you can read and a
-  `.xml` you import into rekordbox yourself.
+- `proposals/`: playlist trees ready for rekordbox, each a `.yaml` you can read and edit
+  before you say yes to it.
 - `crates/`: the brief for each crate and the tracks picked for it, one reason per track.
 - `wishlist/`: tracks you don't own yet, with where to buy them.
 - `backups/`: verified copies of your rekordbox database, one folder each time it changed, each
@@ -209,9 +205,8 @@ rekordbox until you import a file yourself.
 
 ## Git
 
-The folder is ready for git: `git init`, `git add .`, `git commit`. The XML files in
-`exports/` and `proposals/` hold the paths of your music on this computer, so they are
-gitignored (`exports/*.xml`, `proposals/*.xml`), and so is any XML you drop at the top.
+The folder is ready for git: `git init`, `git add .`, `git commit`. A rekordbox XML holds
+the paths of your music on this computer, so any that sits in the folder is gitignored.
 `.cache/` is the tool's own state, `.env` holds secrets and `*.tmp` is a temp file left by
 a crash, or by a disk that does not let files be deleted: all gitignored too. Everything
 else is text you can commit, diff and back up.

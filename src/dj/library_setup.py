@@ -1,4 +1,4 @@
-"""The dj-library folder before session 1, and which session dj-start runs (W-36, D-30).
+"""The dj-library folder before session 1 (W-36, D-30).
 
 Install comes first. `/dj-librarian:install` step 6 asks once which folder should be the DJ's
 dj-library and makes it (`scripts/library_init.py` runs `main`):
@@ -13,13 +13,11 @@ dj-library and makes it (`scripts/library_init.py` runs `main`):
   rule as the engine folder (install step 3);
 - a drive root, the home folder or a shared user folder: refused (onboarding.library_root).
 
-The scaffold is the one session 1 makes (libfolder.scaffold: the device, today's date, no export
-yet) plus one log.md line. `default_folder()` is what the install offers: ~/Music/dj-library.
+The scaffold is libfolder.scaffold (the device, today's date) plus one log.md line.
+`default_folder()` is what the install offers: ~/Music/dj-library.
 
-`session_path(tools)`: "engine" when the dj-librarian engine's `dj_status` tool is among the tools
-the session can call, else "xml"; dj-start picks its path by this rule (SKILL.md, "With the
-engine"). `set_handle(folder, name)` writes the DJ's handle into library.yaml (dj-start step 1 on
-the engine path, where no export runs init). Standard library and PyYAML only (Door 1).
+`set_handle(folder, name)` writes the DJ's handle into library.yaml (dj-start step 1). Standard
+library and PyYAML only.
 """
 
 from __future__ import annotations
@@ -27,18 +25,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import sys
 from datetime import date
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from dj import libfolder, onboarding
 from dj.libfolder import DEVICES, LibraryFolder, LibraryFolderError
 
 SYNCED = ("onedrive", "dropbox", "icloud", "mobile documents", "cloudstorage", "google drive")
 OS_FILES = {".ds_store", "desktop.ini", "thumbs.db", ".localized"}
-_ENGINE_STATUS = re.compile(r"(?:mcp__(?:plugin_dj-librarian_)?dj-librarian__)?dj_status")
 
 
 class SetupError(RuntimeError):
@@ -99,11 +95,6 @@ def prepare(folder: str | Path, *, device: str, today: date | None = None) -> di
     except (LibraryFolderError, OSError) as exc:
         raise SetupError(f"setting up {root} failed: {exc}", "folder") from None
     return {"status": "created", "library": str(root), "device": device, "created": list(made.created), "log": log}
-
-
-def session_path(tools: Iterable[str]) -> str:
-    """"engine" when the dj-librarian engine's dj_status tool is callable, else "xml"."""
-    return "engine" if any(_ENGINE_STATUS.fullmatch(name) for name in tools) else "xml"
 
 
 def set_handle(folder: str | Path, name: str | None, *, today: date | None = None) -> str:

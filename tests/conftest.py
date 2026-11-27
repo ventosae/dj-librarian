@@ -88,6 +88,22 @@ def db():
     return FakeDB()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def never_the_real_master_db():
+    """Every command reads master.db by default, and module-scoped fixtures run before the per-test
+    guard below: the real master.db is out of reach for the whole run, fixtures included."""
+    from dj import safety
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a test tried to reach the real master.db")
+
+    patch = pytest.MonkeyPatch()
+    patch.setattr(safety, "_connect", refuse)
+    patch.setattr(safety, "find_master_db", refuse)
+    yield
+    patch.undo()
+
+
 @pytest.fixture(autouse=True)
 def no_real_db_no_network(monkeypatch):
     """A test that forgets to mock must fail loudly, never touch master.db or the internet.
@@ -154,6 +170,21 @@ def live_master_db(monkeypatch, tmp_path_factory):
     path.write_bytes(b"stands in for the live master.db: copied, never opened")
     monkeypatch.setattr(safety, "find_master_db", lambda: path)
     return path
+
+
+@pytest.fixture(scope="module")
+def export_reads():
+    """TEST SUPPORT ONLY: every command reads the library from the export fixture in the folder's
+    exports/ (`dj.build_library.SOURCES`), not from a master.db snapshot. A module whose library
+    folders are built from tests/xml_fixtures.py marks itself with it (`pytestmark`); module scope,
+    so the module's own module-scoped fixtures read the export too. Nothing outside the tests can
+    switch this (no flag, no setting, no tool argument)."""
+    from dj import build_library
+
+    patch = pytest.MonkeyPatch()
+    patch.setattr(build_library, "DEFAULT_SOURCE", "xml")
+    yield
+    patch.undo()
 
 
 @pytest.fixture(autouse=True)

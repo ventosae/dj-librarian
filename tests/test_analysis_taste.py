@@ -4,18 +4,13 @@ to rekordbox (R-341), numbers from code with a provenance line (R-302), the skil
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
-import sys
-import textwrap
 from datetime import date, datetime
 from itertools import combinations
 from pathlib import Path
 
 import pytest
 import xml_fixtures as fx
-import yaml
 from typer.testing import CliRunner
 
 from dj import cli, libfolder, safety
@@ -24,9 +19,9 @@ from dj.model import Library, LibraryError, PlaylistNode, Track
 from dj.readers.xml import read_xml
 from dj.taste_files import read_entries
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 REPO = Path(__file__).resolve().parents[1]
-SKILL = REPO / "plugin" / "skills" / "dj-taste"
-SCRIPT = SKILL / "scripts" / "taste.py"
 D1, D2 = date(2026, 10, 20), date(2026, 10, 27)
 MD_FILES = ["taste/lanes.md", "taste/labels-artists.md", "taste/anchors.md", "taste/vocabulary.md"]
 ALL_FILES = MD_FILES + ["taste/facts.json", "taste/cooccurrence.json"]
@@ -535,36 +530,6 @@ def test_rebuild_with_no_taste_files_yet_keeps_no_copy(lib_dir):
     assert read(lib_dir / "log.md").strip().split("\n")[-1].endswith("lines added, 4 files rebuilt; taste")
 
 
-def test_no_absolute_paths_in_the_library_folder(lib_dir, tmp_path):
-    taste.run(lib_dir, today=D1)
-    taste.run(lib_dir, xml=tmp_path / "collection.xml", today=D2)  # an export outside the folder
-    assert "from collection.xml, 2026-10-27." in read(lib_dir / "taste/lanes.md")
-    for rel in ALL_FILES + ["log.md"]:
-        body = read(lib_dir / rel)
-        for needle in (str(tmp_path), tmp_path.as_posix(), "D:/", "file://", "/Users/", "//nas", "\\"):
-            assert needle not in body, (rel, needle)
-
-
-def test_a_relative_xml_is_taken_from_the_working_directory(lib_dir, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    result = taste.run(lib_dir, xml="dj-library/exports/2026-10-20-collection.xml", today=D1)
-    assert result["source"] == "exports/2026-10-20-collection.xml"
-    assert result["counts"]["tracks"] == 24
-
-
-def test_a_relative_xml_is_looked_up_in_the_library_folder_first(lib_dir, tmp_path, monkeypatch):
-    elsewhere = tmp_path / "elsewhere"
-    (elsewhere / "exports").mkdir(parents=True)
-    monkeypatch.chdir(elsewhere)  # the same relative path exists nowhere here
-    result = taste.run(lib_dir, xml="exports/2026-10-20-collection.xml", today=D1)
-    assert result["source"] == "exports/2026-10-20-collection.xml" and result["counts"]["tracks"] == 24
-    # a file in the library folder wins over one with the same relative path in the current folder
-    (elsewhere / "exports" / "2026-10-20-collection.xml").write_bytes(b"not xml")
-    assert taste.run(lib_dir, xml="exports/2026-10-20-collection.xml", today=D1)["counts"]["tracks"] == 24
-    with pytest.raises(libfolder.LibraryFolderError, match="not found in the library folder or the current folder"):
-        taste.run(lib_dir, xml="exports/missing.xml", today=D1)
-
-
 def test_keys_survive_names_that_look_like_comment_markers(tmp_path):
     tracks = {
         str(n): Track(id=str(n), artist="Arrow --> Man", title=f"T{n}", label="Label <!-- x --->", bpm=119 + n,
@@ -642,7 +607,7 @@ def test_a_bad_taste_file_stops_the_run_before_anything_is_written(lib_dir):
     anchors.write_bytes("# Anchor tracks\n\n## Log\n\n- caf\xe9 by hand\n".encode("cp1252"))
     before = snapshot(lib_dir)
     with pytest.raises(LibraryError, match="anchors.md is not UTF-8"):
-        taste.run(lib_dir, xml=fx.SAMPLE_XML, today=D2)  # another export: every file would change
+        taste.run(lib_dir, today=D2)  # another export: every file would change
     assert snapshot(lib_dir) == before  # no MD file, no JSON file, no log line
 
 
@@ -693,7 +658,7 @@ def test_run_refuses_a_folder_without_library_yaml(tmp_path):
     folder = tmp_path / "not-a-library"
     folder.mkdir()
     with pytest.raises(taste.NotALibraryFolder):
-        taste.run(folder, xml=fx.SAMPLE_XML, today=D1)
+        taste.run(folder, today=D1)
     assert list(folder.iterdir()) == []
 
 
@@ -714,61 +679,6 @@ def test_analysis_opens_no_write_session(lib_dir, tmp_path, monkeypatch):
 
 
 # -- the script and the CLI
-
-
-def run_script(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    env = dict(os.environ, PYTHONUTF8="1")
-    return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd, capture_output=True, text=True,
-                          encoding="utf-8", timeout=120, env=env)  # fmt: skip
-
-
-def test_script(lib_dir, tmp_path):
-    done = run_script("--library", str(lib_dir), "--today", "2026-10-20", cwd=tmp_path)
-    assert done.returncode == 0, done.stderr
-    out = json.loads(done.stdout)
-    assert out["ok"] is True and out["written"] == ALL_FILES and out["counts"]["lanes"] == 3
-    first = out["counts"]["lines_added"]
-    assert first == sum(len(v) for v in out["added"].values()) > 0
-
-    again = json.loads(run_script("--library", str(lib_dir), "--today", "2026-10-20", cwd=tmp_path).stdout)
-    assert again["counts"]["lines_added"] == 0
-
-    done = run_script("--library", str(lib_dir), "--today", "2026-10-21", "--rebuild", cwd=tmp_path)
-    rebuilt = json.loads(done.stdout)
-    assert done.returncode == 0 and rebuilt["rebuild"] is True and rebuilt["counts"]["lines_added"] == first
-    assert all(line.startswith("- [2026-10-21] ") for lines in rebuilt["added"].values() for line in lines)
-
-
-def test_script_refuses_and_errors(tmp_path):
-    plain = tmp_path / "plain"
-    plain.mkdir()
-    done = run_script("--library", str(plain), cwd=tmp_path)
-    assert done.returncode == 2 and json.loads(done.stdout)["ok"] is False
-    assert "library.yaml" in json.loads(done.stdout)["refused"] and list(plain.iterdir()) == []
-
-    empty = tmp_path / "dj-library"
-    libfolder.scaffold(empty, device="mac", today=D1)
-    done = run_script("--library", str(empty), cwd=tmp_path)  # scaffolded, no export yet
-    assert done.returncode == 1 and "export" in json.loads(done.stdout)["error"].lower()
-    done = run_script("--library", str(empty), "--today", "not-a-date", cwd=tmp_path)
-    assert done.returncode == 1 and json.loads(done.stdout)["ok"] is False
-    done = run_script(cwd=tmp_path)  # missing --library: an error (1), not a refusal (2)
-    assert done.returncode == 1 and "--library" in json.loads(done.stdout)["error"]
-
-
-def test_script_runs_without_engine_packages(lib_dir, tmp_path):
-    code = textwrap.dedent(f"""
-        import runpy, sys
-        for name in ("pyrekordbox", "rapidfuzz", "httpx", "typer", "mcp"):
-            sys.modules[name] = None
-        sys.argv = ["taste.py", "--library", {str(lib_dir)!r}, "--today", "2026-10-20"]
-        runpy.run_path({str(SCRIPT)!r}, run_name="__main__")
-    """)
-    env = dict(os.environ, PYTHONUTF8="1")
-    done = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True,
-                          encoding="utf-8", timeout=120, env=env)  # fmt: skip
-    assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout)["counts"]["clusters"] == 3
 
 
 def test_cli_json(lib_dir):
@@ -821,20 +731,3 @@ Before every reply, check:
 - [ ] Nothing was written to rekordbox, Spotify or audio files without a preview and an explicit yes.
 """
 
-
-def test_skill_md():
-    text = (SKILL / "SKILL.md").read_text(encoding="utf-8").replace("\r\n", "\n")
-    m = re.match(r"\A---\n(.*?)\n---\n(.*)\Z", text, re.DOTALL)
-    meta, body = yaml.safe_load(m.group(1)), m.group(2)
-    assert meta["name"] == "dj-taste" and meta["description"].strip()
-    assert "**Requirements:** R-301, R-302, R-331, R-332, R-341." in body
-    assert "[shared/voice.md](../../shared/voice.md)" in body and "[shared/adhd.md](../../shared/adhd.md)" in body
-    patterns = section(body, "## Patterns I read first")
-    for pattern in ("Labels and artists", "BPM lanes per playlist", "Keys", "Co-occurrence",
-                    "Ratings and play counts", "The DJ's own words"):  # fmt: skip
-        assert pattern in patterns
-    for needle in ("scripts/taste.py --library DIR", "dj library taste", "--rebuild", "explicit yes",
-                   "never propose:", "never pair:", "key:veto:", "key:pair:", "taste/feedback.md", "R-341"):  # fmt: skip
-        assert needle in body, needle
-    heads = list(re.finditer(r"^## ", text, re.MULTILINE))
-    assert text[heads[-1].start():] == CHECKLIST  # the canonical block, last

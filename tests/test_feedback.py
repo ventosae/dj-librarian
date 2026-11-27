@@ -29,6 +29,8 @@ from dj.taste_files import (
     signed_feedback,
 )
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 D1, D2 = date(2026, 10, 21), date(2026, 10, 22)
 
 

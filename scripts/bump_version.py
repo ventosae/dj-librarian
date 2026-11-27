@@ -6,18 +6,17 @@
 the new version into
 
 - `pyproject.toml` (`[project] version`) and the project's own entry in `uv.lock`;
-- `plugin/.claude-plugin/plugin.json`, the dj-librarian entry of `.claude-plugin/marketplace.json`
-  and `mcpb/manifest.json`;
+- `plugin/.claude-plugin/plugin.json` and the dj-librarian entry of `.claude-plugin/marketplace.json`;
 - `CHANGELOG.md`: the `[Unreleased]` entries become `## [<version>] - <date>`, with a fresh, empty
   `## [Unreleased]` above them.
 
-The zip names (`scripts/build_plugin_zip.py`: `dj-librarian-plugin-<version>.zip`, the light zip, the
-`.mcpb`) and the zip's `engine/BUILD.txt` stamp are made from pyproject.toml's version when they are
-built: nothing to edit there. Each file keeps its own layout (a text edit, not a re-dump). It refuses,
-changing nothing, when the files disagree before the bump (`tests/test_version_sync.py` fails on that
-drift too), when `[Unreleased]` holds no entry, or when CHANGELOG already has the new version. Prints
-one JSON object: the old and new version, the files written, the zip name. Never tags, commits or
-pushes.
+The zip name (`scripts/build_plugin_zip.py`: `dj-librarian-plugin-<version>.zip`) and the zip's
+`engine/BUILD.txt` stamp are made from pyproject.toml's version when the zip is built: nothing to edit
+there. After a bump, rebuild the zip in `dist/` and commit it in place of the old one (CONTRIBUTING.md,
+"Versioning"). Each file keeps its own layout (a text edit, not a re-dump). It refuses, changing
+nothing, when the files disagree before the bump (`tests/test_version_sync.py` fails on that drift
+too), when `[Unreleased]` holds no entry, or when CHANGELOG already has the new version. Prints one
+JSON object: the old and new version, the files written, the zip name. Never tags, commits or pushes.
 """
 
 from __future__ import annotations
@@ -35,7 +34,6 @@ PYPROJECT = Path("pyproject.toml")
 UV_LOCK = Path("uv.lock")
 PLUGIN_JSON = Path("plugin") / ".claude-plugin" / "plugin.json"
 MARKETPLACE = Path(".claude-plugin") / "marketplace.json"
-MCPB = Path("mcpb") / "manifest.json"
 CHANGELOG = Path("CHANGELOG.md")
 NAME = "dj-librarian"
 _SEMVER = re.compile(r"(\d+)\.(\d+)\.(\d+)")
@@ -74,7 +72,6 @@ def versions(root: Path = REPO) -> dict[str, str]:
         "uv.lock": lock.group(1) if lock else "",
         "plugin.json": _json_version((root / PLUGIN_JSON).read_text(encoding="utf-8"), "plugin"),
         "marketplace.json": _json_version((root / MARKETPLACE).read_text(encoding="utf-8"), "marketplace"),
-        "mcpb/manifest.json": _json_version((root / MCPB).read_text(encoding="utf-8"), "mcpb"),
     }
 
 
@@ -107,7 +104,7 @@ def bump(part: str, *, root: Path = REPO, today: date | None = None) -> dict[str
     new = next_version(old, part)
     q = re.escape(old)
     texts = {rel: (root / rel).read_text(encoding="utf-8") for rel in (PYPROJECT, UV_LOCK, PLUGIN_JSON, MARKETPLACE,
-                                                                       MCPB, CHANGELOG)}  # fmt: skip
+                                                                       CHANGELOG)}  # fmt: skip
     out = {
         PYPROJECT: _sub_once(rf'^version = "{q}"$', f'version = "{new}"', texts[PYPROJECT], "pyproject.toml"),
         UV_LOCK: _sub_once(rf'^(\[\[package\]\]\nname = "{NAME}"\nversion = )"{q}"$', rf'\g<1>"{new}"',
@@ -115,7 +112,6 @@ def bump(part: str, *, root: Path = REPO, today: date | None = None) -> dict[str
         PLUGIN_JSON: _sub_once(rf'^(\s*"version": )"{q}"', rf'\g<1>"{new}"', texts[PLUGIN_JSON], "plugin.json"),
         MARKETPLACE: _sub_once(rf'("name": "{NAME}",(?:\n[^\n]*)*?\n\s*"version": )"{q}"', rf'\g<1>"{new}"',
                                texts[MARKETPLACE], "marketplace.json"),  # fmt: skip
-        MCPB: _sub_once(rf'^(  "version": )"{q}"', rf'\g<1>"{new}"', texts[MCPB], "mcpb/manifest.json"),
         CHANGELOG: changelog(texts[CHANGELOG], new, today or date.today()),
     }
     for rel, text in out.items():  # everything is checked before the first write

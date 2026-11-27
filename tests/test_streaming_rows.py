@@ -20,6 +20,8 @@ from dj.readers.common import split_streaming, streaming_service
 from dj.readers.db import read_db
 from dj.readers.xml import read_xml
 
+pytestmark = pytest.mark.usefixtures("export_reads")  # the library is read from the export fixture
+
 DAY = date(2026, 10, 20)
 LOCAL = fx.EXPECTED_COUNTS["tracks"]  # 24
 runner = CliRunner()
